@@ -1,0 +1,4 @@
+aiohttp
+disnake
+google-genai
+psutil
