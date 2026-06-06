@@ -14,6 +14,7 @@ cogs/*.pyc
 phrases.json
 context.txt
 currency_cache.json
+last_currency_update.txt
 system_message.txt
 uptime.json
 config.ini
