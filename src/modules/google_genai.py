@@ -17,9 +17,9 @@ async def get_new_client():
     token = await read_api_token()
     return genai.Client(api_key=token)
 
-async def get_response(client, contents):
+async def get_response(client, contents, model_name="gemma-4-31b-it"):
     return await client.aio.models.generate_content(
-        model="gemma-4-31b-it",
+        model=model_name,
         config=types.GenerateContentConfig(
             system_instruction=core.cache.phrases.get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")),
         contents=contents

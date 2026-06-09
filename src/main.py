@@ -76,7 +76,7 @@ async def on_ready():
     if not debug_mode:
         if time_difference is not None:
             if time_difference.total_seconds() <= safe_seconds_before_start:
-                Note += "[Warning]: not enough time has passed since the last run. asyncio.sleep({safe_seconds_before_start}) started before the end of the run."
+                Note += f"[Warning]: not enough time has passed since the last run. asyncio.sleep({safe_seconds_before_start}) started before the end of the run."
                 print(f'')
                 await asyncio.sleep(safe_seconds_before_start)
         else:
