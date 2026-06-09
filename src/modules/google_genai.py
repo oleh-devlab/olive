@@ -1,6 +1,9 @@
 from google import genai
+from google.genai import types
 from pathlib import Path
 import os
+
+import core.cache
 
 async def read_api_token():
     token_path = Path(__file__).resolve().parent.parent / ".genai_token"
@@ -17,5 +20,7 @@ async def get_new_client():
 async def get_response(client, contents):
     return await client.aio.models.generate_content(
         model="gemma-4-31b-it",
+        config=types.GenerateContentConfig(
+            system_instruction=core.cache.phrases.get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")),
         contents=contents
     )

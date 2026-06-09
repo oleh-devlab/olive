@@ -9,7 +9,7 @@ from modules.google_genai import get_new_client, get_response
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.channel_context = {}
+        self.channel_context = []
 
         self.olive_enabled = False
         
@@ -20,18 +20,20 @@ class AIAssistantCog(commands.Cog):
         text = core.cache.phrases.get("olive", {}).get("api_client_loaded", "API Google is loaded.")
         print(text)
 
-    # def cog_unload(self):
-    #     if self.google_client:
-    #         self.bot.loop.create_task(self.google_client.aio.aclose())
-    #         text = core.cache.phrases.get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
-    #         print(text)
+    def cog_unload(self):
+        if self.google_client:
+            self.bot.loop.create_task(self.google_client.aio.aclose())
+            text = core.cache.phrases.get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
+            print(text)
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
         if not self.olive_enabled or message.author.bot or not self.google_client:
             return
         
-        response = await get_response(self.google_client, message.content)
+        self.channel_context.append({"role": "user", "parts": [{"text": f"[{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
+        response = await get_response(self.google_client, self.channel_context)
+        self.channel_context.append({"role": "assistant", "parts": [{"text": response.text}]})
         
         await message.channel.send(response.text)
 
