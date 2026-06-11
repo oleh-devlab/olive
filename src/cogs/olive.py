@@ -9,7 +9,7 @@ from modules.google_genai import get_new_client, get_response
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.channel_context = []
+        self.channel_context = {} # "channel_id": [...]]
 
         self.olive_enabled = False
         
@@ -31,10 +31,14 @@ class AIAssistantCog(commands.Cog):
         if not self.olive_enabled or message.author.bot or not self.google_client:
             return
         
-        self.channel_context.append({"role": "user", "parts": [{"text": f"[{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
+        if str(message.channel.id) not in self.channel_context:
+            self.channel_context[str(message.channel.id)] = []
+        
         model_name = core.cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
-        response = await get_response(self.google_client, self.channel_context, model_name)
-        self.channel_context.append({"role": "assistant", "parts": [{"text": response.text}]})
+
+        self.channel_context[str(message.channel.id)].append({"role": "user", "parts": [{"text": f"[{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
+        response = await get_response(self.google_client, self.channel_context[str(message.channel.id)], model_name)
+        self.channel_context[str(message.channel.id)].append({"role": "assistant", "parts": [{"text": response.text}]})
         
         await message.channel.send(response.text)
 
