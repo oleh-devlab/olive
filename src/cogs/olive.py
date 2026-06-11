@@ -1,3 +1,5 @@
+from email.mime import message
+
 import disnake
 from disnake.ext import commands
 import core.cache
@@ -42,13 +44,15 @@ class AIAssistantCog(commands.Cog):
         model_name = core.cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
 
         self.llm_context[str(message.channel.id)].append({"role": "user", "parts": [{"text": f"[{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
-        response = await get_response(self.google_client, self.llm_context[str(message.channel.id)], model_name)
+        async with message.channel.typing():
+            response = await get_response(self.google_client, self.llm_context[str(message.channel.id)], model_name)
+
         self.llm_context[str(message.channel.id)].append({"role": "assistant", "parts": [{"text": response.text}]})
 
         await self.context_restrictions()
         await self.write_context_to_file()
         
-        await message.channel.send(response.text)
+        await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
 
     async def context_restrictions(self):
         """
