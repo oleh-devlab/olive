@@ -57,7 +57,7 @@ class AIAssistantCog(commands.Cog):
                 i_should_answer = False
 
             if not i_should_answer:
-                await self.context_restrictions(incomplete_dialogue=True)
+                await self.context_restrictions()
                 return
 
         reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
