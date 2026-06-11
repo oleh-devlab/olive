@@ -2,7 +2,7 @@ import disnake
 from disnake.ext import commands
 import json
 from google.genai import types
-from modules.google_genai import LLMClient
+from modules.llm_client import LLMClient
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
