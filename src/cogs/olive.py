@@ -1,11 +1,10 @@
-from email.mime import message
-
 import disnake
 from disnake.ext import commands
-import core.cache
 import json
 
-from modules.google_genai import get_new_client, get_response
+from modules.google_genai import LLMClient
+
+import core.cache as cache
 
 # This is a prototype cog for AI assistant functionality using Google GenAI.
 
@@ -14,38 +13,37 @@ class AIAssistantCog(commands.Cog):
         self.bot = bot
         self.llm_context = {} # {"channel_id": [...]]}
 
-        self.max_messages_in_context = 25
+        self.max_messages_in_context = 26
         self.context_file_name = "llm_context.json"
 
         self.olive_enabled = False
-        
-        self.google_client = None
 
     async def cog_load(self):
-        self.google_client = await get_new_client()
-        print(core.cache.phrases.get("olive", {}).get("api_client_loaded", "API Google is loaded."))
+        cache.llm_client = LLMClient()
+        print(cache.phrases.get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
         await self.load_context_from_file()
 
     def cog_unload(self):
-        if self.google_client:
-            self.bot.loop.create_task(self.google_client.aio.aclose())
-            text = core.cache.phrases.get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
+        if cache.llm_client:
+            self.bot.loop.create_task(cache.llm_client.connection_close())
+            text = cache.phrases.get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
             print(text)
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
-        if not self.olive_enabled or message.author.bot or not self.google_client or not message.content:
+        if not self.olive_enabled or message.author.bot or not cache.llm_client or not message.content:
             return
         
         if str(message.channel.id) not in self.llm_context:
             self.llm_context[str(message.channel.id)] = []
-        
-        model_name = core.cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
+
+        model_name = cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
+        cache.llm_client.model_name = model_name
 
         self.llm_context[str(message.channel.id)].append({"role": "user", "parts": [{"text": f"[{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
         async with message.channel.typing():
-            response = await get_response(self.google_client, self.llm_context[str(message.channel.id)], model_name)
+            response = await cache.llm_client.get_response(self.llm_context[str(message.channel.id)])
 
         self.llm_context[str(message.channel.id)].append({"role": "assistant", "parts": [{"text": response.text}]})
 
@@ -88,7 +86,7 @@ class AIAssistantCog(commands.Cog):
     async def turn_olive(self, ctx: disnake.ApplicationCommandInteraction):
         self.olive_enabled = not self.olive_enabled
         status = "enabled" if self.olive_enabled else "disabled"
-        text = core.cache.phrases.get("olive", {}).get("olive_status", "Olive is now {status}.").format(status=status)
+        text = cache.phrases.get("olive", {}).get("olive_status", "Olive is now {status}.").format(status=status)
         await ctx.send(text, ephemeral=True)
 
 def setup(bot: commands.Bot):

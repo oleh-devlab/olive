@@ -10,7 +10,7 @@ embeds_to_send = {
 
 configLock = None
 
-googleClient = None
+llm_client = None
 
 active_cogs_list = {}
 
