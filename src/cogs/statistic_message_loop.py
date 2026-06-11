@@ -15,8 +15,8 @@ import core.cache
 class MessageLoop(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.channel = None
-        self.message = None
+        self.channels = []
+        self.messages = []
 
         self.last_embeds_dicts = []
 
@@ -54,17 +54,27 @@ class MessageLoop(commands.Cog):
             # print(f"Embeds are the same, skipping edit for {content}.")
             return
 
-        await self.message.edit(content=content, embeds=valid_embeds)
+        for message in self.messages:
+            await message.edit(content=content, embeds=valid_embeds)
+            await asyncio.sleep(0.5)
         self.last_embeds_dicts = new_embeds_dicts
 
     @main_loop.before_loop
     async def before_main_loop(self):
         await self.bot.wait_until_ready()
-        self.channel = self.bot.get_channel(channels["statistic"])
-        await self.channel.purge()
-        await asyncio.sleep(1)
-        text = core.cache.phrases.get("statistic_message_loop", {}).get("welcome_message", "Hello")
-        self.message = await self.channel.send(text)
+
+        self.channels = [self.bot.get_channel(channel_id) for channel_id in channels["statistic"]]
+        for channel in self.channels:
+            await asyncio.sleep(0.5)
+            await channel.purge()
+        await asyncio.sleep(0.5)
+        text = core.cache.phrases.get("statistic_message_loop", {}).get("welcome_message", "Error with getting message for statistic channel.")
+        for channel in self.channels:
+            try:
+                self.messages.append(await channel.send(text))
+                print(f"Initial message sent to channel {channel.id} for MessageLoop.")
+            except Exception as e:
+                print(f"[ERROR before_main_loop : send initial message]: {e}")
 
     @main_loop.error
     async def on_main_loop_error(self, error):

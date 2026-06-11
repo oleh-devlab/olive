@@ -7,19 +7,18 @@ paths = {
 channels = {
     "bot_news": 123,
     "terminal_channel": 123, # A channel where users can use the bot's commands. We plan to remove this setting.
-    "statistic": 123 # A channel where the bot can post and edit its own messages. Ideally, there should be no other messages in the channel besides those from the bot
+    "statistic": [123, 123] # The channel(s) where the bot can post and edit its own messages. Ideally, there should be no other messages in the channel besides those from the bot
 }
 
 guilds = [123, 456]
 main_guild_id = 123
 
-safe_seconds_before_start = 60 # (Seconds) Manual minimum time between bot restarts
+safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
 battery_update_seconds = 180 # (Seconds) The number of seconds between each update of the battery status (charge, current, etc.)
 
 is_battery = 0 # Whether the device has a battery. Needed to avoid fetching information about charge, current, and the rest.
 min_safe_percent_charge = 35
 max_safe_percent_charge = 70
-
 
 is_processor_info = 1
 
