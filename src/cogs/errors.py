@@ -83,7 +83,7 @@ class Errors(commands.Cog):
                 else:
                     is_kicked = True
 
-                log_channel = self.bot.get_channel(core.cache.channels.get("add_logs"))
+                log_channel = await self.bot.get_or_fetch_channel(core.cache.channels.get("add_logs"))
                 if is_kicked:
                     raw_embed_data = core.cache.phrases.get("errors", {}).get("antiflood_kicked_log_embed", {"title": "Anti-flood kicked a user"})
                     formatted_embed_data = format_embed_data(raw_embed_data, author_name=ctx_or_inter.author.name, user_mention=ctx_or_inter.author.mention, user_id=ctx_or_inter.author.id, channel_mention=ctx_or_inter.channel.mention, time_since_last=time_since_last, remaining_time=remaining_time)

@@ -89,7 +89,7 @@ async def on_ready():
 
         final_message = core.cache.phrases.get("main", {}).get("on_ready", "Bot started at {formatted_time}. Notes: {Note}. Error with taking phrases.").format(formatted_time=formatted_time, time_difference=time_difference, Note=Note)
 
-        channel = bot.get_channel(channel_for_bot_news)
+        channel = await bot.get_or_fetch_channel(channel_for_bot_news)
         await channel.send(final_message)
         print(f'\n[INFO of Discord] : {final_message}\n')
 

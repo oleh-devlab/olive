@@ -62,19 +62,41 @@ class MessageLoop(commands.Cog):
     @main_loop.before_loop
     async def before_main_loop(self):
         await self.bot.wait_until_ready()
+        
+        try:
+            self.channels = []
+            
+            # 1. Getting channels
+            for channel_id in channels["statistic"]:
+                try:
+                    channel = await self.bot.get_or_fetch_channel(channel_id)
+                    self.channels.append(channel)
+                except Exception as e:
+                    print(f"[before_main_loop WARNING] Not found channel {channel_id}: {e}")
 
-        self.channels = [self.bot.get_channel(channel_id) for channel_id in channels["statistic"]]
-        for channel in self.channels:
+            # 2. Cleaning the detected channels
+            for channel in self.channels:
+                await asyncio.sleep(0.5)
+                try:
+                    await channel.purge()
+                except Exception as e:
+                    print(f"[ERROR before_main_loop : purge] Error purging channel {channel.id}: {e}")
+
+            # 3. Sending initial messages and filling the list for future edits
             await asyncio.sleep(0.5)
-            await channel.purge()
-        await asyncio.sleep(0.5)
-        text = core.cache.phrases.get("statistic_message_loop", {}).get("welcome_message", "Error with getting message for statistic channel.")
-        for channel in self.channels:
-            try:
-                self.messages.append(await channel.send(text))
-                print(f"Initial message sent to channel {channel.id} for MessageLoop.")
-            except Exception as e:
-                print(f"[ERROR before_main_loop : send initial message]: {e}")
+            text = core.cache.phrases.get("statistic_message_loop", {}).get("welcome_message", "Error with getting message for statistic channel.")
+            
+            for channel in self.channels:
+                try:
+                    msg = await channel.send(text)
+                    self.messages.append(msg)
+                    print(f"Initial message sent to channel {channel.id} for MessageLoop.")
+                except Exception as e:
+                    print(f"[ERROR before_main_loop : send initial message] Error sending initial message to channel {channel.id}: {e}")
+
+        except Exception as e:
+            print(f"[ERROR in before_main_loop]: {e}")
+            traceback.print_exc()
 
     @main_loop.error
     async def on_main_loop_error(self, error):
@@ -100,7 +122,7 @@ class MessageLoop(commands.Cog):
             # Notify the channel only when we first reach the maximum delay or this is the first time
             if (delay == self.base_delay) or (delay == self.max_delay and self.base_delay * (2 ** (self.retries_503 - 1)) < self.max_delay):
                 try:
-                    error_channel = self.bot.get_channel(channels["bot_news"])
+                    error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
                     if error_channel:
                         text = core.cache.phrases.get("statistic_message_loop", {}).get("api_error_notification", "MessageLoop got an error `{err_type}`. Delay: {delay} s.").format(err_type=err_type, delay=delay)
                         await error_channel.send(text)
@@ -113,7 +135,7 @@ class MessageLoop(commands.Cog):
             return
 
         try:
-            error_channel = self.bot.get_channel(channels["bot_news"])
+            error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
             text = core.cache.phrases.get("statistic_message_loop", {}).get("general_error_notification", "Cycle MessageLoop issued an error: {error}").format(owner_id=owner_id, error=error)
             await error_channel.send(text)
         except Exception as e:

@@ -111,7 +111,7 @@ class CurrencyEmbed(commands.Cog):
         traceback.print_exc()
         
         try:
-            error_channel = self.bot.get_channel(channels["bot_news"])
+            error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
             text = core.cache.phrases.get("currency_embed", {}).get("on_currency_error", "Currency Embed error: {error}").format(owner_id=owner_id, error=error)
             await error_channel.send(text)
             self.currency_embed.cancel()

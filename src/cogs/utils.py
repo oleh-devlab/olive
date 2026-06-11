@@ -72,7 +72,7 @@ class Utils(commands.Cog):
             config_online = config.getint('DEFAULT', 'max_online', fallback=0)
             if online_members > config_online:
                 text = core.cache.phrases.get("utils", {}).get("max_online_record", "New online users record: **{online_members}**").format(online_members=online_members)
-                await self.bot.get_channel(terminal_id).send(text)
+                await self.bot.get_or_fetch_channel(terminal_id).send(text)
                 config.set('DEFAULT', 'max_online', str(online_members))
             
             with open(config_file_path, 'w') as configfile:

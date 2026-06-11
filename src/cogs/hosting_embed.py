@@ -109,7 +109,7 @@ class Hosting(commands.Cog):
         traceback.print_exc()
         
         try:
-            error_channel = self.bot.get_channel(channels["bot_news"])
+            error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
             text = core.cache.phrases.get("hosting_embed", {}).get("on_ram_error", "Hosting (RAM) error: {error}").format(owner_id=owner_id, error=error)
             await error_channel.send(text)
             self.hosting_loop.cancel()
