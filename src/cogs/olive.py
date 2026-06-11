@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 
 import core.cache as cache
 
+days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+
 # This is a prototype cog for AI assistant functionality using Google GenAI.
 
 class AIAssistantCog(commands.Cog):
@@ -41,7 +43,9 @@ class AIAssistantCog(commands.Cog):
         if str(message.guild.id) not in self.llm_context:
             self.llm_context[str(message.guild.id)] = []
 
-        time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
+        dt_now = datetime.now(ZoneInfo("Europe/Kyiv"))
+        day_name = days_uk[dt_now.weekday()]
+        time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 
         self.llm_context[str(message.guild.id)].append({"role": "user", "parts": [{"text": f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
         
