@@ -30,14 +30,14 @@ class Utils(commands.Cog):
     async def on_connect(self):
         time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
 
-        text = core.cache.phrases.get("utils", {}).get("bot_connected", "Bot connected at {time_now}.").format(time_now=time_now)
+        text = core.cache.phrases.get("utils", {}).get("on_connected", "Bot connected at {time_now}.").format(time_now=time_now)
         print(text)
     
     @commands.Cog.listener()
     async def on_resumed(self):
         time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
 
-        text = core.cache.phrases.get("utils", {}).get("bot_resumed", "Bot resumed at {time_now}.").format(time_now=time_now)
+        text = core.cache.phrases.get("utils", {}).get("on_resumed", "Bot resumed at {time_now}.").format(time_now=time_now)
         print(text)
     
     
