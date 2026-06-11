@@ -3,13 +3,14 @@ from google.genai import types
 from pathlib import Path
 import os
 
-import core.cache
+import core.cache as cache
 
 class LLMClient:
     def __init__(self):
         self.client = get_new_client()
-        self.model_name = core.cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
-
+        self.model_name = cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
+        
+        # --- For future use, for now, they are not implemented. ---
         self.last_time_used = None
         self.start_time_of_minute_limit = None
         self.start_time_of_day_limit = None
@@ -17,15 +18,15 @@ class LLMClient:
         self.request_minute_limit = 15 # gemma 4
         self.request_day_limit = 1500 # gemma 4
         self.token_minute_limit = None # gemma 4
+        # ---------------------------
     
     async def connection_close(self):
-        return self.client.aio.aclose()
+        return await self.client.aio.aclose()
 
-    async def get_response(self, contents) -> types.Content:
+    async def get_response(self, contents, config) -> types.Content:
         return await self.client.aio.models.generate_content(
             model=self.model_name,
-            config=types.GenerateContentConfig(
-                system_instruction=core.cache.phrases.get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")),
+            config=config,
             contents=contents
         )
 
