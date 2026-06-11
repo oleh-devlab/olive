@@ -4,6 +4,9 @@ import json
 from google.genai import types
 from modules.google_genai import LLMClient
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import core.cache as cache
 
 # This is a prototype cog for AI assistant functionality using Google GenAI.
@@ -38,7 +41,9 @@ class AIAssistantCog(commands.Cog):
         if str(message.guild.id) not in self.llm_context:
             self.llm_context[str(message.guild.id)] = []
 
-        self.llm_context[str(message.guild.id)].append({"role": "user", "parts": [{"text": f"[{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
+        time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
+
+        self.llm_context[str(message.guild.id)].append({"role": "user", "parts": [{"text": f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
         
         system_instruction = cache.phrases.get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")
 
@@ -58,6 +63,7 @@ class AIAssistantCog(commands.Cog):
 
             if not i_should_answer:
                 await self.context_restrictions()
+                await self.write_context_to_file()
                 return
 
         reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
