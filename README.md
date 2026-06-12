@@ -42,7 +42,7 @@ The Discord bot was created based on the Flores project, which was previously us
 ## Setup Instructions
 
 ### Ukrainian
-[Ukrainian version of the initial setup instructions](docs/UK/setup-instructions.md) located in `docs/UK/setup-instructions.md`.
+[Ukrainian version of the initial setup instructions](/docs/UK/setup-instructions.md) located in `docs/UK/setup-instructions.md`.
 
 ### English
 
@@ -73,7 +73,7 @@ pip install -r requirements.txt
 - If you have made changes to the `requirements.txt` file to exclude certain dependencies, we recommend reverting it to its original state after the installation is complete to avoid conflicts when working with Git.
 - *Tip:* You can quickly revert the file by running `git checkout -- requirements.txt` or `git restore requirements.txt`.
 8. *(Optional)* Fill in `phrases.json`.
-    - Comprehensive documentation for `phrases.json` is currently unavailable, so you will need to check the source code to fill in the parts you want to change. However, you can review the multi-server format documentation: [English](docs/EN/walkthroughs/multi-server-phrases.md) | [Ukrainian](docs/UK/walkthroughs/multi-server-phrases.md).
+    - Comprehensive documentation for `phrases.json` is currently unavailable, so you will need to check the source code to fill in the parts you want to change. However, you can review the multi-server format documentation: [English](/docs/EN/walkthroughs/multi-server-phrases.md) | [Ukrainian](/docs/UK/walkthroughs/multi-server-phrases.md).
 
 9. Run the bot (it is recommended to run this from the `src` directory, or the one containing `main.py`):
 ```bash
