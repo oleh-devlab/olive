@@ -32,7 +32,7 @@ class PhrasesTools(commands.Cog):
         self, 
         inter: disnake.ApplicationCommandInteraction,
         key_path: str = commands.Param(description="Шлях до ключа (напр: utils/ping_response)"),
-        action: str = commands.Param(description="Дія: читати чи редагувати", choices=["read", "edit"], default="read"),
+        action: str = commands.Param(description="Дія: читати, редагувати чи отримати файл", choices=["read", "edit", "download"], default="read"),
         value: str = commands.Param(description="Нове значення (для режиму редагування)", default=None)
     ):
         await inter.response.defer(ephemeral=True)
@@ -124,6 +124,9 @@ class PhrasesTools(commands.Cog):
             await inter.edit_original_response(
                 content=f"Updates `{key_path}`!\n\n**Diff:**\n{diff_text}"
             )
+
+        elif action == "download":
+            await inter.edit_original_response(content="The file is attached.", file=disnake.File("phrases.json"))
 
 def setup(bot):
     bot.add_cog(PhrasesTools(bot))

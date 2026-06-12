@@ -1,6 +1,8 @@
 import json
 import core.cache
 
+# ---- UTILS ----
+
 async def u_decline(number, forms):
     """
     Відмінює українське слово після числа.
@@ -36,6 +38,9 @@ def format_embed_data(data, **kwargs):
             return data
     else:
         return data
+
+
+# ---- PHRASES TOOLS ----
 
 def get_phrases(guild_id=None):
     """
