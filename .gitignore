@@ -21,3 +21,4 @@ config.ini
 last_update.txt
 settings.py
 scripts/
+llm_context.json

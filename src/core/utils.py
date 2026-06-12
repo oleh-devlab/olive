@@ -1,6 +1,8 @@
 import json
 import core.cache
 
+# ---- UTILS ----
+
 async def u_decline(number, forms):
     """
     Відмінює українське слово після числа.
@@ -37,9 +39,21 @@ def format_embed_data(data, **kwargs):
     else:
         return data
 
+
+# ---- PHRASES TOOLS ----
+
+def get_phrases(guild_id=None):
+    """
+    Returns a dictionary of phrases for a specific server.
+    If no arguments are provided or guild_id=None, it returns phrases from the “global” key.
+    """
+    if guild_id is None:
+        return core.cache._phrases.get("global", {})
+    return core.cache._phrases.get(str(guild_id), {})
+
 async def load_phrases():
     with open("phrases.json", "r", encoding="utf-8") as file:
         new_phrases = json.load(file)
 
-    core.cache.phrases.clear()
-    core.cache.phrases.update(new_phrases)
+    core.cache._phrases.clear()
+    core.cache._phrases.update(new_phrases)
