@@ -55,14 +55,6 @@ class Utils(commands.Cog):
 
         text = core.cache.phrases.get("utils", {}).get("ping_response", "Error with getting message. Ping: {latency} ms.").format(latency=latency)
         await inter.send(text)
-    
-    @commands.slash_command(guild_ids=guilds)
-    @commands.is_owner()
-    async def reload_phrases(self, inter: disnake.ApplicationCommandInteraction):
-        await core.utils.load_phrases()
-
-        text = core.cache.phrases.get("utils", {}).get("reload_phrases_response", "Error with getting message.")
-        await inter.send(text, ephemeral=True)
 
     async def check_stats(self):
         await asyncio.sleep(2)
