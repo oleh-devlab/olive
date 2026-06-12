@@ -1,7 +1,7 @@
 import disnake
 from disnake.ext import commands
 
-import settings.guilds as guilds
+from settings import guilds
 
 import json
 import difflib
