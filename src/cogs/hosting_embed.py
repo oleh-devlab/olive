@@ -110,7 +110,7 @@ class Hosting(commands.Cog):
         
         try:
             error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = get_phrases(error_channel.guild.id).get("hosting_embed", {}).get("on_ram_error", "Hosting (RAM) error: {error}").format(owner_id=owner_id, error=error)
+            text = get_phrases().get("hosting_embed", {}).get("on_ram_error", "Hosting (RAM) error: {error}").format(owner_id=owner_id, error=error)
             await error_channel.send(text)
             self.hosting_loop.cancel()
         except Exception as e:

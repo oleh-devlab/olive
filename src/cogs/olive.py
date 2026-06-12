@@ -73,7 +73,7 @@ class AIAssistantCog(commands.Cog):
 
         reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
 
-        model_name = get_phrases(message.guild.id).get("olive", {}).get("model_name", "gemma-4-31b-it")
+        model_name = get_phrases().get("olive", {}).get("model_name", "gemma-4-31b-it")
         cache.llm_client.model_name = model_name
 
         async with message.channel.typing():

@@ -18,7 +18,7 @@ class PhrasesTools(commands.Cog):
     async def reload_phrases(self, inter: disnake.ApplicationCommandInteraction):
         await core.utils.load_phrases()
 
-        text = get_phrases(inter.guild.id).get("utils", {}).get("reload_phrases_response", "Error with getting message.")
+        text = get_phrases(inter.guild.id).get("phrases_tools", {}).get("reload_phrases_response", "Error with getting message.")
         await inter.send(text, ephemeral=True)
 
     
