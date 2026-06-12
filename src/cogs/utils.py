@@ -10,6 +10,7 @@ import configparser
 config = configparser.ConfigParser()
 
 import core.cache
+from core.utils import get_phrases
 
 config_dir_setting = paths["config_ini"]
 guild_id = main_guild_id
@@ -30,14 +31,14 @@ class Utils(commands.Cog):
     async def on_connect(self):
         time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
 
-        text = core.cache.phrases.get("utils", {}).get("on_connected", "Bot connected at {time_now}.").format(time_now=time_now)
+        text = get_phrases().get("utils", {}).get("on_connected", "Bot connected at {time_now}.").format(time_now=time_now)
         print(text)
     
     @commands.Cog.listener()
     async def on_resumed(self):
         time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
 
-        text = core.cache.phrases.get("utils", {}).get("on_resumed", "Bot resumed at {time_now}.").format(time_now=time_now)
+        text = get_phrases().get("utils", {}).get("on_resumed", "Bot resumed at {time_now}.").format(time_now=time_now)
         print(text)
     
     
@@ -45,7 +46,7 @@ class Utils(commands.Cog):
     async def on_disconnect(self):
         time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
 
-        text = core.cache.phrases.get("utils", {}).get("on_disconnect", "Bot disconnected at {time_now}.").format(time_now=time_now)
+        text = get_phrases().get("utils", {}).get("on_disconnect", "Bot disconnected at {time_now}.").format(time_now=time_now)
         print(text)
 
     @commands.slash_command(guild_ids=guilds)
@@ -53,7 +54,7 @@ class Utils(commands.Cog):
     async def ping(self, inter: disnake.ApplicationCommandInteraction):
         latency = f"{self.bot.latency * 1000:.1f}"
 
-        text = core.cache.phrases.get("utils", {}).get("ping_response", "Error with getting message. Ping: {latency} ms.").format(latency=latency)
+        text = get_phrases(inter.guild.id).get("utils", {}).get("ping_response", "Error with getting message. Ping: {latency} ms.").format(latency=latency)
         await inter.send(text)
 
     async def check_stats(self):
@@ -63,7 +64,7 @@ class Utils(commands.Cog):
             online_members = sum(1 for member in self.bot.get_guild(guild_id).members if member.status != disnake.Status.offline)
             config_online = config.getint('DEFAULT', 'max_online', fallback=0)
             if online_members > config_online:
-                text = core.cache.phrases.get("utils", {}).get("max_online_record", "New online users record: **{online_members}**").format(online_members=online_members)
+                text = get_phrases(guild_id).get("utils", {}).get("max_online_record", "New online users record: **{online_members}**").format(online_members=online_members)
                 await self.bot.get_or_fetch_channel(terminal_id).send(text)
                 config.set('DEFAULT', 'max_online', str(online_members))
             

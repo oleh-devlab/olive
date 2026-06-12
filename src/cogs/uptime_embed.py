@@ -8,7 +8,7 @@ from disnake.ext import commands, tasks
 from settings import is_battery
 
 import core.cache
-from core.utils import format_embed_data
+from core.utils import format_embed_data, get_phrases
 
 class UptimeEmbed(commands.Cog):
     def __init__(self, bot):
@@ -58,7 +58,7 @@ class UptimeEmbed(commands.Cog):
         
         cost_str = f"{cost_session:.4f}{'' if is_battery else '(VPS)'} uah."
 
-        raw_embed_data = core.cache.phrases.get("uptime_embed", {}).get("embed_data", { "title": "Uptime", "description": "{uptime_str}" })
+        raw_embed_data = get_phrases().get("uptime_embed", {}).get("embed_data", { "title": "Uptime", "description": "{uptime_str}" })
         formatted_embed_data = format_embed_data(raw_embed_data, uptime_str=uptime_str, cost_str=cost_str)
         embed = disnake.Embed.from_dict(formatted_embed_data)
 

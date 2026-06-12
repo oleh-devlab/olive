@@ -8,6 +8,7 @@ from settings import is_battery, battery_update_seconds, min_safe_percent_charge
 
 import core.cache
 import core.utils
+from core.utils import get_phrases
 
 min_perc = min_safe_percent_charge
 max_perc = max_safe_percent_charge
@@ -21,7 +22,7 @@ class Battery(commands.Cog):
         if is_battery:
             self.battery_loop.start()
         else:
-            raw_embed = core.cache.phrases.get("battery_embed", {}).get("no_battery_embed", {"title": "No battery information available", "description": "This device does not have battery information or it cannot be accessed."})
+            raw_embed = get_phrases().get("battery_embed", {}).get("no_battery_embed", {"title": "No battery information available", "description": "This device does not have battery information or it cannot be accessed."})
             core.cache.embeds_to_send["battery"] = disnake.Embed.from_dict(raw_embed)
 
 
@@ -53,7 +54,7 @@ class Battery(commands.Cog):
 
         plus_sign = '+' if plus_percent else ''
         
-        raw_embed = core.cache.phrases.get("battery_embed", {}).get("battery_embed", {"title": "Battery Information", "description": "Error with getting text."})
+        raw_embed = get_phrases().get("battery_embed", {}).get("battery_embed", {"title": "Battery Information", "description": "Error with getting text."})
 
         embed = disnake.Embed.from_dict(
             core.utils.format_embed_data(

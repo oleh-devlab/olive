@@ -7,7 +7,7 @@ import json
 import psutil
 import disnake
 import aiohttp
-from core.utils import format_embed_data
+from core.utils import format_embed_data, get_phrases
 from aiohttp import ClientTimeout
 
 import traceback
@@ -100,7 +100,7 @@ class CurrencyEmbed(commands.Cog):
                 print(f"EUR: {eur_rate} грн, дата: {eur_date}")
                 self.usd_eur_test = {'usd': usd_rate, 'eur': eur_rate}
         
-        raw_embed_data = core.cache.phrases.get("currency_embed", {}).get("currency_embed_data", { "title": "Економіка" })
+        raw_embed_data = get_phrases().get("currency_embed", {}).get("currency_embed_data", { "title": "Економіка" })
         formatted_embed_data = format_embed_data(raw_embed_data, usd_rate=(usd_rate if usd_rate is not None else 'N/A'), usd_date=usd_date, eur_rate=(eur_rate if eur_rate is not None else 'N/A'), eur_date=eur_date)
         embed0 = disnake.Embed.from_dict(formatted_embed_data)
         
@@ -112,7 +112,7 @@ class CurrencyEmbed(commands.Cog):
         
         try:
             error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = core.cache.phrases.get("currency_embed", {}).get("on_currency_error", "Currency Embed error: {error}").format(owner_id=owner_id, error=error)
+            text = get_phrases(error_channel.guild.id).get("currency_embed", {}).get("on_currency_error", "Currency Embed error: {error}").format(owner_id=owner_id, error=error)
             await error_channel.send(text)
             self.currency_embed.cancel()
         except Exception as e:

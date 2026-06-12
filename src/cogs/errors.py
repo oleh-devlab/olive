@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import core.cache
-from core.utils import format_embed_data
+from core.utils import format_embed_data, get_phrases
 
 tz = ZoneInfo('Europe/Kyiv')
 
@@ -25,6 +25,7 @@ class Errors(commands.Cog):
     async def handle_error(self, ctx_or_inter, error):
         """Main error handler."""
 
+        guild_id = ctx_or_inter.guild.id if ctx_or_inter.guild else None
         is_slash = isinstance(ctx_or_inter, disnake.ApplicationCommandInteraction)
 
         if isinstance(error, commands.CommandOnCooldown):
@@ -46,7 +47,7 @@ class Errors(commands.Cog):
                 f"encountered an error:\n> {error}"
             )
             
-            message = core.cache.phrases.get("errors", {}).get("cooldown_message", "You are on cooldown. Try again in {remaining_time:.2f} seconds.").format(mention=ctx_or_inter.author.mention, remaining_time=remaining_time)
+            message = get_phrases(guild_id).get("errors", {}).get("cooldown_message", "You are on cooldown. Try again in {remaining_time:.2f} seconds.").format(mention=ctx_or_inter.author.mention, remaining_time=remaining_time)
             
             if is_slash:
                 await ctx_or_inter.send(message, ephemeral=True)
@@ -55,7 +56,7 @@ class Errors(commands.Cog):
 
             # анти-флуд логіка
             if 0 < time_since_last < 4:
-                raw_embed_data = core.cache.phrases.get("errors", {}).get("antiflood_kick_message_to_user_embed", {
+                raw_embed_data = get_phrases(guild_id).get("errors", {}).get("antiflood_kick_message_to_user_embed", {
                     "title": "Server",
                     "description": "You have been kicked for flooding commands."
                 })
@@ -85,7 +86,7 @@ class Errors(commands.Cog):
 
                 log_channel = await self.bot.get_or_fetch_channel(core.cache.channels.get("add_logs"))
                 if is_kicked:
-                    raw_embed_data = core.cache.phrases.get("errors", {}).get("antiflood_kicked_log_embed", {"title": "Anti-flood kicked a user"})
+                    raw_embed_data = get_phrases(guild_id).get("errors", {}).get("antiflood_kicked_log_embed", {"title": "Anti-flood kicked a user"})
                     formatted_embed_data = format_embed_data(raw_embed_data, author_name=ctx_or_inter.author.name, user_mention=ctx_or_inter.author.mention, user_id=ctx_or_inter.author.id, channel_mention=ctx_or_inter.channel.mention, time_since_last=time_since_last, remaining_time=remaining_time)
                     log_embed = disnake.Embed.from_dict(formatted_embed_data)
                     
@@ -94,7 +95,7 @@ class Errors(commands.Cog):
                         embed=log_embed
                     )
                 else:
-                    raw_embed_data = core.cache.phrases.get("errors", {}).get("antiflood_not_kicked_log_embed", {"title": "Anti-flood (almost) triggered"})
+                    raw_embed_data = get_phrases(guild_id).get("errors", {}).get("antiflood_not_kicked_log_embed", {"title": "Anti-flood (almost) triggered"})
                     formatted_embed_data = format_embed_data(raw_embed_data, author_name=ctx_or_inter.author.name, user_mention=ctx_or_inter.author.mention, user_id=ctx_or_inter.author.id, channel_mention=ctx_or_inter.channel.mention, time_since_last=time_since_last, remaining_time=remaining_time)
                     log_embed = disnake.Embed.from_dict(formatted_embed_data)
                     
@@ -117,12 +118,12 @@ class Errors(commands.Cog):
             if time_refresh < 10 or len(ctx_or_inter.message.content) >= 100:
                 return
 
-            text = core.cache.phrases.get("errors", {}).get("command_not_found", "Command **\"{command}\"** not found.").format(command=ctx_or_inter.message.content.split()[0])
+            text = get_phrases(guild_id).get("errors", {}).get("command_not_found", "Command **\"{command}\"** not found.").format(command=ctx_or_inter.message.content.split()[0])
             await ctx_or_inter.reply(text)
             self.last_time_not_found = datetime.now(timezone.utc)
 
         elif isinstance(error, commands.NotOwner) or isinstance(error, commands.MissingPermissions):
-            message = core.cache.phrases.get("errors", {}).get("access_denied", "You do not have the required permissions to use this command.")
+            message = get_phrases(guild_id).get("errors", {}).get("access_denied", "You do not have the required permissions to use this command.")
             if is_slash:
                 await ctx_or_inter.send(message, ephemeral=True)
             else:

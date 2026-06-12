@@ -8,6 +8,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import core.cache as cache
+from core.utils import get_phrases
 
 days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
@@ -25,14 +26,14 @@ class AIAssistantCog(commands.Cog):
 
     async def cog_load(self):
         cache.llm_client = LLMClient()
-        print(cache.phrases.get("olive", {}).get("api_client_loaded", "API Google is loaded."))
+        print(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
         await self.load_context_from_file()
 
     def cog_unload(self):
         if cache.llm_client:
             self.bot.loop.create_task(cache.llm_client.connection_close())
-            text = cache.phrases.get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
+            text = get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
             print(text)
 
     @commands.Cog.listener("on_message")
@@ -49,9 +50,9 @@ class AIAssistantCog(commands.Cog):
 
         self.llm_context[str(message.guild.id)].append({"role": "user", "parts": [{"text": f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
         
-        system_instruction = cache.phrases.get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")
+        system_instruction = get_phrases(message.guild.id).get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")
 
-        test_instruction_addition = cache.phrases.get("olive", {}).get("test_instruction_addition", None)
+        test_instruction_addition = get_phrases(message.guild.id).get("olive", {}).get("test_instruction_addition", None)
         if test_instruction_addition:
             test_system_instruction = f"{system_instruction}\n\n{test_instruction_addition}"
 
@@ -72,7 +73,7 @@ class AIAssistantCog(commands.Cog):
 
         reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
 
-        model_name = cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
+        model_name = get_phrases(message.guild.id).get("olive", {}).get("model_name", "gemma-4-31b-it")
         cache.llm_client.model_name = model_name
 
         async with message.channel.typing():
@@ -126,7 +127,7 @@ class AIAssistantCog(commands.Cog):
     async def turn_olive(self, ctx: disnake.ApplicationCommandInteraction):
         self.olive_enabled = not self.olive_enabled
         status = "enabled" if self.olive_enabled else "disabled"
-        text = cache.phrases.get("olive", {}).get("olive_status", "Olive is now {status}.").format(status=status)
+        text = get_phrases(ctx.guild.id).get("olive", {}).get("olive_status", "Olive is now {status}.").format(status=status)
         await ctx.send(text, ephemeral=True)
 
 def setup(bot: commands.Bot):

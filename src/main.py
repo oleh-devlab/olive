@@ -10,6 +10,7 @@ import json
 import core.bot
 
 import core.cache, core.utils
+from core.utils import get_phrases
 
 import configparser
 config = configparser.ConfigParser()
@@ -87,9 +88,10 @@ async def on_ready():
         
         Note = Note if Note else "None."
 
-        final_message = core.cache.phrases.get("main", {}).get("on_ready", "Bot started at {formatted_time}. Notes: {Note}. Error with taking phrases.").format(formatted_time=formatted_time, time_difference=time_difference, Note=Note)
-
         channel = await bot.get_or_fetch_channel(channel_for_bot_news)
+
+        final_message = get_phrases(channel.guild.id).get("main", {}).get("on_ready", "Bot started at {formatted_time}. Notes: {Note}. Error with taking phrases.").format(formatted_time=formatted_time, time_difference=time_difference, Note=Note)
+
         await channel.send(final_message)
         print(f'\n[INFO of Discord] : {final_message}\n')
 
@@ -107,7 +109,7 @@ if __name__ == '__main__':
     asyncio.run(core.utils.load_phrases())
 
     if not os.path.exists(token_file_path):
-        text = core.cache.phrases.get("main", {}).get("token_file_not_found", "[Error] Token file not found at {token_file_path}. Bot cannot start.").format(token_file_path=token_file_path)
+        text = get_phrases().get("main", {}).get("token_file_not_found", "[Error] Token file not found at {token_file_path}. Bot cannot start.").format(token_file_path=token_file_path)
         print(text)
     else:
         with open(token_file_path, 'r') as f:

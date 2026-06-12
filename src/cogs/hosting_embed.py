@@ -9,7 +9,7 @@ import traceback
 import core.cache
 from settings import *
 
-from core.utils import u_decline, format_embed_data
+from core.utils import u_decline, format_embed_data, get_phrases
 
 async def get_memory_info():
     mem = psutil.virtual_memory()
@@ -72,7 +72,7 @@ class Hosting(commands.Cog):
         active_days_total_start = await u_decline(active_days_total, ['день', 'дні', 'днів'])
         active_hours_total_start = await u_decline(active_hours_total, ['година', 'години', 'годин'])
 
-        raw_embed_data = core.cache.phrases.get("hosting_embed", {}).get("nmt_taimer_embed_data", { "title": "NMT" })
+        raw_embed_data = get_phrases().get("hosting_embed", {}).get("nmt_taimer_embed_data", { "title": "NMT" })
         formatted_embed_data = format_embed_data(raw_embed_data, 
                                                  weeks_start=weeks_start, days_start=days_start, hours_start=hours_start,
                                                  total_days_start=total_days_start, total_hours_start=total_hours_start,
@@ -91,7 +91,7 @@ class Hosting(commands.Cog):
         total_total = memory_info['swap_total_gib'] + memory_info['memory_total_gib']
         total_percent = (100 * (total_used / total_total)) if total_total > 0 else 0
         
-        raw_embed_data = core.cache.phrases.get("hosting_embed", {}).get("server_embed_data", { "title": "Сервер" })
+        raw_embed_data = get_phrases().get("hosting_embed", {}).get("server_embed_data", { "title": "Сервер" })
         formatted_embed_data = format_embed_data(raw_embed_data, 
                                                  memory_used_gib=memory_info['memory_used_gib'], memory_total_gib=memory_info['memory_total_gib'], memory_percent=memory_info['memory_percent'],
                                                  swap_used_gib=memory_info['swap_used_gib'], swap_total_gib=memory_info['swap_total_gib'], swap_percent=memory_info['swap_percent'],
@@ -110,7 +110,7 @@ class Hosting(commands.Cog):
         
         try:
             error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = core.cache.phrases.get("hosting_embed", {}).get("on_ram_error", "Hosting (RAM) error: {error}").format(owner_id=owner_id, error=error)
+            text = get_phrases(error_channel.guild.id).get("hosting_embed", {}).get("on_ram_error", "Hosting (RAM) error: {error}").format(owner_id=owner_id, error=error)
             await error_channel.send(text)
             self.hosting_loop.cancel()
         except Exception as e:

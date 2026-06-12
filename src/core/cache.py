@@ -14,4 +14,4 @@ llm_client = None
 
 active_cogs_list = {}
 
-phrases = {}
+_phrases = {}

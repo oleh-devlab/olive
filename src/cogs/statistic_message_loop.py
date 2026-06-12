@@ -10,6 +10,7 @@ import disnake
 from settings import channels, owner_id
 
 import core.cache
+from core.utils import get_phrases
 
 
 class MessageLoop(commands.Cog):
@@ -84,10 +85,10 @@ class MessageLoop(commands.Cog):
 
             # 3. Sending initial messages and filling the list for future edits
             await asyncio.sleep(0.5)
-            text = core.cache.phrases.get("statistic_message_loop", {}).get("welcome_message", "Error with getting message for statistic channel.")
             
             for channel in self.channels:
                 try:
+                    text = get_phrases(channel.guild.id).get("statistic_message_loop", {}).get("welcome_message", "Error with getting message for statistic channel.")
                     msg = await channel.send(text)
                     self.messages.append(msg)
                     print(f"Initial message sent to channel {channel.id} for MessageLoop.")
@@ -124,7 +125,7 @@ class MessageLoop(commands.Cog):
                 try:
                     error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
                     if error_channel:
-                        text = core.cache.phrases.get("statistic_message_loop", {}).get("api_error_notification", "MessageLoop got an error `{err_type}`. Delay: {delay} s.").format(err_type=err_type, delay=delay)
+                        text = get_phrases(error_channel.guild.id).get("statistic_message_loop", {}).get("api_error_notification", "MessageLoop got an error `{err_type}`. Delay: {delay} s.").format(err_type=err_type, delay=delay)
                         await error_channel.send(text)
                 except Exception as e:
                     print(f"[ERROR main_loop_message] Critical error in handler while notifying about {err_type} error: {e}")
@@ -136,7 +137,7 @@ class MessageLoop(commands.Cog):
 
         try:
             error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = core.cache.phrases.get("statistic_message_loop", {}).get("general_error_notification", "Cycle MessageLoop issued an error: {error}").format(owner_id=owner_id, error=error)
+            text = get_phrases(error_channel.guild.id).get("statistic_message_loop", {}).get("general_error_notification", "Cycle MessageLoop issued an error: {error}").format(owner_id=owner_id, error=error)
             await error_channel.send(text)
         except Exception as e:
             print(f"[ERROR main_loop_message] Critical error in handler: {e}")

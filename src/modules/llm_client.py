@@ -4,11 +4,12 @@ from pathlib import Path
 import os
 
 import core.cache as cache
+from core.utils import get_phrases
 
 class LLMClient:
     def __init__(self):
         self.client = get_new_client()
-        self.model_name = cache.phrases.get("olive", {}).get("model_name", "gemma-4-31b-it")
+        self.model_name = get_phrases().get("olive", {}).get("model_name", "gemma-4-31b-it")
         
         # --- For future use, for now, they are not implemented. ---
         self.last_time_used = None
