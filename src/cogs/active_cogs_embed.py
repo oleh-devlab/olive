@@ -4,6 +4,10 @@ from disnake.ext import commands, tasks
 import core.cache
 from core.utils import format_embed_data, get_phrases
 
+from settings import paths
+
+cog_path = paths["cogs"]
+
 class ActiveCogsEmbed(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -14,7 +18,7 @@ class ActiveCogsEmbed(commands.Cog):
 
     @tasks.loop(seconds=45)
     async def update_active_cogs(self):
-        formatted_cogs_list = "\n".join([f"[+] {cog_name} - from {load_time}" for cog_name, load_time in core.cache.active_cogs_list.items()])
+        formatted_cogs_list = "\n".join([f"[+] {cog_name.removeprefix(f'{cog_path}.')} - from {load_time}" for cog_name, load_time in core.cache.active_cogs_list.items()])
         
         raw_embed_data = get_phrases().get("active_cogs_embed", {}).get("embed_data", { "title": "Active Cogs", "description": "No data available." })
         formatted_embed_data = format_embed_data(raw_embed_data, formatted_cogs_list=formatted_cogs_list)
