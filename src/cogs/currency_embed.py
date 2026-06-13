@@ -27,7 +27,8 @@ class CurrencyEmbed(commands.Cog):
         self.url = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchangenew?json"
         self.HTTP_TIMEOUT = ClientTimeout(total=10)
 
-        self.currency_embed.start()
+        if enable_currency_embed:
+            self.currency_embed.start()
 
     def cog_unload(self):
         self.currency_embed.stop()

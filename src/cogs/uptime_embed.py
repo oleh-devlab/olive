@@ -5,7 +5,7 @@ import disnake
 from disnake.ext import commands, tasks
 
 
-from settings import is_battery
+from settings import is_battery, enable_uptime_embed
 
 import core.cache
 from core.utils import format_embed_data, get_phrases
@@ -19,7 +19,8 @@ class UptimeEmbed(commands.Cog):
 
         self.start_time = datetime.now(ZoneInfo("Europe/Kyiv")) # Approximate bot start time
 
-        self.update_uptime.start()
+        if enable_uptime_embed:
+            self.update_uptime.start()
 
 
     def cog_unload(self):

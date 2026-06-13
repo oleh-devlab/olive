@@ -7,7 +7,7 @@ from disnake.ext import commands, tasks
 import traceback
 import disnake
 
-from settings import channels, owner_id
+from settings import channels, owner_id, embeds_blacklist
 
 import core.cache
 from core.utils import get_phrases
@@ -19,7 +19,9 @@ class MessageLoop(commands.Cog):
         self.channels = []
         self.messages = []
 
-        self.last_embeds_dicts = []
+        self.last_embeds_dicts = {}
+        
+        self.channels_valid_embeds = {}
 
         self.retries_503 = 0
 
@@ -41,23 +43,39 @@ class MessageLoop(commands.Cog):
         formatted_time = now.strftime('%d.%m.%Y %H:%M:%S')
         content = f"`{formatted_time} UTC+2`"
 
-        valid_embeds = [emb for emb in core.cache.embeds_to_send.values() if emb is not None]
-        # Колись зробити систему вимкнення ембедів через команду та БД і так далі
+        # TODO: Optimize this
+
+        for channel in self.channels:
+            valid_embeds = []
+            channel_id = channel.id
+            channel_guild_id = channel.guild.id
+
+            for emb_name, emb in core.cache.embeds_to_send.items():
+                if (emb is not None) and not (emb_name in embeds_blacklist.get(channel_guild_id, [])):
+                    valid_embeds.append(emb)
+            
+            self.channels_valid_embeds[channel_id] = valid_embeds
+        
+        # self.channels_valid_embeds = {channel_id: [emb1, emb2, ...]}
 
         # Compare current embeds to avoid unnecessary edits
-        try:
-            new_embeds_dicts = [e.to_dict() for e in valid_embeds]
-        except Exception:
-            print(f"Error converting new embeds to dicts for {content}.")
-            new_embeds_dicts = []
-
-        if self.last_embeds_dicts == new_embeds_dicts:
-            # print(f"Embeds are the same, skipping edit for {content}.")
-            return
+        new_embeds_dicts = {}
+        for channel_id, embeds in self.channels_valid_embeds.items():
+            try:
+                new_embeds_dicts[channel_id] = [e.to_dict() for e in embeds]
+            except Exception:
+                print(f"Error converting new embeds to dicts for {content} in channel {channel_id}.")
+                new_embeds_dicts[channel_id] = []            
 
         for message in self.messages:
-            await message.edit(content=content, embeds=valid_embeds)
+            message_channel_id = message.channel.id
+            if self.last_embeds_dicts.get(message_channel_id, []) == new_embeds_dicts.get(message_channel_id, []):
+                print(f"Embeds are the same, skipping edit for {content}.")
+                continue
+
+            await message.edit(content=content, embeds=self.channels_valid_embeds[message_channel_id])
             await asyncio.sleep(0.5)
+
         self.last_embeds_dicts = new_embeds_dicts
 
     @main_loop.before_loop
@@ -66,12 +84,14 @@ class MessageLoop(commands.Cog):
         
         try:
             self.channels = []
+            self.channels_valid_embeds = {}
             
             # 1. Getting channels
             for channel_id in channels["statistic"]:
                 try:
                     channel = await self.bot.get_or_fetch_channel(channel_id)
                     self.channels.append(channel)
+                    self.channels_valid_embeds[channel.id] = []
                 except Exception as e:
                     print(f"[before_main_loop WARNING] Not found channel {channel_id}: {e}")
 

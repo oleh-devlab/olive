@@ -29,7 +29,8 @@ class Hosting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        self.hosting_loop.start()
+        if enable_hosting_embed:
+            self.hosting_loop.start()
 
     def cog_unload(self):
         self.hosting_loop.stop()
