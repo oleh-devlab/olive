@@ -7,7 +7,7 @@ Operational Liaison for Intelligent Virtual Engagement
 
 OLIVE is a modular hub designed to integrate disparate microservices into a single, managed ecosystem, utilizing Discord as its primary control interface.
 
-The Discord bot was created based on the Flores project, which was previously used as a test and training project. The source code is not publicly available.
+We didn't build the Discord bot from scratch; instead, we based it on the Flores project, which was previously used as a test and learning project. The source code for the Flores bot is not publicly available (it has been lost), but OLIVE is its successor.
 
 ---
 
