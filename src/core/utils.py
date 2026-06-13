@@ -1,7 +1,6 @@
 import json
 import core.cache
 
-# ---- UTILS ----
 
 async def u_decline(number, forms):
     """
@@ -40,7 +39,6 @@ def format_embed_data(data, **kwargs):
         return data
 
 
-# ---- PHRASES TOOLS ----
 
 def get_phrases(guild_id=None):
     """

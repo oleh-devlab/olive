@@ -12,8 +12,6 @@ from core.utils import get_phrases
 
 days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
-# This is a prototype cog for AI assistant functionality using Google GenAI.
-
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot

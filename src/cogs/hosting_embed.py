@@ -36,11 +36,9 @@ class Hosting(commands.Cog):
         self.hosting_loop.stop()
 
     async def get_taimer_embed(self):
-        # --- Settings ---
         test_datetime = datetime(2025, 5, 14, 0, 0, 0)
         sleep_hours_per_day = 8.5
         
-        # --- Current time and difference ---
         now = datetime.now(timezone.utc)
         delta = test_datetime - now
         
@@ -100,10 +98,7 @@ class Hosting(commands.Cog):
         
         embed0 = disnake.Embed.from_dict(formatted_embed_data)
 
-        # embed1 = await self.get_taimer_embed()
-        
         core.cache.embeds_to_send["server_load"] = embed0
-        # core.cache.embeds_to_send["taimer"] = embed1
 
     @hosting_loop.error
     async def on_ram_error(self, error):

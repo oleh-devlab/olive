@@ -71,26 +71,9 @@ class Utils(commands.Cog):
             
             with open(config_file_path, 'w') as configfile:
                 config.write(configfile)
-    
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        return
-
-        if message.author.bot:
-            pass
-        else:
-            # async with core.cache.configLock:
-            #     config.read(config_file_path)
-            #     config.set('DEFAULT', 'messanges_of_week', (config.getint('DEFAULT', 'messanges_of_week')+1))
-            #     with open(config_file_path, 'w') as configfile:
-            #         config.write(configfile)
-            pass
-
-        await self.check_stats()
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
-        return
         await self.check_stats()
 
 

@@ -35,6 +35,9 @@ class PhrasesTools(commands.Cog):
         action: str = commands.Param(description="Дія: читати, редагувати чи отримати файл", choices=["read", "edit", "download"], default="read"),
         value: str = commands.Param(description="Нове значення (для режиму редагування)", default=None)
     ):
+        """
+        TODO: global keys
+        """
         await inter.response.defer(ephemeral=True)
 
         # Load JSON

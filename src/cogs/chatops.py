@@ -39,7 +39,6 @@ class ChatOps(commands.Cog):
             remote = 'origin'
             content += f"No remote location was specified, so `{remote}` was selected.\n"
 
-        # --- git pull in console
         cmd = ['git', 'pull']
         if remote:
             cmd.append(remote)
@@ -55,7 +54,6 @@ class ChatOps(commands.Cog):
         
         stdout, stderr = await process.communicate()
 
-        # --- Output result
         if process.returncode == 0:
             content += f"\n```\n{stdout.decode('utf-8').strip()}\n```\nReload the cogs if needed."
             await inter.edit_original_response(

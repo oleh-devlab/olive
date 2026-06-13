@@ -21,7 +21,7 @@ class OliveBot (commands.Bot):
 
     def unload_extension(self, name):
         core.cache.active_cogs_list.pop(name, None)
-        # ! In some cases, the cog may be unloaded, but this function may not be triggered.
+        # NOTE: In some cases, the cog may be unloaded, but this function may not be triggered.
 
         try:
             super().unload_extension(name)

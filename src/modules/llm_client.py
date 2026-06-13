@@ -10,7 +10,7 @@ class LLMClient:
         self.client = get_new_client()
         self.model_name = get_phrases().get("olive", {}).get("model_name", "gemma-4-31b-it")
         
-        # --- For future use, for now, they are not implemented. ---
+        # TODO: implement rate limiting
         self.last_time_used = None
         self.start_time_of_minute_limit = None
         self.start_time_of_day_limit = None
@@ -18,7 +18,6 @@ class LLMClient:
         self.request_minute_limit = 15 # gemma 4
         self.request_day_limit = 1500 # gemma 4
         self.token_minute_limit = None # gemma 4
-        # ---------------------------
     
     async def connection_close(self):
         return await self.client.aio.aclose()
