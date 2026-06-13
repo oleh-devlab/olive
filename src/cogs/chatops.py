@@ -4,11 +4,12 @@ import os
 import asyncio
 import re
 
+import settings
+import core.cache
+
 import configparser
 config = configparser.ConfigParser()
 
-import settings
-import core.cache
 
 cogs_directory = settings.paths["cogs"]
 

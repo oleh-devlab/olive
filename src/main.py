@@ -1,16 +1,14 @@
 import disnake
-from disnake.ext import commands
 from disnake import Activity, ActivityType
 import os
 import asyncio
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-import json
 
 import core.bot
-
-import core.cache, core.utils
+import core.cache
 from core.utils import get_phrases
+from settings import paths, guilds, channels, safe_seconds_before_start
 
 import configparser
 config = configparser.ConfigParser()
@@ -22,7 +20,6 @@ intents.voice_states = True
 intents.guilds = True
 
 
-from settings import *
 cogs_directory = paths["cogs"]
 token_file_path = paths["token_file"]
 config_ini_path = paths["config_ini"]
@@ -78,7 +75,6 @@ async def on_ready():
         if time_difference is not None:
             if time_difference.total_seconds() <= safe_seconds_before_start:
                 Note += f"[Warning]: not enough time has passed since the last run. asyncio.sleep({safe_seconds_before_start}) started before the end of the run."
-                print(f'')
                 await asyncio.sleep(safe_seconds_before_start)
         else:
             print('[INFO] Error of last_run_time.\nRunning asyncio.sleep(15)...')
@@ -115,5 +111,5 @@ if __name__ == '__main__':
         with open(token_file_path, 'r') as f:
             token = f.read().strip()
         
-        if not (token is None):
+        if (token is not None):
             bot.run(token)

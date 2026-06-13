@@ -1,10 +1,8 @@
 from disnake.ext import commands, tasks
-import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import os
 import json
-import psutil
 import disnake
 import aiohttp
 from core.utils import format_embed_data, get_phrases
@@ -13,7 +11,7 @@ from aiohttp import ClientTimeout
 import traceback
 
 import core.cache
-from settings import *
+from settings import enable_currency_embed, channels, owner_id
 
 tz = ZoneInfo('Europe/Kyiv')
 

@@ -3,7 +3,6 @@ from google.genai import types
 from pathlib import Path
 import os
 
-import core.cache as cache
 from core.utils import get_phrases
 
 class LLMClient:

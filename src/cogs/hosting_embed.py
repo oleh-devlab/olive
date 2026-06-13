@@ -1,5 +1,5 @@
 from disnake.ext import commands, tasks
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import psutil
 import disnake
@@ -7,7 +7,7 @@ import disnake
 import traceback
 
 import core.cache
-from settings import *
+from settings import enable_hosting_embed, channels, owner_id
 
 from core.utils import u_decline, format_embed_data, get_phrases
 

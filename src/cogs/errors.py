@@ -69,7 +69,7 @@ class Errors(commands.Cog):
 
                 
 
-                log_message += f"\nLess than 4 seconds — bot tries to kick the user."
+                log_message += "\nLess than 4 seconds — bot tries to kick the user."
                 try:
                     await ctx_or_inter.author.kick(
                         reason=(

@@ -2,15 +2,17 @@ import disnake
 from disnake.ext import commands
 import os
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 
-from settings import owner_id, paths, channels, main_guild_id, guilds
+from zoneinfo import ZoneInfo
+
+from settings import paths, channels, main_guild_id, guilds
+import core.cache
+from core.utils import get_phrases
 
 import configparser
 config = configparser.ConfigParser()
 
-import core.cache
-from core.utils import get_phrases
 
 config_dir_setting = paths["config_ini"]
 guild_id = main_guild_id
@@ -19,7 +21,6 @@ terminal_id = channels["terminal_channel"]
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 config_file_path = os.path.join(parent_dir, config_dir_setting)
 
-from zoneinfo import ZoneInfo
 tz = ZoneInfo('Europe/Kyiv')
 
 class Utils(commands.Cog):

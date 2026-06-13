@@ -1,5 +1,3 @@
-import asyncio
-
 embeds_to_send = {
     "server_load": None,
     "currency": None,

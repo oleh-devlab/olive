@@ -50,7 +50,7 @@ class MessageLoop(commands.Cog):
             channel_guild_id = channel.guild.id
 
             for emb_name, emb in core.cache.embeds_to_send.items():
-                if (emb is not None) and not (emb_name in embeds_blacklist.get(channel_guild_id, [])):
+                if (emb is not None) and (emb_name not in embeds_blacklist.get(channel_guild_id, [])):
                     valid_embeds.append(emb)
             
             self.channels_valid_embeds[channel_id] = valid_embeds
