@@ -14,7 +14,8 @@ paths = {
 channels = {
     "bot_news": 123,
     "terminal_channel": 123, # A channel where users can use the bot's commands. We plan to remove this setting.
-    "statistic": [123, 123] # The channel(s) where the bot can post and edit its own messages.
+    "statistic": [123, 123], # The channel(s) where the bot can post and edit its own messages.
+    "add_logs": 123 # For the error handler (CoolDown and others)
 }
 # For "statistic" channels: Ideally, there should be no other messages in the channel besides those from the bot
 
@@ -22,7 +23,7 @@ guilds = [123, 456]
 main_guild_id = 123
 
 # --- Modules and embeds ---
-enable_battery_embed = 0 # Whether the device has a battery. Needed to avoid fetching information about charge, current, and the rest.
+enable_battery_embed = 0
 enable_currency_embed = 1
 enable_hosting_embed = 1
 enable_uptime_embed = 1
@@ -36,6 +37,7 @@ embeds_blacklist = {
 }
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
+is_battery = 0 # Whether the device has a battery
 min_safe_percent_charge = 35
 max_safe_percent_charge = 70
 battery_update_seconds = 180 # (Seconds) The number of seconds between each update of the battery status (charge, current, etc.)

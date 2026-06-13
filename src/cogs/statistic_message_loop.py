@@ -70,7 +70,7 @@ class MessageLoop(commands.Cog):
         for message in self.messages:
             message_channel_id = message.channel.id
             if self.last_embeds_dicts.get(message_channel_id, []) == new_embeds_dicts.get(message_channel_id, []):
-                print(f"Embeds are the same, skipping edit for {content}.")
+                # print(f"Embeds are the same, skipping edit for {content} in channel {message_channel_id}.")
                 continue
 
             await message.edit(content=content, embeds=self.channels_valid_embeds[message_channel_id])
