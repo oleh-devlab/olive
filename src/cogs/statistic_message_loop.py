@@ -23,11 +23,10 @@ class MessageLoop(commands.Cog):
         
         self.channels_valid_embeds = {}
 
-        self.retries_503 = 0
+        self.retries_5xx = 0
 
         self.base_delay = 5
         self.max_delay = 150
-        self.retries = 0
 
         self.last_error_time = 0.0
 
@@ -85,6 +84,7 @@ class MessageLoop(commands.Cog):
         try:
             self.channels = []
             self.channels_valid_embeds = {}
+            self.messages = []
             
             # 1. Getting channels
             for channel_id in channels["statistic"]:
@@ -129,7 +129,7 @@ class MessageLoop(commands.Cog):
             current_time = time.time()
 
             if current_time - self.last_error_time > 600:
-                self.retries_503 = 0
+                self.retries_5xx = 0
                 
             self.last_error_time = current_time
 
@@ -137,11 +137,11 @@ class MessageLoop(commands.Cog):
             time_now = datetime.now(ZoneInfo('Europe/Kyiv')).strftime('%d.%m.%Y %H:%M:%S')
             print(f"[{time_now}] {err_type} from Discord API.")
 
-            delay = min(self.max_delay, self.base_delay * (2 ** self.retries_503))
-            print(f"Attempt: {self.retries_503}. Delay before restart: {delay} seconds.")
+            delay = min(self.max_delay, self.base_delay * (2 ** self.retries_5xx))
+            print(f"Attempt: {self.retries_5xx}. Delay before restart: {delay} seconds.")
 
             # Notify the channel only when we first reach the maximum delay or this is the first time
-            if (delay == self.base_delay) or (delay == self.max_delay and self.base_delay * (2 ** (self.retries_503 - 1)) < self.max_delay):
+            if (delay == self.base_delay) or (delay == self.max_delay and self.base_delay * (2 ** (self.retries_5xx - 1)) < self.max_delay):
                 try:
                     error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
                     if error_channel:
@@ -150,7 +150,7 @@ class MessageLoop(commands.Cog):
                 except Exception as e:
                     print(f"[ERROR main_loop_message] Critical error in handler while notifying about {err_type} error: {e}")
             
-            self.retries_503 += 1
+            self.retries_5xx += 1
             await asyncio.sleep(delay)
             self.main_loop.restart()
             return

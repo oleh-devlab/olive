@@ -4,8 +4,8 @@ embeds_to_send = {
     "server_load": None,
     "currency": None,
     "battery": None,
-    "uptime": None,
-    "active_cogs": None
+    "active_cogs": None,
+    "uptime": None
 }
 
 configLock = None

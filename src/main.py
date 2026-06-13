@@ -100,7 +100,7 @@ async def on_ready():
 
 for file in os.listdir(f'./{cogs_directory}'):
     if file.endswith(".py") and file != 'info.py':
-        print(f'[INFO] {file} loading from main...')
+        print(f'- {file} loading from main...')
         bot.load_extension(f"{cogs_directory}.{file[:-3]}")
 
 if __name__ == '__main__':
