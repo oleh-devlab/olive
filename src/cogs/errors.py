@@ -1,12 +1,11 @@
 import disnake
 from disnake.ext import commands
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 import core.cache
 from core.utils import format_embed_data, get_phrases
 
-tz = ZoneInfo('Europe/Kyiv')
+from core.time_utils import tz
 
 class Errors(commands.Cog):
     def __init__(self, bot):

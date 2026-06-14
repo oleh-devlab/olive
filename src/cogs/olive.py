@@ -5,10 +5,11 @@ from google.genai import types
 from modules.llm_client import LLMClient
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import core.cache as cache
 from core.utils import get_phrases
+
+from core.time_utils import tz
 
 days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
@@ -23,10 +24,14 @@ class AIAssistantCog(commands.Cog):
         self.olive_enabled = False
 
     async def cog_load(self):
-        cache.llm_client = LLMClient()
-        print(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
-
-        await self.load_context_from_file()
+        try:
+            cache.llm_client = LLMClient()
+            print(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
+            
+            await self.load_context_from_file()
+        except ValueError as e:
+            print(f"Error initializing LLMClient: {e}")
+            cache.llm_client = None
 
     def cog_unload(self):
         if cache.llm_client:
@@ -36,13 +41,17 @@ class AIAssistantCog(commands.Cog):
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
-        if not self.olive_enabled or message.author.bot or not cache.llm_client or not message.content:
+        if (not self.olive_enabled 
+            or message.author.bot 
+            or not cache.llm_client 
+            or not message.content
+        ):
             return
         
         if str(message.guild.id) not in self.llm_context:
             self.llm_context[str(message.guild.id)] = []
 
-        dt_now = datetime.now(ZoneInfo("Europe/Kyiv"))
+        dt_now = datetime.now(tz)
         day_name = days_uk[dt_now.weekday()]
         time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 

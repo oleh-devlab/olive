@@ -3,7 +3,7 @@ from disnake import Activity, ActivityType
 import os
 import asyncio
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from core.time_utils import tz
 
 import core.bot
 import core.cache
@@ -21,7 +21,7 @@ intents.guilds = True
 
 
 cogs_directory = paths["cogs"]
-token_file_path = paths["token_file"]
+token_file_path = paths["discord_token_file"]
 config_ini_path = paths["config_ini"]
 
 test_guilds_list = guilds
@@ -30,8 +30,6 @@ bot = core.bot.OliveBot(command_prefix='!',intents=intents,test_guilds=guilds)
 bot.remove_command('help')
 
 channel_for_bot_news = channels["bot_news"]
-
-tz = ZoneInfo('Europe/Kyiv')
 
 @bot.event
 async def on_ready():

@@ -1,13 +1,12 @@
 from disnake.ext import commands, tasks
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 import psutil
 import disnake
 
 import traceback
 
 import core.cache
-from settings import enable_hosting_embed, channels, owner_id
+from settings import channels, owner_id
 
 from core.utils import u_decline, format_embed_data, get_phrases
 
@@ -23,14 +22,11 @@ async def get_memory_info():
         'swap_percent': swap.percent
     }
 
-tz = ZoneInfo('Europe/Kyiv')
-
 class Hosting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        if enable_hosting_embed:
-            self.hosting_loop.start()
+        self.hosting_loop.start()
 
     def cog_unload(self):
         self.hosting_loop.stop()

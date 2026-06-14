@@ -50,8 +50,12 @@ def get_phrases(guild_id=None):
     return core.cache._phrases.get(str(guild_id), {})
 
 async def load_phrases():
-    with open("phrases.json", "r", encoding="utf-8") as file:
-        new_phrases = json.load(file)
+    try:
+        with open("phrases.json", "r", encoding="utf-8") as file:
+            new_phrases = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error loading phrases: {e}")
+        return
 
     core.cache._phrases.clear()
     core.cache._phrases.update(new_phrases)

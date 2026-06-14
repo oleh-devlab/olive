@@ -5,9 +5,14 @@ import os
 
 from core.utils import get_phrases
 
+import settings
+
 class LLMClient:
     def __init__(self):
         self.client = get_new_client()
+        if not self.client:
+            raise ValueError("API token for Google GenAI not found")
+
         self.model_name = get_phrases().get("olive", {}).get("model_name", "gemma-4-31b-it")
         
         # TODO: implement rate limiting
@@ -30,13 +35,15 @@ class LLMClient:
         )
 
 def read_api_token():
-    token_path = Path(__file__).resolve().parent.parent / ".genai_token"
+    token_path = Path(__file__).resolve().parent.parent / settings.paths["genai_token_file"]
     if token_path.exists():
         token = token_path.read_text(encoding="utf-8").strip()
         if token:
             return token
     return os.environ.get("GENAI_API_KEY")
 
-def get_new_client() -> genai.Client:
+def get_new_client():
     token = read_api_token()
+    if not token:
+        return None
     return genai.Client(api_key=token)

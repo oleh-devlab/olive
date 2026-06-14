@@ -1,3 +1,5 @@
+import os
+
 import disnake
 from disnake.ext import commands
 
@@ -129,7 +131,10 @@ class PhrasesTools(commands.Cog):
             )
 
         elif action == "download":
-            await inter.edit_original_response(content="The file is attached.", file=disnake.File("phrases.json"))
+            if os.path.exists("phrases.json"):
+                await inter.edit_original_response(content="The file is attached.", file=disnake.File("phrases.json"))
+            else:
+                await inter.edit_original_response(content="File not found.")
 
 def setup(bot):
     bot.add_cog(PhrasesTools(bot))

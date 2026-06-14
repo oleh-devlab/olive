@@ -4,7 +4,7 @@ from disnake.ext import commands, tasks
 import core.cache
 from core.utils import format_embed_data, get_phrases
 
-from settings import paths, enable_active_cogs_embed
+from settings import paths
 
 cog_path = paths["cogs"]
 
@@ -12,8 +12,7 @@ class ActiveCogsEmbed(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-        if enable_active_cogs_embed:
-            self.update_active_cogs.start()
+        self.update_active_cogs.start()
 
     def cog_unload(self):
         self.update_active_cogs.cancel()

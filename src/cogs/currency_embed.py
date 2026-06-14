@@ -1,6 +1,5 @@
 from disnake.ext import commands, tasks
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 import os
 import json
 import disnake
@@ -11,9 +10,7 @@ from aiohttp import ClientTimeout
 import traceback
 
 import core.cache
-from settings import enable_currency_embed, channels, owner_id
-
-tz = ZoneInfo('Europe/Kyiv')
+from settings import channels, owner_id
 
 class CurrencyEmbed(commands.Cog):
     def __init__(self, bot):
@@ -25,8 +22,7 @@ class CurrencyEmbed(commands.Cog):
         self.url = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchangenew?json"
         self.HTTP_TIMEOUT = ClientTimeout(total=10)
 
-        if enable_currency_embed:
-            self.currency_embed.start()
+        self.currency_embed.start()
 
     def cog_unload(self):
         self.currency_embed.stop()

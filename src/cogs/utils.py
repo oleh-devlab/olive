@@ -4,8 +4,7 @@ import os
 import asyncio
 from datetime import datetime
 
-from zoneinfo import ZoneInfo
-
+from core.time_utils import tz
 from settings import paths, channels, main_guild_id, guilds
 import core.cache
 from core.utils import get_phrases
@@ -21,8 +20,6 @@ terminal_id = channels["terminal_channel"]
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 config_file_path = os.path.join(parent_dir, config_dir_setting)
 
-tz = ZoneInfo('Europe/Kyiv')
-
 class Utils(commands.Cog):
 
     def __init__(self, bot):
@@ -30,14 +27,14 @@ class Utils(commands.Cog):
     
     @commands.Cog.listener()
     async def on_connect(self):
-        time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
+        time_now = datetime.now(tz).strftime('%d.%m.%Y %H:%M:%S')
 
         text = get_phrases().get("utils", {}).get("on_connected", "Bot connected at {time_now}.").format(time_now=time_now)
         print(text)
     
     @commands.Cog.listener()
     async def on_resumed(self):
-        time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
+        time_now = datetime.now(tz).strftime('%d.%m.%Y %H:%M:%S')
 
         text = get_phrases().get("utils", {}).get("on_resumed", "Bot resumed at {time_now}.").format(time_now=time_now)
         print(text)
@@ -45,7 +42,7 @@ class Utils(commands.Cog):
     
     @commands.Cog.listener()
     async def on_disconnect(self):
-        time_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime('%d.%m.%Y %H:%M:%S')
+        time_now = datetime.now(tz).strftime('%d.%m.%Y %H:%M:%S')
 
         text = get_phrases().get("utils", {}).get("on_disconnect", "Bot disconnected at {time_now}.").format(time_now=time_now)
         print(text)

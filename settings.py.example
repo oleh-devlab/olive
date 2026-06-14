@@ -5,7 +5,7 @@
 # --- Paths and modules(cogs) ---
 paths = {
     "cogs": "cogs",
-    "token_file": ".ds_bot_token",
+    "discord_token_file": ".ds_bot_token",
     "config_ini": "config.ini"
 }
 # The configurable path to the Google GenAI token and others has not yet been implemented.
@@ -23,11 +23,9 @@ guilds = [123, 456]
 main_guild_id = 123
 
 # --- Modules and embeds ---
-enable_battery_embed = 0
-enable_currency_embed = 1
-enable_hosting_embed = 1
-enable_uptime_embed = 1
-enable_active_cogs_embed = 1
+
+# If you disable it, you don't need to enter a token:
+enable_llm_cogs = 0 # All cogs that depend on LLMClient (Google GenAI) or is about AI.
 
 # <integer_server_id>: ["embed_name1", "embed_name2", ...].
 # You can retrieve `embed_name` from `core.cache.embeds_to_send`
@@ -35,6 +33,8 @@ embeds_blacklist = {
     123: ["battery"],
     456: ["battery", "currency"]
 }
+
+cogs_blacklist = ["utils", "cog_name2"]
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery

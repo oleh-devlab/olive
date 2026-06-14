@@ -1,14 +1,15 @@
 import asyncio
-from zoneinfo import ZoneInfo
 from datetime import datetime
 import disnake
 from disnake.ext import commands, tasks
 
 
-from settings import is_battery, enable_uptime_embed
+from settings import is_battery
 
 import core.cache
 from core.utils import format_embed_data, get_phrases
+
+from core.time_utils import tz
 
 class UptimeEmbed(commands.Cog):
     def __init__(self, bot):
@@ -17,10 +18,9 @@ class UptimeEmbed(commands.Cog):
 
         self.watt = 0.6
 
-        self.start_time = datetime.now(ZoneInfo("Europe/Kyiv")) # Approximate bot start time
+        self.start_time = datetime.now(tz) # Approximate bot start time
 
-        if enable_uptime_embed:
-            self.update_uptime.start()
+        self.update_uptime.start()
 
 
     def cog_unload(self):
@@ -36,7 +36,7 @@ class UptimeEmbed(commands.Cog):
             await asyncio.sleep(75)
             self.j = False
 
-        now = datetime.now(ZoneInfo("Europe/Kyiv"))
+        now = datetime.now(tz)
         delta = now - self.start_time
         days = delta.days
         hours, remainder = divmod(delta.seconds, 3600)

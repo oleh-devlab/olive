@@ -4,12 +4,22 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import core.cache
+import settings
 
 class OliveBot (commands.Bot):
-    # TODO reload_cogs
+    # TODO reload_cogs, load_extensions
     
     def load_extension(self, name):
         try:
+            clear_name = name.split(".")[1]
+            is_blacklisted = clear_name in settings.cogs_blacklist
+            if  not settings.enable_llm_cogs and clear_name in core.cache.llm_cogs:
+                is_blacklisted = True
+
+            if is_blacklisted:
+                print(f'[COGS] Cog "{name}" in cogs blacklist.')
+                return
+
             super().load_extension(name)
 
             current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")

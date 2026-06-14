@@ -1,6 +1,5 @@
 import asyncio
 import aiohttp
-from zoneinfo import ZoneInfo
 from datetime import datetime
 import time
 from disnake.ext import commands, tasks
@@ -12,6 +11,7 @@ from settings import channels, owner_id, embeds_blacklist
 import core.cache
 from core.utils import get_phrases
 
+from core.time_utils import tz
 
 class MessageLoop(commands.Cog):
     def __init__(self, bot):
@@ -38,7 +38,7 @@ class MessageLoop(commands.Cog):
 
     @tasks.loop(seconds=10)
     async def main_loop(self):
-        now = datetime.now(ZoneInfo("Europe/Kyiv"))
+        now = datetime.now(tz)
         formatted_time = now.strftime('%d.%m.%Y %H:%M:%S')
         content = f"`{formatted_time} UTC+2`"
 
@@ -134,7 +134,7 @@ class MessageLoop(commands.Cog):
             self.last_error_time = current_time
 
             err_type = f"HTTP {error.status}" if hasattr(error, 'status') else "Network error"
-            time_now = datetime.now(ZoneInfo('Europe/Kyiv')).strftime('%d.%m.%Y %H:%M:%S')
+            time_now = datetime.now(tz).strftime('%d.%m.%Y %H:%M:%S')
             print(f"[{time_now}] {err_type} from Discord API.")
 
             delay = min(self.max_delay, self.base_delay * (2 ** self.retries_5xx))

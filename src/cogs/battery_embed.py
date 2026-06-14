@@ -3,7 +3,7 @@ from disnake.ext import commands, tasks
 import subprocess
 import json
 
-from settings import enable_battery_embed, is_battery, battery_update_seconds, min_safe_percent_charge, max_safe_percent_charge
+from settings import is_battery, battery_update_seconds, min_safe_percent_charge, max_safe_percent_charge
 
 import core.cache
 import core.utils
@@ -18,7 +18,7 @@ class Battery(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        if enable_battery_embed and is_battery:
+        if is_battery:
             self.battery_loop.start()
         else:
             pass
