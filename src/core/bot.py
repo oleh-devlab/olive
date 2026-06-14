@@ -12,11 +12,7 @@ class OliveBot (commands.Bot):
     def load_extension(self, name):
         try:
             clear_name = name.split(".")[1]
-            is_blacklisted = clear_name in settings.cogs_blacklist
-            if  not settings.enable_llm_cogs and clear_name in core.cache.llm_cogs:
-                is_blacklisted = True
-
-            if is_blacklisted:
+            if clear_name in settings.cogs_blacklist:
                 print(f'[COGS] Cog "{name}" in cogs blacklist.')
                 return
 

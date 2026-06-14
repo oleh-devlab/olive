@@ -17,15 +17,11 @@ channels = {
     "statistic": [123, 123], # The channel(s) where the bot can post and edit its own messages.
     "add_logs": 123 # For the error handler (CoolDown and others)
 }
-# For "statistic" channels: Ideally, there should be no other messages in the channel besides those from the bot
 
 guilds = [123, 456]
 main_guild_id = 123
 
 # --- Modules and embeds ---
-
-# If you disable it, you don't need to enter a token:
-enable_llm_cogs = 0 # All cogs that depend on LLMClient (Google GenAI) or is about AI.
 
 # <integer_server_id>: ["embed_name1", "embed_name2", ...].
 # You can retrieve `embed_name` from `core.cache.embeds_to_send`
@@ -34,7 +30,7 @@ embeds_blacklist = {
     456: ["battery", "currency"]
 }
 
-cogs_blacklist = ["utils", "cog_name2"]
+cogs_blacklist = ["olive", "cog_name2"] # If you disable the models that use LLM, you won't need to enter the Google GenAI token or load their library
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery
