@@ -10,7 +10,7 @@ from aiohttp import ClientTimeout
 import traceback
 
 import core.cache
-from settings import channels, owner_id
+from settings import channels
 
 class CurrencyEmbed(commands.Cog):
     def __init__(self, bot):
@@ -107,7 +107,7 @@ class CurrencyEmbed(commands.Cog):
         
         try:
             error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = get_phrases(error_channel.guild.id).get("currency_embed", {}).get("on_currency_error", "Currency Embed error: {error}").format(owner_id=owner_id, error=error)
+            text = get_phrases(error_channel.guild.id).get("currency_embed", {}).get("on_currency_error", "Currency Embed error: {error}").format(owner_id=self.bot.owner_id, error=error)
             await error_channel.send(text)
             self.currency_embed.cancel()
         except Exception as e:

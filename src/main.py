@@ -92,12 +92,9 @@ async def on_ready():
     await bot.change_presence(activity=Activity(type=ActivityType.watching,name="Так",state='Існує.'))
     print('[INFO] bot.change_presence is done')
 
-for file in os.listdir(f'./{cogs_directory}'):
-    if file.endswith(".py") and file != 'info.py':
-        print(f'- {file} loading from main...')
-        bot.load_extension(f"{cogs_directory}.{file[:-3]}")
-
 if __name__ == '__main__':
+    bot.load_extensions(cogs_directory) # The source code says that this calls `load_extension`
+    
     print('[INFO] bot.run() trying to start...')
 
     asyncio.run(core.utils.load_phrases())

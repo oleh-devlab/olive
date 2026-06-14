@@ -6,7 +6,7 @@ from disnake.ext import commands, tasks
 import traceback
 import disnake
 
-from settings import channels, owner_id, embeds_blacklist
+from settings import channels, embeds_blacklist
 
 import core.cache
 from core.utils import get_phrases
@@ -157,7 +157,7 @@ class MessageLoop(commands.Cog):
 
         try:
             error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = get_phrases(error_channel.guild.id).get("statistic_message_loop", {}).get("general_error_notification", "Cycle MessageLoop issued an error: {error}").format(owner_id=owner_id, error=error)
+            text = get_phrases(error_channel.guild.id).get("statistic_message_loop", {}).get("general_error_notification", "Cycle MessageLoop issued an error: {error}").format(owner_id=self.bot.owner_id, error=error)
             await error_channel.send(text)
         except Exception as e:
             print(f"[ERROR main_loop_message] Critical error in handler: {e}")

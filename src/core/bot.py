@@ -7,11 +7,11 @@ import core.cache
 import settings
 
 class OliveBot (commands.Bot):
-    # TODO reload_cogs, load_extensions
+    # TODO: using reload_cogs
     
     def load_extension(self, name):
         try:
-            clear_name = name.split(".")[1]
+            clear_name = name.split(".", 1)[1]
             if clear_name in settings.cogs_blacklist:
                 print(f'[COGS] Cog "{name}" in cogs blacklist.')
                 return

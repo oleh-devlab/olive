@@ -6,6 +6,7 @@
 paths = {
     "cogs": "cogs",
     "discord_token_file": ".ds_bot_token",
+    "genai_token_file": ".genai_token",
     "config_ini": "config.ini"
 }
 # The configurable path to the Google GenAI token and others has not yet been implemented.
@@ -30,7 +31,7 @@ embeds_blacklist = {
     456: ["battery", "currency"]
 }
 
-cogs_blacklist = ["olive", "cog_name2"] # If you disable the models that use LLM, you won't need to enter the Google GenAI token or load their library
+cogs_blacklist = ["olive", "embeds.battery"] # If you disable the models that use LLM, you won't need to enter the Google GenAI token or load their library
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery
@@ -41,5 +42,4 @@ battery_update_seconds = 180 # (Seconds) The number of seconds between each upda
 # --- Other ---
 is_processor_info = 1
 
-owner_id = 123 # Under question of necessity, since the bot itself knows its owner's ID through bot.something
 safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
