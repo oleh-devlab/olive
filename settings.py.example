@@ -8,7 +8,7 @@ paths = {
     "discord_token_file": ".ds_bot_token",
     "genai_token_file": ".genai_token",
     "config_ini": "config.ini",
-    "auto_schedule_executable": "automatic_timetable/build/app" # Regarding the "modules" folder
+    "auto_schedule_executable": "app" # Regarding the "modules/automatic_timetable/build" folder
 }
 # The configurable path to the Google GenAI token and others has not yet been implemented.
 
