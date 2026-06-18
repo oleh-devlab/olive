@@ -5,6 +5,7 @@ import io
 import datetime
 
 import settings
+from core.time_utils import tz
 
 async def _generate_tsv_timetable(client_ID: int) -> str:
     if not isinstance(client_ID, int):
@@ -56,8 +57,8 @@ async def get_schedule(client_ID: int) -> str:
 
     def fmt_datetime(ts_minutes_str): # Заглушка
         ts_seconds = int(ts_minutes_str) * 60
-        dt = datetime.datetime.fromtimestamp(ts_seconds)
-        return dt.strftime("%Y-%m-%d %H:%M")
+        dt_localized = datetime.datetime.fromtimestamp(ts_seconds, tz=tz)
+        return dt_localized.strftime("%Y-%m-%d %H:%M")
 
     def duration_min(start_str, end_str):
         return int(end_str) - int(start_str)

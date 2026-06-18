@@ -14,7 +14,11 @@ class AutoSchedule(commands.Cog):
         await inter.response.defer(ephemeral=True)
 
         ID = inter.author.id
-        schedule = await auto_timetable.get_schedule(ID)
+        try:
+            schedule = await auto_timetable.get_schedule(ID)
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
+            return
 
         await inter.edit_original_response(f"Schedule:\n```{schedule}```")
 
