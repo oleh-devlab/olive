@@ -150,12 +150,18 @@ main.py  -->  core/bot.py (OliveBot)
 
 ## Потік даних
 
-```
-phrases.json -> cache._phrases -> get_phrases() -> коги
-
-settings.py -> конфігурація когів при завантаженні
-
-Embed-коги -> cache.embeds_to_send -> statistic_message_loop -> Discord канали
-
-config.ini <- -> cache.configLock <- -> main.py / chatops / utils
+```mermaid
+graph LR
+    phrases["phrases.json"] --> cache["cache._phrases"]
+    cache --> get["get_phrases()"]
+    get --> cogs["коги"]
+    
+    settings["settings.py"] -.->|"конфігурація при завантаженні"| cogs
+    
+    embed_cogs["Embed-коги"] --> cache_embeds["cache.embeds_to_send"]
+    cache_embeds --> loop["statistic_message_loop"]
+    loop --> discord["Discord канали"]
+    
+    config["config.ini"] <--> lock["cache.configLock"]
+    lock <--> scripts["main.py / chatops / utils"]
 ```
