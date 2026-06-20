@@ -1,3 +1,4 @@
+import asyncio
 import disnake
 from disnake.ext import commands
 import json
@@ -17,6 +18,7 @@ class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.llm_context = {} # {"guild_id": [...]]}
+        self.response_tasks = {}
 
         self.max_messages_in_context = 26
         self.context_file_name = "llm_context.json"
@@ -45,17 +47,34 @@ class AIAssistantCog(commands.Cog):
             or message.author.bot 
             or not cache.llm_client 
             or not message.content
+            or not message.guild
         ):
             return
         
-        if str(message.guild.id) not in self.llm_context:
-            self.llm_context[str(message.guild.id)] = []
+        guild_id = str(message.guild.id)
+        if guild_id not in self.llm_context:
+            self.llm_context[guild_id] = []
 
         dt_now = datetime.now(tz)
         day_name = days_uk[dt_now.weekday()]
         time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 
-        self.llm_context[str(message.guild.id)].append({"role": "user", "parts": [{"text": f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
+        new_text = f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""
+        self.llm_context[guild_id].append({"role": "user", "parts": [{"text": new_text}]})
+
+        if guild_id in self.response_tasks:
+            self.response_tasks[guild_id].cancel()
+            
+        self.response_tasks[guild_id] = self.bot.loop.create_task(self.delayed_generate_answer(message))
+        
+    async def delayed_generate_answer(self, message: disnake.Message):
+        try:
+            await asyncio.sleep(3)
+            await self.generate_answer(message)
+        except asyncio.CancelledError:
+            pass
+
+    async def generate_answer(self, message: disnake.Message):
         
         system_instruction = get_phrases(message.guild.id).get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")
 
