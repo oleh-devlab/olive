@@ -5,6 +5,9 @@ import json
 from google.genai import types
 from modules.llm_client import LLMClient, RateLimitExceeded
 
+import logging
+logger = logging.getLogger(__name__)
+
 from datetime import datetime
 
 import core.cache as cache
@@ -28,11 +31,11 @@ class AIAssistantCog(commands.Cog):
     async def cog_load(self):
         try:
             cache.llm_client = LLMClient()
-            print(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
+            logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
             
             await self.load_context_from_file()
         except ValueError as e:
-            print(f"Error initializing LLMClient: {e}")
+            logger.error("Error initializing LLMClient: %s", e)
             cache.llm_client = None
 
     def cog_unload(self):
@@ -41,7 +44,7 @@ class AIAssistantCog(commands.Cog):
             cache.llm_client = None
 
             text = get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
-            print(text)
+            logger.info(text)
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
@@ -115,10 +118,20 @@ class AIAssistantCog(commands.Cog):
                         else:
                             i_should_answer = getattr(test_response.parsed, "i_should_answer", False)
                     else:
-                        data = json.loads(test_response.text)
+                        raw_text = (test_response.text or "").strip()
+                        
+                        if raw_text.startswith("```"):
+                            raw_text = raw_text[3:].strip()
+                            if raw_text.lower().startswith("json"):
+                                raw_text = raw_text[4:].strip()
+                                
+                        if raw_text.endswith("```"):
+                            raw_text = raw_text[:-3].strip()
+                        
+                        data = json.loads(raw_text)
                         i_should_answer = data.get("i_should_answer", False)
                 except Exception as e:
-                    print(f"Error parsing test response JSON: {e}")
+                    logger.error("Error parsing test response JSON: %s", e)
                     i_should_answer = False
 
                 if not i_should_answer:
@@ -161,16 +174,16 @@ class AIAssistantCog(commands.Cog):
         try:
             with open(self.context_file_name, "r", encoding="utf-8") as f:
                 self.llm_context = json.load(f)
-            print("LLM context is loaded from file.")
+            logger.info("LLM context is loaded from file.")
 
         except FileNotFoundError:
-            print("Context file not found. Starting with an empty context.")
+            logger.warning("Context file not found. Starting with an empty context.")
             self.llm_context = {}
         except json.JSONDecodeError:
-            print("Context file is invalid. Starting with an empty context.")
+            logger.error("Context file is invalid. Starting with an empty context.")
             self.llm_context = {}
         except Exception as e:
-            print(f"Error loading LLM context from file: {e}")
+            logger.error("Error loading LLM context from file: %s", e)
             self.llm_context = {}
 
     async def write_context_to_file(self):
