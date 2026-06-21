@@ -40,7 +40,7 @@ class AIAssistantCog(commands.Cog):
 
     def cog_unload(self):
         if cache.llm_client:
-            self.bot.loop.create_task(cache.llm_client.connection_close())
+            self.bot.loop.create_task(cache.llm_client.shutdown())
             cache.llm_client = None
 
             text = get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")

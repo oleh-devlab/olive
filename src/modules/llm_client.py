@@ -4,6 +4,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import time
 import os
+import json
 import logging
 
 from core.utils import get_phrases
@@ -35,16 +36,34 @@ class ModelConfig:
     _day_window_start: float | None = field(default=None, repr=False)
 
     def _reset_windows_if_needed(self, now: float):
-        """Reset counters if their time windows have expired."""
-        if self._minute_window_start is None or (now - self._minute_window_start) >= 60.0:
+        """Reset counters if their time windows have expired. Handles NTP backwards jumps."""
+        if self._minute_window_start is None or now < self._minute_window_start or (now - self._minute_window_start) >= 60.0:
             self._minute_requests = 0
             self._minute_tokens = 0
             self._minute_window_start = now
 
-        if self._day_window_start is None or (now - self._day_window_start) >= 86400.0:
+        if self._day_window_start is None or now < self._day_window_start or (now - self._day_window_start) >= 86400.0:
             self._day_requests = 0
             self._day_tokens = 0
             self._day_window_start = now
+
+    def to_dict(self) -> dict:
+        return {
+            "minute_requests": self._minute_requests,
+            "day_requests": self._day_requests,
+            "minute_tokens": self._minute_tokens,
+            "day_tokens": self._day_tokens,
+            "minute_window_start": self._minute_window_start,
+            "day_window_start": self._day_window_start,
+        }
+
+    def load_from_dict(self, data: dict):
+        self._minute_requests = data.get("minute_requests", 0)
+        self._day_requests = data.get("day_requests", 0)
+        self._minute_tokens = data.get("minute_tokens", 0)
+        self._day_tokens = data.get("day_tokens", 0)
+        self._minute_window_start = data.get("minute_window_start")
+        self._day_window_start = data.get("day_window_start")
 
     def is_available(self, now: float) -> bool:
         """Check if this model can handle another request right now."""
@@ -97,7 +116,21 @@ class LLMClient:
         if not self.models:
             raise ValueError("No models configured in phrases.json")
 
+        self.state_file = Path("llm_limits_state.json")
+        self._load_state()
+
         logger.info("LLMClient initialized with models: %s", [m.name for m in self.models])
+
+    def _load_state(self):
+        if self.state_file.exists():
+            try:
+                data = json.loads(self.state_file.read_text(encoding="utf-8"))
+                for model in self.models:
+                    if model.name in data:
+                        model.load_from_dict(data[model.name])
+                logger.info("Loaded LLM rate limits state from %s", self.state_file)
+            except Exception as e:
+                logger.error("Failed to load LLM rate limits state: %s", e)
 
     @staticmethod
     def _load_models_config() -> list[ModelConfig]:
@@ -130,14 +163,22 @@ class LLMClient:
     @property
     def is_available(self) -> bool:
         """Check if at least one model can serve a request right now."""
-        now = time.monotonic()
+        now = time.time()
         return any(model.is_available(now) for model in self.models)
 
-    async def connection_close(self):
+    async def shutdown(self):
+        """Close the API client and save the current limits state to disk."""
+        try:
+            data = {model.name: model.to_dict() for model in self.models}
+            self.state_file.write_text(json.dumps(data, indent=4), encoding="utf-8")
+            logger.info("Saved LLM rate limits state to %s", self.state_file)
+        except Exception as e:
+            logger.error("Failed to save LLM rate limits state: %s", e)
+            
         return await self.client.aio.aclose()
 
     async def get_response(self, contents, config, cheap_first: bool = False) -> types.Content:
-        now = time.monotonic()
+        now = time.time()
         attempted_errors = []
 
         models_to_use = reversed(self.models) if cheap_first else self.models
@@ -164,7 +205,7 @@ class LLMClient:
                     thoughts_tokens = getattr(usage, 'thoughts_token_count', 0)
                     
                     # TPM (Tokens Per Minute) зазвичай враховує лише вхідні токени (input)
-                    model.record_tokens(time.monotonic(), prompt_tokens)
+                    model.record_tokens(time.time(), prompt_tokens)
                     
                     logger.info(
                         "Token usage for '%s': total=%s, prompt (input)=%s, response=%s, thoughts=%s", 
@@ -201,12 +242,12 @@ class LLMClient:
             logger.error(error_msg)
             raise RateLimitExceeded(error_msg)
         else:
-            logger.warning("All models rate-limited locally. Status: %s", [m.get_status(time.monotonic()) for m in self.models])
+            logger.warning("All models rate-limited locally. Status: %s", [m.get_status(time.time()) for m in self.models])
             raise RateLimitExceeded("All configured models have exceeded their rate limits")
 
     def get_limits_status(self) -> list[dict]:
         """Return limits status for all configured models."""
-        now = time.monotonic()
+        now = time.time()
         return [m.get_status(now) for m in self.models]
 
 
