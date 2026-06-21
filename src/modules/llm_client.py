@@ -24,10 +24,13 @@ class ModelConfig:
     name: str
     rpm: int = 15 # requests per minute
     rpd: int = 1500 # requests per day
+    tpm: int | None = None # tokens per minute
 
     # Internal state
     _minute_requests: int = field(default=0, repr=False)
     _day_requests: int = field(default=0, repr=False)
+    _minute_tokens: int = field(default=0, repr=False)
+    _day_tokens: int = field(default=0, repr=False)
     _minute_window_start: float | None = field(default=None, repr=False)
     _day_window_start: float | None = field(default=None, repr=False)
 
@@ -35,22 +38,34 @@ class ModelConfig:
         """Reset counters if their time windows have expired."""
         if self._minute_window_start is None or (now - self._minute_window_start) >= 60.0:
             self._minute_requests = 0
+            self._minute_tokens = 0
             self._minute_window_start = now
 
         if self._day_window_start is None or (now - self._day_window_start) >= 86400.0:
             self._day_requests = 0
+            self._day_tokens = 0
             self._day_window_start = now
 
     def is_available(self, now: float) -> bool:
         """Check if this model can handle another request right now."""
         self._reset_windows_if_needed(now)
-        return self._minute_requests < self.rpm and self._day_requests < self.rpd
+        if self._minute_requests >= self.rpm or self._day_requests >= self.rpd:
+            return False
+        if self.tpm is not None and self._minute_tokens >= self.tpm:
+            return False
+        return True
 
     def record_request(self, now: float):
         """Increment counters after a successful request or for reservation."""
         self._reset_windows_if_needed(now)
         self._minute_requests += 1
         self._day_requests += 1
+
+    def record_tokens(self, now: float, tokens: int):
+        """Add tokens used by a request to the counters."""
+        self._reset_windows_if_needed(now)
+        self._minute_tokens += tokens
+        self._day_tokens += tokens
 
     def refund_request(self):
         """Refund a request if the API call failed."""
@@ -64,8 +79,10 @@ class ModelConfig:
         self._reset_windows_if_needed(now)
         return {
             "model": self.name,
-            "minute": f"{self._minute_requests}/{self.rpm}",
-            "day": f"{self._day_requests}/{self.rpd}",
+            "minute_req": f"{self._minute_requests}/{self.rpm}",
+            "day_req": f"{self._day_requests}/{self.rpd}",
+            "minute_tokens": f"{self._minute_tokens}/{self.tpm if self.tpm is not None else '∞'}",
+            "day_tokens": self._day_tokens,
             "available": self.is_available(now),
         }
 
@@ -97,6 +114,7 @@ class LLMClient:
                     name=m["name"],
                     rpm=m.get("rpm", 15),
                     rpd=m.get("rpd", 1500),
+                    tpm=m.get("tpm", None),
                 )
                 for m in models_raw
                 if isinstance(m, dict) and "name" in m
@@ -151,6 +169,22 @@ class LLMClient:
                 config=config,
                 contents=contents,
             )
+            
+            if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
+                usage = response.usage_metadata
+                total_tokens = getattr(usage, 'total_token_count', 0)
+                prompt_tokens = getattr(usage, 'prompt_token_count', 0)
+                response_tokens = getattr(usage, 'candidates_token_count', 0)
+                thoughts_tokens = getattr(usage, 'thoughts_token_count', 0)
+                
+                # TPM (Tokens Per Minute) зазвичай враховує лише вхідні токени (input)
+                model.record_tokens(time.monotonic(), prompt_tokens)
+                
+                logger.info(
+                    "Token usage for '%s': total=%s, prompt (input)=%s, response=%s, thoughts=%s", 
+                    model.name, total_tokens, prompt_tokens, response_tokens, thoughts_tokens
+                )
+                
             return response
         except Exception:
             # TODO: Обробляти конкретні помилки, наприклад, 5xx та 4xx і решту + logging
