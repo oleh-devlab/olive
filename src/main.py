@@ -3,15 +3,29 @@ from disnake import Activity, ActivityType
 import os
 import asyncio
 from datetime import datetime, timezone
-from core.time_utils import tz
+import logging
+import configparser
 
+from core.time_utils import tz
 import core.bot
 import core.cache
 from core.utils import get_phrases
 from settings import paths, guilds, channels, safe_seconds_before_start
 
-import configparser
 config = configparser.ConfigParser()
+config.read(paths["config_ini"])
+initial_debug_mode = config.getint('DEFAULT', 'debug_mode', fallback=0)
+
+logging.basicConfig(
+    level=logging.DEBUG if initial_debug_mode else logging.WARNING,
+    format='[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+logging.getLogger('disnake').setLevel(logging.WARNING)
+logging.getLogger('google_genai').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.WARNING)
 
 intents = disnake.Intents().all()
 intents.messages = True
