@@ -3,7 +3,9 @@ import disnake
 from disnake.ext import commands
 import json
 from google.genai import types
-from modules.llm_client import LLMClient, RateLimitExceeded
+from modules.llm_client import LLMClient
+from modules.llm_rate_limiter import RateLimitExceeded
+from modules.llm_context_manager import LLMContextManager
 
 import logging
 logger = logging.getLogger(__name__)
@@ -20,11 +22,8 @@ days_uk = ["Понеділок", "Вівторок", "Середа", "Четве
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.llm_context = {} # {"guild_id": [...]]}
+        self.context_manager = LLMContextManager()
         self.response_tasks = {}
-
-        self.max_messages_in_context = 26
-        self.context_file_name = "llm_context.json"
 
         self.olive_enabled = False
 
@@ -33,7 +32,7 @@ class AIAssistantCog(commands.Cog):
             cache.llm_client = LLMClient()
             logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
             
-            await self.load_context_from_file()
+            await self.context_manager.load_from_file()
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
             cache.llm_client = None
@@ -58,15 +57,13 @@ class AIAssistantCog(commands.Cog):
             return
         
         guild_id = str(message.guild.id)
-        if guild_id not in self.llm_context:
-            self.llm_context[guild_id] = []
 
         dt_now = datetime.now(tz)
         day_name = days_uk[dt_now.weekday()]
         time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 
         new_text = f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""
-        self.llm_context[guild_id].append({"role": "user", "parts": [{"text": new_text}]})
+        self.context_manager.add_user_message(guild_id, new_text)
 
         if guild_id in self.response_tasks:
             self.response_tasks[guild_id].cancel()
@@ -106,7 +103,7 @@ class AIAssistantCog(commands.Cog):
                     response_json_schema=test_schema
                 )
                 test_response = await cache.llm_client.get_response(
-                    self.llm_context[str(message.guild.id)], 
+                    self.context_manager.get_context(str(message.guild.id)), 
                     test_config,
                     cheap_first=True,
                 )
@@ -135,60 +132,29 @@ class AIAssistantCog(commands.Cog):
                     i_should_answer = False
 
                 if not i_should_answer:
-                    await self.context_restrictions()
-                    await self.write_context_to_file()
                     return
 
             reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
 
             async with message.channel.typing():
-                response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], reply_config)
+                response = await cache.llm_client.get_response(self.context_manager.get_context(str(message.guild.id)), reply_config)
 
         except RateLimitExceeded:
             return
+        except Exception as e:
+            logger.error("Unexpected error in generate_answer: %s", e)
+            return
+        finally:
+            self.context_manager.apply_restrictions()
+            await self.context_manager.write_to_file()
 
-        self.llm_context[str(message.guild.id)].append({"role": "model", "parts": [{"text": response.text}]})
+        if not response.text:
+            logger.warning("Model returned empty response (possibly blocked by safety filters)")
+            return
 
-        await self.context_restrictions()
-        await self.write_context_to_file()
+        self.context_manager.add_model_message(str(message.guild.id), response.text)
         
         await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
-
-    async def context_restrictions(self):
-        """
-        For now, it's just a very simple restriction. It stops accepting new messages once the maximum limit is reached.
-        """
-        
-        for guild_id, messages in self.llm_context.items():
-            if len(messages) > self.max_messages_in_context:
-                sliced_messages = messages[-self.max_messages_in_context:]
-            
-                # Deleting first model message if it is at beginning of the context
-                # --- I'm not sure yet if the API actually prohibits this, so I'm just playing it safe.
-                while sliced_messages and sliced_messages[0].get("role") in ["assistant", "model"]:
-                    sliced_messages.pop(0)
-                    
-                self.llm_context[guild_id] = sliced_messages
-
-    async def load_context_from_file(self):
-        try:
-            with open(self.context_file_name, "r", encoding="utf-8") as f:
-                self.llm_context = json.load(f)
-            logger.info("LLM context is loaded from file.")
-
-        except FileNotFoundError:
-            logger.warning("Context file not found. Starting with an empty context.")
-            self.llm_context = {}
-        except json.JSONDecodeError:
-            logger.error("Context file is invalid. Starting with an empty context.")
-            self.llm_context = {}
-        except Exception as e:
-            logger.error("Error loading LLM context from file: %s", e)
-            self.llm_context = {}
-
-    async def write_context_to_file(self):
-        with open(self.context_file_name, "w", encoding="utf-8") as f:
-            json.dump(self.llm_context, f, ensure_ascii=False, indent=4)
 
     @commands.slash_command(name="turn_olive", description="Enable or disable OLIVE AI")
     @commands.is_owner()
