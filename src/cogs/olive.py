@@ -3,7 +3,7 @@ import disnake
 from disnake.ext import commands
 import json
 from google.genai import types
-from modules.llm_client import LLMClient
+from modules.llm_client import LLMClient, RateLimitExceeded
 
 from datetime import datetime
 
@@ -38,6 +38,8 @@ class AIAssistantCog(commands.Cog):
     def cog_unload(self):
         if cache.llm_client:
             self.bot.loop.create_task(cache.llm_client.connection_close())
+            cache.llm_client = None
+
             text = get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
             print(text)
 
@@ -48,6 +50,7 @@ class AIAssistantCog(commands.Cog):
             or not cache.llm_client 
             or not message.content
             or not message.guild
+            or not cache.llm_client.is_available
         ):
             return
         
@@ -78,32 +81,54 @@ class AIAssistantCog(commands.Cog):
         
         system_instruction = get_phrases(message.guild.id).get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")
 
-        test_instruction_addition = get_phrases(message.guild.id).get("olive", {}).get("test_instruction_addition", None)
-        if test_instruction_addition:
-            test_system_instruction = f"{system_instruction}\n\n{test_instruction_addition}"
+        try:
+            test_instruction_addition = get_phrases(message.guild.id).get("olive", {}).get("test_instruction_addition", None)
+            if test_instruction_addition:
+                test_system_instruction = f"{system_instruction}\n\n{test_instruction_addition}"
 
-            test_config = types.GenerateContentConfig(system_instruction=test_system_instruction, response_mime_type="application/json")
-            test_response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], test_config)
+                test_schema = {
+                    'properties': {
+                        'i_should_answer': {
+                            'description': 'True if the assistant should answer in the context, False otherwise.',
+                            'type': 'boolean'
+                        }
+                    },
+                    'required': ['i_should_answer'],
+                    'type': 'object',
+                }
 
-            try:
-                data = json.loads(test_response.text)
-                i_should_answer = data["i_should_answer"]
-            except Exception as e:
-                print(f"Error parsing test response JSON: {e}")
-                i_should_answer = False
+                test_config = types.GenerateContentConfig(
+                    system_instruction=test_system_instruction, 
+                    response_mime_type="application/json",
+                    response_json_schema=test_schema
+                )
+                test_response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], test_config)
 
-            if not i_should_answer:
-                await self.context_restrictions()
-                await self.write_context_to_file()
-                return
+                try:
+                    if hasattr(test_response, 'parsed') and test_response.parsed is not None:
+                        if isinstance(test_response.parsed, dict):
+                            i_should_answer = test_response.parsed.get("i_should_answer", False)
+                        else:
+                            i_should_answer = getattr(test_response.parsed, "i_should_answer", False)
+                    else:
+                        data = json.loads(test_response.text)
+                        i_should_answer = data.get("i_should_answer", False)
+                except Exception as e:
+                    print(f"Error parsing test response JSON: {e}")
+                    i_should_answer = False
 
-        reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
+                if not i_should_answer:
+                    await self.context_restrictions()
+                    await self.write_context_to_file()
+                    return
 
-        model_name = get_phrases().get("olive", {}).get("model_name", "gemma-4-31b-it")
-        cache.llm_client.model_name = model_name
+            reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
 
-        async with message.channel.typing():
-            response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], reply_config)
+            async with message.channel.typing():
+                response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], reply_config)
+
+        except RateLimitExceeded:
+            return
 
         self.llm_context[str(message.guild.id)].append({"role": "model", "parts": [{"text": response.text}]})
 
