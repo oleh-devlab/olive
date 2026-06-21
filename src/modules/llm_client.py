@@ -1,5 +1,5 @@
 from google import genai
-from google.genai import types
+from google.genai import types, errors
 from pathlib import Path
 from dataclasses import dataclass, field
 import time
@@ -130,67 +130,74 @@ class LLMClient:
         now = time.monotonic()
         return any(model.is_available(now) for model in self.models)
 
-    def get_available_model(self) -> ModelConfig:
-        """
-        Find the first available model in priority order.
-
-        Updates internal window states for all models.
-        Raises `RateLimitExceeded` if no model can serve a request.
-
-        Returns the available `ModelConfig` if one is found.
-        """
-        now = time.monotonic()
-
-        for model in self.models:
-            if model.is_available(now):
-                return model
-
-        # All models exhausted
-        logger.warning(
-            "All models rate-limited. Status: %s",
-            [m.get_status(now) for m in self.models],
-        )
-        raise RateLimitExceeded("All configured models have exceeded their rate limits")
-
     async def connection_close(self):
         return await self.client.aio.aclose()
 
     async def get_response(self, contents, config) -> types.Content:
-        model = self.get_available_model()
         now = time.monotonic()
+        attempted_errors = []
 
-        model.record_request(now)
-
-        logger.info("Using model '%s' for request", model.name)
-
-        try:
-            response = await self.client.aio.models.generate_content(
-                model=model.name,
-                config=config,
-                contents=contents,
-            )
-            
-            if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
-                usage = response.usage_metadata
-                total_tokens = getattr(usage, 'total_token_count', 0)
-                prompt_tokens = getattr(usage, 'prompt_token_count', 0)
-                response_tokens = getattr(usage, 'candidates_token_count', 0)
-                thoughts_tokens = getattr(usage, 'thoughts_token_count', 0)
+        for model in self.models:
+            if not model.is_available(now):
+                continue
                 
-                # TPM (Tokens Per Minute) зазвичай враховує лише вхідні токени (input)
-                model.record_tokens(time.monotonic(), prompt_tokens)
-                
-                logger.info(
-                    "Token usage for '%s': total=%s, prompt (input)=%s, response=%s, thoughts=%s", 
-                    model.name, total_tokens, prompt_tokens, response_tokens, thoughts_tokens
+            model.record_request(now)
+            logger.info("Using model '%s' for request", model.name)
+
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model.name,
+                    config=config,
+                    contents=contents,
                 )
                 
-            return response
-        except Exception:
-            # TODO: Обробляти конкретні помилки, наприклад, 5xx та 4xx і решту + logging
-            # + якщо помилка 500 якась там з unavaible, то треба пробувати наступну модель, оскільки інші моделі можуть працювати
-            model.refund_request()
-            raise
+                if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
+                    usage = response.usage_metadata
+                    total_tokens = getattr(usage, 'total_token_count', 0)
+                    prompt_tokens = getattr(usage, 'prompt_token_count', 0)
+                    response_tokens = getattr(usage, 'candidates_token_count', 0)
+                    thoughts_tokens = getattr(usage, 'thoughts_token_count', 0)
+                    
+                    # TPM (Tokens Per Minute) зазвичай враховує лише вхідні токени (input)
+                    model.record_tokens(time.monotonic(), prompt_tokens)
+                    
+                    logger.info(
+                        "Token usage for '%s': total=%s, prompt (input)=%s, response=%s, thoughts=%s", 
+                        model.name, total_tokens, prompt_tokens, response_tokens, thoughts_tokens
+                    )
+                    
+                return response
+            
+            except errors.APIError as e:
+                model.refund_request()
+                code = getattr(e, 'code', 0)
+                message = getattr(e, 'message', str(e))
+                logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
+                
+                # 429 - Too Many Requests (hit server-side limit despite our tracking)
+                # 5xx - Server Errors (Internal Server Error, Service Unavailable, etc.)
+                if code == 429 or code >= 500:
+                    attempted_errors.append(f"{model.name} (APIError {code})")
+                    logger.warning("Attempting fallback to next model due to server error %s", code)
+                    continue
+                
+                # 4xx client errors (like 400 Bad Request) mean our request is invalid
+                raise
+                
+            except Exception as e:
+                model.refund_request()
+                logger.error("Exception on model '%s': %s", model.name, str(e))
+                attempted_errors.append(f"{model.name} (Exception: {type(e).__name__})")
+                logger.warning("Attempting fallback to next model due to generic exception")
+                continue
+
+        if attempted_errors:
+            error_msg = f"All attempted models failed. Errors: {', '.join(attempted_errors)}"
+            logger.error(error_msg)
+            raise RateLimitExceeded(error_msg)
+        else:
+            logger.warning("All models rate-limited locally. Status: %s", [m.get_status(time.monotonic()) for m in self.models])
+            raise RateLimitExceeded("All configured models have exceeded their rate limits")
 
     def get_limits_status(self) -> list[dict]:
         """Return limits status for all configured models."""
