@@ -102,7 +102,11 @@ class AIAssistantCog(commands.Cog):
                     response_mime_type="application/json",
                     response_json_schema=test_schema
                 )
-                test_response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], test_config)
+                test_response = await cache.llm_client.get_response(
+                    self.llm_context[str(message.guild.id)], 
+                    test_config,
+                    cheap_first=True,
+                )
 
                 try:
                     if hasattr(test_response, 'parsed') and test_response.parsed is not None:

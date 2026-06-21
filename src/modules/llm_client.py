@@ -104,6 +104,9 @@ class LLMClient:
         """
         Load models from phrases.json → olive → models.
         Falls back to the legacy 'model_name' key for backward compatibility.
+
+        We recommend making sure that the models are ordered from “best/most expensive" to "weakest/cheapest," 
+        as this may affect certain features of this class, such as the reverse cycle.
         """
         olive_cfg = get_phrases().get("olive", {})
         models_raw = olive_cfg.get("models")
@@ -133,11 +136,13 @@ class LLMClient:
     async def connection_close(self):
         return await self.client.aio.aclose()
 
-    async def get_response(self, contents, config) -> types.Content:
+    async def get_response(self, contents, config, cheap_first: bool = False) -> types.Content:
         now = time.monotonic()
         attempted_errors = []
 
-        for model in self.models:
+        models_to_use = reversed(self.models) if cheap_first else self.models
+
+        for model in models_to_use:
             if not model.is_available(now):
                 continue
                 
