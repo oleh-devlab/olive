@@ -8,6 +8,8 @@ import settings
 import core.cache
 
 import configparser
+import logging
+
 config = configparser.ConfigParser()
 
 
@@ -133,7 +135,24 @@ class ChatOps(commands.Cog):
             with open(settings.paths["config_ini"], 'w') as configfile:
                 config.write(configfile)
 
+            if new_mode == 1:
+                logging.getLogger().setLevel(logging.DEBUG)
+            else:
+                logging.getLogger().setLevel(logging.WARNING)
+
         await inter.edit_original_response(f"Debug mode set to {new_mode}.")
+
+    @commands.slash_command(test_guilds=settings.guilds)
+    @commands.is_owner()
+    async def set_log_level(
+        self, 
+        inter: disnake.ApplicationCommandInteraction, 
+        level: str = commands.Param(choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"])
+    ):
+        await inter.response.defer(ephemeral=True)
+        numeric_level = getattr(logging, level)
+        logging.getLogger().setLevel(numeric_level)
+        await inter.edit_original_response(f"Global logging level set to **{level}**.")
 
 def setup(bot):
     bot.add_cog(ChatOps(bot))
