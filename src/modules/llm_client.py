@@ -1,19 +1,18 @@
 from google import genai
 from google.genai import types, errors
 from pathlib import Path
-from dataclasses import dataclass, field
 import time
 import os
 import json
 import logging
 
 from core.utils import get_phrases
+from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
 
 import settings
 
 logger = logging.getLogger(__name__)
 
-from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
 class LLMClient:
     def __init__(self):
         self.client = get_new_client()
