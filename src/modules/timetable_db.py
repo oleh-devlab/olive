@@ -74,6 +74,9 @@ def add_task(user_id: int, name: str, total_dur: int, description: str = "", pri
         
     return new_id
 
+def get_completed_tasks_file(user_id: int) -> Path:
+    return get_data_dir() / f"{user_id}_completed_tasks.tsv"
+
 def remove_task(user_id: int, task_id: int) -> bool:
     filepath = get_tasks_file(user_id)
     if not filepath.exists():
@@ -91,6 +94,96 @@ def remove_task(user_id: int, task_id: int) -> bool:
         writer.writerows(new_tasks)
         
     return True
+
+def get_task(user_id: int, task_id: int) -> dict:
+    tasks = list_tasks(user_id)
+    for t in tasks:
+        if str(t['id']) == str(task_id):
+            return t
+    return None
+
+def spend_task_time(user_id: int, task_id: int, minutes: int) -> tuple[bool, int]:
+    # returns (is_completed, remaining_minutes)
+    filepath = get_tasks_file(user_id)
+    if not filepath.exists():
+        raise ValueError("No tasks file found")
+
+    tasks = list_tasks(user_id)
+    target_idx = -1
+    for i, t in enumerate(tasks):
+        if str(t['id']) == str(task_id):
+            target_idx = i
+            break
+            
+    if target_idx == -1:
+        raise ValueError("Task not found")
+        
+    task = tasks[target_idx]
+    current_dur = int(task['total_dur'])
+    new_dur = current_dur - minutes
+    
+    if new_dur <= 0:
+        # Completed
+        completed_file = get_completed_tasks_file(user_id)
+        _ensure_file(completed_file, TASKS_HEADER)
+        with open(completed_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=TASKS_HEADER, delimiter='\t')
+            writer.writerow(task)
+            
+        tasks.pop(target_idx)
+        is_completed = True
+        remaining = 0
+    else:
+        task['total_dur'] = new_dur
+        is_completed = False
+        remaining = new_dur
+        
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=TASKS_HEADER, delimiter='\t')
+        writer.writeheader()
+        writer.writerows(tasks)
+        
+    return is_completed, remaining
+
+def edit_task(user_id: int, task_id: int, **kwargs) -> bool:
+    filepath = get_tasks_file(user_id)
+    if not filepath.exists():
+        return False
+        
+    tasks = list_tasks(user_id)
+    target_idx = -1
+    for i, t in enumerate(tasks):
+        if str(t['id']) == str(task_id):
+            target_idx = i
+            break
+            
+    if target_idx == -1:
+        return False
+        
+    task = tasks[target_idx]
+    
+    for k, v in kwargs.items():
+        if v is not None and k in task:
+            task[k] = v
+            
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=TASKS_HEADER, delimiter='\t')
+        writer.writeheader()
+        writer.writerows(tasks)
+        
+    return True
+
+def list_completed_tasks(user_id: int) -> list[dict]:
+    filepath = get_completed_tasks_file(user_id)
+    if not filepath.exists():
+        return []
+    
+    tasks = []
+    with open(filepath, 'r', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
+            tasks.append(row)
+    return tasks
 
 def list_time_blocks(user_id: int) -> list[dict]:
     filepath = get_time_blocks_file(user_id)

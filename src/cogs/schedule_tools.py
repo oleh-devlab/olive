@@ -112,6 +112,108 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, "\n".join(lines))
         await inter.edit_original_response("Tasks listed above.")
 
+    @task.sub_command(name="spend", description="Mark time spent on a task")
+    async def task_spend(self, inter: disnake.ApplicationCommandInteraction, task_id: int, minutes: int):
+        await inter.response.defer(ephemeral=True)
+        try:
+            is_completed, remaining = timetable_db.spend_task_time(inter.author.id, task_id, minutes)
+            if is_completed:
+                await inter.edit_original_response(f"Subtracted {minutes} min. Task fully completed and moved to history!")
+            else:
+                await inter.edit_original_response(f"Subtracted {minutes} min. Remaining duration: {remaining} min.")
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
+
+    @task.sub_command(name="edit", description="Edit specific fields of an existing task")
+    async def task_edit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        task_id: int,
+        name: str = None,
+        total_dur_min: int = None,
+        description: str = None,
+        priority: int = None,
+        session_dur_min: int = None,
+        break_dur_min: int = None,
+        min_session_min: int = None,
+        deadline: str = None
+    ):
+        await inter.response.defer(ephemeral=True)
+        try:
+            updates = {}
+            if name is not None: updates["name"] = name.replace('\t', ' ').replace('\n', ' ').strip()
+            if total_dur_min is not None: updates["total_dur"] = total_dur_min
+            if description is not None: updates["description"] = description.replace('\t', ' ').replace('\n', ' ').strip()
+            if priority is not None: updates["priority"] = priority
+            if session_dur_min is not None: updates["session_dur"] = session_dur_min
+            if break_dur_min is not None: updates["break_dur"] = break_dur_min
+            if min_session_min is not None:
+                updates["has_min_session"] = 1
+                updates["min_session"] = min_session_min
+            
+            if deadline is not None:
+                if deadline.lower() == "none":
+                    updates["has_deadline"] = 0
+                    updates["deadline"] = 0
+                else:
+                    dt = datetime.datetime.strptime(deadline, "%d.%m.%Y %H:%M")
+                    dt = dt.replace(tzinfo=tz)
+                    updates["has_deadline"] = 1
+                    updates["deadline"] = int(dt.timestamp() / 60)
+
+            success = timetable_db.edit_task(inter.author.id, task_id, **updates)
+            if success:
+                await inter.edit_original_response(f"Task {task_id} updated successfully.")
+            else:
+                await inter.edit_original_response(f"Task {task_id} not found.")
+        except ValueError:
+            await inter.edit_original_response("Invalid deadline format. Use 'DD.MM.YYYY HH:MM' or 'none'.")
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
+
+    @task.sub_command(name="info", description="View detailed information about a task")
+    async def task_info(self, inter: disnake.ApplicationCommandInteraction, task_id: int):
+        await inter.response.defer(ephemeral=True)
+        task = timetable_db.get_task(inter.author.id, task_id)
+        if not task:
+            await inter.edit_original_response(f"Task {task_id} not found.")
+            return
+
+        lines = [
+            f"**Task Details (ID: {task['id']})**",
+            f"**Name:** {task['name']}",
+            f"**Description:** {task['description'] if task['description'].strip() else '(none)'}",
+            f"**Priority:** {task['priority']}",
+            f"**Total Duration:** {task['total_dur']} min",
+            f"**Session:** {task['session_dur']} min  |  **Break:** {task['break_dur']} min"
+        ]
+
+        if int(task['has_deadline']):
+            dl_str = minutes_to_hhmm(int(task['deadline']))
+            lines.insert(3, f"**Deadline:** {dl_str}")
+        else:
+            lines.insert(3, "**Deadline:** none")
+            
+        if int(task['has_min_session']):
+            lines.append(f"**Min session shortening allowed:** {task['min_session']} min")
+
+        await inter.edit_original_response("\n".join(lines))
+
+    @task.sub_command(name="history", description="List completed tasks")
+    async def task_history(self, inter: disnake.ApplicationCommandInteraction):
+        await inter.response.defer(ephemeral=True)
+        tasks = timetable_db.list_completed_tasks(inter.author.id)
+        if not tasks:
+            await inter.edit_original_response("No completed tasks found in history.")
+            return
+        
+        lines = ["**Completed Tasks:**"]
+        for t in tasks:
+            lines.append(f"`[ID: {t['id']}]` **{t['name']}** (Priority: {t['priority']})")
+        
+        await utils.send_long_message(inter.channel, "\n".join(lines))
+        await inter.edit_original_response("History listed above.")
+
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
     async def timeblock(self, inter: disnake.ApplicationCommandInteraction):
