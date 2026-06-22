@@ -3,6 +3,7 @@ from disnake.ext import commands
 
 import settings
 import modules.automatic_timetable as auto_timetable
+import core.utils as utils
 
 class AutoSchedule(commands.Cog):
     def __init__(self, bot):
@@ -12,15 +13,17 @@ class AutoSchedule(commands.Cog):
     @commands.is_owner()
     async def get_test_schedule(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
-
         ID = inter.author.id
         try:
             schedule = await auto_timetable.get_schedule(ID)
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
             return
+        await inter.edit_original_response("Successfully")
 
-        await inter.edit_original_response(f"Schedule:\n```{schedule}```")
+        await send_long_message(inter.channel, f"Schedule:\n```{schedule}```")
+
+
 
 def setup(bot):
     bot.add_cog(AutoSchedule(bot))
