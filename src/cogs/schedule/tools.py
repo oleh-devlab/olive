@@ -314,23 +314,33 @@ class AutoSchedule(commands.Cog):
                 inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True)
             }
             
-            channel = await inter.guild.create_text_channel(
+            schedule_channel = await inter.guild.create_text_channel(
                 name=f"schedule-{inter.author.display_name}",
                 category=category,
                 overwrites=overwrites,
                 reason="Automatic creation of schedule channel"
             )
+
+            tasks_channel = await inter.guild.create_text_channel(
+                name=f"tasks-{inter.author.display_name}",
+                category=category,
+                overwrites=overwrites,
+                reason="Automatic creation of tasks channel"
+            )
             
             data[user_id_str] = {
-                "channel_id": channel.id,
+                "channel_id": schedule_channel.id,
                 "guild_id": inter.guild.id
             }
             provider.save_channels(data)
             
             # Initialize channel in the loop via event dispatch
-            self.bot.dispatch("schedule_init", channel, inter.author.id)
+            self.bot.dispatch("schedule_init", schedule_channel, inter.author.id)
             
-            msg_created = phrases.get("channel_created", "Channel successfully created: {channel_mention}").format(channel_mention=channel.mention)
+            msg_created = phrases.get(
+                "channel_created", 
+                "Channels successfully created: Schedule {schedule_channel}, Tasks {tasks_channel}"
+            ).format(schedule_channel=schedule_channel.mention, tasks_channel=tasks_channel.mention)
             await inter.edit_original_response(msg_created)
             
         except Exception as e:
