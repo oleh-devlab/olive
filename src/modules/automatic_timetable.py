@@ -50,6 +50,10 @@ def _parse_tsv_timetable(tsv_content: str) -> dict:
     return dict
 
 async def get_schedule(client_ID: int) -> str:
+    tasks_file = Path(__file__).resolve().parent.parent.parent / "data" / f"{client_ID}_tasks.tsv"
+    if not tasks_file.exists():
+        return "У вас ще немає завдань. Скористайтеся `/task add`, щоб додати перше завдання.\n"
+
     tsv_content = await _generate_tsv_timetable(client_ID)
     data = _parse_tsv_timetable(tsv_content)
 

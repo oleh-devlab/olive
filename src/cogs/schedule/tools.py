@@ -14,8 +14,13 @@ provider = ScheduleProvider()
 
 def hhmm_to_datetime(start_hhmm: str, end_hhmm: str):
     now = datetime.datetime.now(tz)
-    sh, sm = map(int, start_hhmm.split(':'))
-    eh, em = map(int, end_hhmm.split(':'))
+    try:
+        sh, sm = map(int, start_hhmm.split(':'))
+        eh, em = map(int, end_hhmm.split(':'))
+        if not (0 <= sh <= 23 and 0 <= sm <= 59 and 0 <= eh <= 23 and 0 <= em <= 59):
+            raise ValueError()
+    except Exception:
+        raise ValueError("Invalid time format. Use HH:MM, e.g. 09:00 or 14:30")
     
     start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
     end_dt = now.replace(hour=eh, minute=em, second=0, microsecond=0)
@@ -49,6 +54,16 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            if total_dur_min <= 0:
+                return await inter.edit_original_response("Error: total_dur_min must be > 0.")
+            if session_dur_min <= 0 or session_dur_min > total_dur_min:
+                return await inter.edit_original_response("Error: session_dur_min must be > 0 and <= total_dur_min.")
+            if break_dur_min < 0:
+                return await inter.edit_original_response("Error: break_dur_min must be >= 0.")
+            if priority < 1:
+                return await inter.edit_original_response("Error: priority must be >= 1.")
+            if min_session_min is not None and (min_session_min <= 0 or min_session_min > session_dur_min):
+                return await inter.edit_original_response("Error: min_session_min must be > 0 and <= session_dur_min.")
             deadline_dt = None
             if deadline:
                 try:
@@ -105,6 +120,8 @@ class AutoSchedule(commands.Cog):
     @task.sub_command(name="spend", description="Mark time spent on a task")
     async def task_spend(self, inter: disnake.ApplicationCommandInteraction, task_id: int, minutes: int):
         await inter.response.defer(ephemeral=True)
+        if minutes <= 0:
+            return await inter.edit_original_response("Error: minutes must be > 0.")
         try:
             is_completed, remaining = provider.spend_task_time(inter.author.id, task_id, minutes)
             if is_completed:
@@ -132,13 +149,28 @@ class AutoSchedule(commands.Cog):
         try:
             updates = {}
             if name is not None: updates["name"] = name.replace('\t', ' ').replace('\n', ' ').strip()
-            if total_dur_min is not None: updates["total_dur"] = datetime.timedelta(minutes=total_dur_min)
+            if total_dur_min is not None:
+                if total_dur_min <= 0:
+                    return await inter.edit_original_response("Error: total_dur_min must be > 0.")
+                updates["total_dur"] = datetime.timedelta(minutes=total_dur_min)
             if description is not None: updates["description"] = description.replace('\t', ' ').replace('\n', ' ').strip()
-            if priority is not None: updates["priority"] = priority
-            if session_dur_min is not None: updates["session_dur"] = datetime.timedelta(minutes=session_dur_min)
-            if break_dur_min is not None: updates["break_dur"] = datetime.timedelta(minutes=break_dur_min)
+            if priority is not None:
+                if priority < 1:
+                    return await inter.edit_original_response("Error: priority must be >= 1.")
+                updates["priority"] = priority
+            if session_dur_min is not None:
+                if session_dur_min <= 0:
+                    return await inter.edit_original_response("Error: session_dur_min must be > 0.")
+                updates["session_dur"] = datetime.timedelta(minutes=session_dur_min)
+            if break_dur_min is not None:
+                if break_dur_min < 0:
+                    return await inter.edit_original_response("Error: break_dur_min must be >= 0.")
+                updates["break_dur"] = datetime.timedelta(minutes=break_dur_min)
             if min_session_min is not None:
-                updates["min_session"] = datetime.timedelta(minutes=min_session_min)
+                if min_session_min <= 0:
+                    updates["min_session"] = None
+                else:
+                    updates["min_session"] = datetime.timedelta(minutes=min_session_min)
             
             if deadline is not None:
                 if deadline.lower() == "none":

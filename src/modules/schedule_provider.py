@@ -208,7 +208,7 @@ class ScheduleProvider:
             return False
             
         for k, v in kwargs.items():
-            if hasattr(task, k) and v is not None:
+            if hasattr(task, k):
                 setattr(task, k, v)
                 
         filepath = get_tasks_file(user_id)

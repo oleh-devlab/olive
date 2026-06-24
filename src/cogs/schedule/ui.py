@@ -20,7 +20,10 @@ async def update_schedule_message(bot, channel_id):
     formatted_time = now.strftime('%d.%m.%Y %H:%M:%S')
 
     channel = bot.get_channel(channel_id)
-    guild_id = channel.guild.id if channel else None
+    if not channel:
+        cache.schedule_states.pop(channel_id, None)
+        return
+    guild_id = channel.guild.id
     phrases = get_phrases(guild_id).get("schedule", {})
 
     try:
@@ -106,13 +109,6 @@ class SchedulePaginationView(disnake.ui.View):
 class ScheduleUI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.view_registered = False
-
-    @commands.Cog.listener("on_ready")
-    async def on_ready_listener(self):
-        if not self.view_registered:
-            self.bot.add_view(SchedulePaginationView())
-            self.view_registered = True
 
     @commands.Cog.listener("on_schedule_update")
     async def handle_schedule_update(self, channel_id: int):
@@ -140,3 +136,4 @@ class ScheduleUI(commands.Cog):
 
 def setup(bot):
     bot.add_cog(ScheduleUI(bot))
+    bot.add_view(SchedulePaginationView())
