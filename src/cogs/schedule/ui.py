@@ -106,7 +106,13 @@ class SchedulePaginationView(disnake.ui.View):
 class ScheduleUI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.bot.add_view(SchedulePaginationView())
+        self.view_registered = False
+
+    @commands.Cog.listener("on_ready")
+    async def on_ready_listener(self):
+        if not self.view_registered:
+            self.bot.add_view(SchedulePaginationView())
+            self.view_registered = True
 
     @commands.Cog.listener("on_schedule_update")
     async def handle_schedule_update(self, channel_id: int):
