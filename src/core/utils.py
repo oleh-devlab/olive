@@ -55,6 +55,24 @@ def _split_text(text, max_length=2000):
         chunks.append(text)
     return chunks
 
+def paginate_text(text: str, max_chars: int = 1000) -> list[str]:
+    pages = []
+    lines = text.split('\n')
+    current_page = ""
+    for line in lines:
+        if len(current_page) + len(line) + 1 > max_chars:
+            if current_page:
+                pages.append(current_page)
+            current_page = line + '\n'
+        else:
+            current_page += line + '\n'
+    if current_page:
+        pages.append(current_page)
+    
+    if not pages:
+        pages = ["Порожньо"]
+    return pages
+
 
 async def send_long_message(target, text, max_length=2000, **kwargs):
     # TODO: epheremal fix

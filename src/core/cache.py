@@ -13,3 +13,5 @@ llm_client = None
 active_cogs_list = {}
 
 _phrases = {}
+
+schedule_states = {}

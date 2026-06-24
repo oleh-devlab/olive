@@ -20,6 +20,10 @@ channels = {
     "add_logs": 123 # For the error handler (CoolDown and others)
 }
 
+schedule_categories = {
+    123456789: 987654321 # guild_id: category_id
+}
+
 guilds = [123, 456]
 main_guild_id = 123
 

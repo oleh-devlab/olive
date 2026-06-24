@@ -31,19 +31,6 @@ class AutoSchedule(commands.Cog):
 
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
-    async def get_test_schedule(self, inter: disnake.ApplicationCommandInteraction):
-        await inter.response.defer(ephemeral=True)
-        try:
-            # Note: automatic_timetable
-            import modules.automatic_timetable as auto_timetable
-            schedule = await auto_timetable.get_schedule(inter.author.id)
-            await inter.edit_original_response("Successfully")
-            await utils.send_long_message(inter.channel, f"Schedule:\n```{schedule}```")
-        except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
-
-    @commands.slash_command(test_guilds=settings.guilds)
-    @commands.is_owner()
     async def task(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
@@ -286,6 +273,69 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
+    @commands.slash_command(name="schedule_channel", description="Manage personal schedule channels")
+    async def schedule_channel(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @schedule_channel.sub_command(name="create", description="Create a personal schedule channel")
+    async def schedule_channel_create(self, inter: disnake.ApplicationCommandInteraction):
+        await inter.response.defer(ephemeral=True)
+        
+        schedule_categories = getattr(settings, "schedule_categories", {})
+        phrases = utils.get_phrases(inter.guild.id).get("schedule", {})
+        
+        if inter.guild.id not in schedule_categories:
+            await inter.edit_original_response(phrases.get("not_available_server", "Not available on this server."))
+            return
+            
+        category_id = schedule_categories[inter.guild.id]
+        category = inter.guild.get_channel(category_id)
+        if not category:
+            await inter.edit_original_response(phrases.get("category_not_found", "Category for channels not found. Contact administrator."))
+            return
+
+        data = provider.load_channels()
+        user_id_str = str(inter.author.id)
+        
+        if user_id_str in data:
+            await inter.edit_original_response(phrases.get("channel_already_exists", "You already have a schedule channel on one of the servers."))
+            return
+
+        # Check limit per server
+        channels_in_guild = sum(1 for d in data.values() if d.get("guild_id") == inter.guild.id)
+        if channels_in_guild >= 3:
+            await inter.edit_original_response(phrases.get("limit_exceeded", "Schedule channel limit exceeded for this server (max 3)."))
+            return
+
+        try:
+            overwrites = {
+                inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
+                inter.author: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
+                inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
+            
+            channel = await inter.guild.create_text_channel(
+                name=f"schedule-{inter.author.display_name}",
+                category=category,
+                overwrites=overwrites,
+                reason="Automatic creation of schedule channel"
+            )
+            
+            data[user_id_str] = {
+                "channel_id": channel.id,
+                "guild_id": inter.guild.id
+            }
+            provider.save_channels(data)
+            
+            # Initialize channel in the loop via event dispatch
+            self.bot.dispatch("schedule_init", channel, inter.author.id)
+            
+            msg_created = phrases.get("channel_created", "Channel successfully created: {channel_mention}").format(channel_mention=channel.mention)
+            await inter.edit_original_response(msg_created)
+            
+        except Exception as e:
+            print(f"Error creating channel: {e}")
+            await inter.edit_original_response(phrases.get("creation_error", "An error occurred while creating the channel."))
 
 def setup(bot):
     bot.add_cog(AutoSchedule(bot))

@@ -1,6 +1,6 @@
-import os
 import csv
 import datetime
+import json
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -26,6 +26,9 @@ def get_time_blocks_file(user_id: int) -> Path:
 def get_completed_tasks_file(user_id: int) -> Path:
     return get_data_dir() / f"{user_id}_completed_tasks.tsv"
 
+def get_schedule_channels_file() -> Path:
+    return get_data_dir() / "schedule_channels.json"
+
 def _ensure_file(filepath: Path, header: list):
     if not filepath.exists():
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
@@ -34,6 +37,21 @@ def _ensure_file(filepath: Path, header: list):
 
 class ScheduleProvider:
     
+    def load_channels(self) -> dict:
+        filepath = get_schedule_channels_file()
+        if not filepath.exists():
+            return {}
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def save_channels(self, data: dict):
+        filepath = get_schedule_channels_file()
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+
     def _parse_task_row(self, row: dict) -> Task:
         has_deadline = int(row['has_deadline'])
         deadline_dt = None
