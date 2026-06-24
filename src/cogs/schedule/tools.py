@@ -273,7 +273,7 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @commands.slash_command(name="schedule_channel", description="Manage personal schedule channels")
+    @commands.slash_command(name="schedule_channel", description="Manage personal schedule channels", test_guilds=settings.guilds)
     async def schedule_channel(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
