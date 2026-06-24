@@ -11,6 +11,7 @@ import traceback
 
 import core.cache
 from settings import channels
+from core.task_handler import ResilientTaskHandler
 
 class CurrencyEmbed(commands.Cog):
     def __init__(self, bot):
@@ -21,6 +22,8 @@ class CurrencyEmbed(commands.Cog):
         self.LAST_UPDATE_FILE = "last_currency_update.txt" # File to store the timestamp of the last successful update
         self.url = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchangenew?json"
         self.HTTP_TIMEOUT = ClientTimeout(total=10)
+        
+        self.error_handler = ResilientTaskHandler(bot, self.currency_embed, "CurrencyEmbedLoop")
 
         self.currency_embed.start()
 
@@ -103,15 +106,7 @@ class CurrencyEmbed(commands.Cog):
 
     @currency_embed.error
     async def on_currency_error(self, error):
-        traceback.print_exc()
-        
-        try:
-            error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = get_phrases(error_channel.guild.id).get("currency_embed", {}).get("on_currency_error", "Currency Embed error: {error}").format(owner_id=self.bot.owner_id, error=error)
-            await error_channel.send(text)
-            self.currency_embed.cancel()
-        except Exception as e:
-            print(f"[ERROR currency_embed] Critical error in handler: {e}")
+        await self.error_handler.handle_error(error)
 
 def setup(bot):
     bot.add_cog(CurrencyEmbed(bot))

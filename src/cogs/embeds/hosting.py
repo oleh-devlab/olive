@@ -7,6 +7,7 @@ import traceback
 
 import core.cache
 from settings import channels
+from core.task_handler import ResilientTaskHandler
 
 from core.utils import u_decline, format_embed_data, get_phrases
 
@@ -25,6 +26,8 @@ async def get_memory_info():
 class Hosting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        
+        self.error_handler = ResilientTaskHandler(bot, self.hosting_loop, "HostingLoop")
 
         self.hosting_loop.start()
 
@@ -98,15 +101,7 @@ class Hosting(commands.Cog):
 
     @hosting_loop.error
     async def on_ram_error(self, error):
-        traceback.print_exc()
-        
-        try:
-            error_channel = await self.bot.get_or_fetch_channel(channels["bot_news"])
-            text = get_phrases().get("hosting_embed", {}).get("on_ram_error", "Hosting (RAM) error: {error}").format(owner_id=self.bot.owner_id, error=error)
-            await error_channel.send(text)
-            self.hosting_loop.cancel()
-        except Exception as e:
-            print(f"[ERROR hosting_loop] Critical error in handler: {e}")
+        await self.error_handler.handle_error(error)
 
 def setup(bot):
     bot.add_cog(Hosting(bot))
