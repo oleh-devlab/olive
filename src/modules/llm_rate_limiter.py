@@ -19,6 +19,7 @@ class ModelConfig:
     _day_tokens: int = field(default=0, repr=False)
     _minute_window_start: float | None = field(default=None, repr=False)
     _day_window_start: float | None = field(default=None, repr=False)
+    _consecutive_429s: int = field(default=0, repr=False)
 
     def _reset_windows_if_needed(self, now: float):
         """Reset counters if their time windows have expired. Handles NTP backwards jumps."""
@@ -40,6 +41,7 @@ class ModelConfig:
             "day_tokens": self._day_tokens,
             "minute_window_start": self._minute_window_start,
             "day_window_start": self._day_window_start,
+            "consecutive_429s": self._consecutive_429s,
         }
 
     def load_from_dict(self, data: dict):
@@ -49,6 +51,7 @@ class ModelConfig:
         self._day_tokens = data.get("day_tokens", 0)
         self._minute_window_start = data.get("minute_window_start")
         self._day_window_start = data.get("day_window_start")
+        self._consecutive_429s = data.get("consecutive_429s", 0)
 
     def is_available(self, now: float) -> bool:
         """Check if this model can handle another request right now."""
@@ -77,6 +80,18 @@ class ModelConfig:
             self._minute_requests -= 1
         if self._day_requests > 0:
             self._day_requests -= 1
+
+    def handle_429(self):
+        """Apply rate limits on 429: first minute limit, then daily."""
+        self._consecutive_429s += 1
+        if self._consecutive_429s == 1:
+            self._minute_requests = self.rpm
+        else:
+            self._day_requests = self.rpd
+
+    def record_success(self):
+        """Reset consecutive 429s on success."""
+        self._consecutive_429s = 0
 
     def get_status(self, now: float) -> dict:
         """Return a snapshot of the current limits state for diagnostics."""

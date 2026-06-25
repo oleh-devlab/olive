@@ -119,6 +119,7 @@ class LLMClient:
                         model.name, total_tokens, prompt_tokens, response_tokens, thoughts_tokens
                     )
                     
+                model.record_success()
                 return response
             
             except errors.APIError as e:
@@ -127,9 +128,13 @@ class LLMClient:
                 message = getattr(e, 'message', str(e))
                 logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
                 
-                # 429 - Too Many Requests (hit server-side limit despite our tracking)
                 # 5xx - Server Errors (Internal Server Error, Service Unavailable, etc.)
-                if code == 429 or code >= 500:
+                if code == 429:
+                    model.handle_429()
+                    attempted_errors.append(f"{model.name} (APIError {code})")
+                    logger.warning("Attempting fallback to next model due to 429 (Consecutive: %d)", model._consecutive_429s)
+                    continue
+                elif code >= 500:
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning("Attempting fallback to next model due to server error %s", code)
                     continue
