@@ -110,6 +110,9 @@ class ScheduleUI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def cog_load(self):
+        self.bot.add_view(SchedulePaginationView())
+
     @commands.Cog.listener("on_schedule_update")
     async def handle_schedule_update(self, channel_id: int):
         await update_schedule_message(self.bot, channel_id)
@@ -136,4 +139,4 @@ class ScheduleUI(commands.Cog):
 
 def setup(bot):
     bot.add_cog(ScheduleUI(bot))
-    bot.add_view(SchedulePaginationView())
+
