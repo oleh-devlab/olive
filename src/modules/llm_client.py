@@ -58,6 +58,7 @@ class LLMClient:
                     rpm=m.get("rpm", 15),
                     rpd=m.get("rpd", 1500),
                     tpm=m.get("tpm", None),
+                    max_context_tokens=m.get("max_context_tokens", 128000),
                 )
                 for m in models_raw
                 if isinstance(m, dict) and "name" in m
@@ -72,6 +73,11 @@ class LLMClient:
         """Check if at least one model can serve a request right now."""
         now = time.time()
         return any(model.is_available(now) for model in self.models)
+
+    @property
+    def min_context_tokens(self) -> int:
+        """Get the minimum context token limit across all configured models."""
+        return min((model.max_context_tokens for model in self.models), default=128000)
 
     async def shutdown(self):
         """Close the API client and save the current limits state to disk."""

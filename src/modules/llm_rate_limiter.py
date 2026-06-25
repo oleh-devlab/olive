@@ -11,6 +11,7 @@ class ModelConfig:
     rpm: int = 15 # requests per minute
     rpd: int = 1500 # requests per day
     tpm: int | None = None # tokens per minute
+    max_context_tokens: int = 128000 # context size limit in tokens
 
     # Internal state
     _minute_requests: int = field(default=0, repr=False)
@@ -82,7 +83,12 @@ class ModelConfig:
             self._day_requests -= 1
 
     def handle_429(self):
-        """Apply rate limits on 429: first minute limit, then daily."""
+        """Apply rate limits on 429: first minute limit, then daily. Handles concurrent 429s."""
+        # If the penalty is already active for this window, ignore concurrent 429s
+        if (self._minute_requests >= self.rpm and self._consecutive_429s == 1) or \
+           (self._day_requests >= self.rpd and self._consecutive_429s >= 2):
+            return
+
         self._consecutive_429s += 1
         if self._consecutive_429s == 1:
             self._minute_requests = self.rpm

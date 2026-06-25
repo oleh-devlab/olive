@@ -142,22 +142,29 @@ class AIAssistantCog(commands.Cog):
             async with message.channel.typing():
                 response = await cache.llm_client.get_response(self.context_manager.get_context(str(message.guild.id)), reply_config)
 
+                candidate_tokens = 0
+                if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
+                    prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
+                    candidate_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
+                    if prompt_tokens > 0:
+                        self.context_manager.update_latest_user_message_tokens(str(message.guild.id), prompt_tokens)
+
+                if not response.text:
+                    logger.warning("Model returned empty response (possibly blocked by safety filters)")
+                    return
+
+                self.context_manager.add_model_message(str(message.guild.id), response.text, tokens=candidate_tokens)
+                await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
+
         except RateLimitExceeded:
             return
         except Exception as e:
             logger.error("Unexpected error in generate_answer: %s", e)
             return
         finally:
-            self.context_manager.apply_restrictions()
+            limit = cache.llm_client.min_context_tokens if cache.llm_client else 128000
+            self.context_manager.apply_restrictions(max_tokens=limit)
             await self.context_manager.write_to_file()
-
-        if not response.text:
-            logger.warning("Model returned empty response (possibly blocked by safety filters)")
-            return
-
-        self.context_manager.add_model_message(str(message.guild.id), response.text)
-        
-        await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
 
     @commands.slash_command(name="turn_olive", description="Enable or disable OLIVE AI")
     @commands.is_owner()

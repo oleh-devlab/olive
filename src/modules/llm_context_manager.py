@@ -38,22 +38,50 @@ class LLMContextManager:
             self.llm_context[guild_id] = []
         self.llm_context[guild_id].append({"role": "user", "parts": [{"text": formatted_text}]})
 
-    def add_model_message(self, guild_id: str, text: str):
+    def get_message_tokens(self, message: dict) -> int:
+        if "tokens" in message:
+            return message["tokens"]
+        # Fallback approximation
+        return sum(len(str(p.get("text") or "")) for p in message.get("parts", [])) // 2
+
+    def add_model_message(self, guild_id: str, text: str, tokens: int = 0):
         if guild_id not in self.llm_context:
             self.llm_context[guild_id] = []
-        self.llm_context[guild_id].append({"role": "model", "parts": [{"text": text}]})
+        self.llm_context[guild_id].append({"role": "model", "parts": [{"text": text}], "tokens": tokens})
 
-    def apply_restrictions(self):
-        """
-        Maintains the context size within limits using a sliding window approach.
-        TODO: Account for tokens
-        """
-        for guild_id, messages in self.llm_context.items():
-            if len(messages) > self.max_messages_in_context:
-                sliced_messages = messages[-self.max_messages_in_context:]
+    def update_latest_user_message_tokens(self, guild_id: str, prompt_token_count: int):
+        if guild_id not in self.llm_context or not self.llm_context[guild_id]:
+            return
             
-                # Remove leading model messages so the context always starts with a user message
-                while sliced_messages and sliced_messages[0].get("role") in ["assistant", "model"]:
-                    sliced_messages.pop(0)
+        messages = self.llm_context[guild_id]
+        if messages[-1].get("role") == "user":
+            previous_tokens = sum(self.get_message_tokens(m) for m in messages[:-1])
+            new_user_tokens = prompt_token_count - previous_tokens
+            if new_user_tokens <= 0:
+                logger.warning(
+                    "Token math yielded %d for guild %s (prompt=%d, previous_sum=%d). "
+                    "This likely means fallback approximations for older messages are too high.",
+                    new_user_tokens, guild_id, prompt_token_count, previous_tokens
+                )
+            messages[-1]["tokens"] = max(1, new_user_tokens)
+
+    def apply_restrictions(self, max_tokens: int = 128000):
+        """
+        Maintains the context size within exact token limits.
+        Falls back to local approximation for legacy messages.
+        """
+        # Safety margin for upcoming generated response
+        effective_limit = max(0, max_tokens - 2000)
+
+        for guild_id, messages in self.llm_context.items():
+            while messages:
+                total_tokens = sum(self.get_message_tokens(m) for m in messages)
+                
+                if total_tokens <= effective_limit:
+                    break
                     
-                self.llm_context[guild_id] = sliced_messages
+                messages.pop(0)
+                
+                # Remove leading model messages so the context always starts with a user message
+                while messages and messages[0].get("role") in ["assistant", "model"]:
+                    messages.pop(0)
