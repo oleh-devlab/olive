@@ -4,17 +4,15 @@ import disnake
 from disnake.ext import commands, tasks
 
 
+import settings
 from settings import is_battery
-
 import core.cache
 from core.utils import format_embed_data, get_phrases
-
 from core.time_utils import tz
 
 class UptimeEmbed(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.j = True
 
         self.watt = 0.6
 
@@ -32,10 +30,6 @@ class UptimeEmbed(commands.Cog):
         Update the uptime embed with the current uptime and estimated cost based on power consumption.
         """
 
-        if self.j:
-            await asyncio.sleep(75)
-            self.j = False
-
         now = datetime.now(tz)
         delta = now - self.start_time
         days = delta.days
@@ -49,7 +43,7 @@ class UptimeEmbed(commands.Cog):
         )
         
         if is_battery:
-            cost_kwh = 4.32
+            cost_kwh = getattr(settings, 'cost_kwh', 4.32)
         else:
             cost_kwh = 0
 

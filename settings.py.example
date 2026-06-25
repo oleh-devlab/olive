@@ -40,6 +40,7 @@ cogs_blacklist = ["olive", "embeds.battery"] # If you disable the models that us
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery
+cost_kwh = 4.32 # Electricity cost per kWh
 min_safe_percent_charge = 35
 max_safe_percent_charge = 70
 battery_update_seconds = 180 # (Seconds) The number of seconds between each update of the battery status (charge, current, etc.)
