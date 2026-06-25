@@ -1,5 +1,6 @@
 import json
 import core.cache
+import asyncio
 
 
 async def u_decline(number, forms):
@@ -38,6 +39,50 @@ def format_embed_data(data, **kwargs):
     else:
         return data
 
+
+def _split_text(text, max_length=2000):
+    chunks = []
+    while len(text) > max_length:
+        split_pos = text.rfind('\n', 0, max_length)
+        if split_pos == -1 or split_pos == 0:
+            split_pos = text.rfind(' ', 0, max_length)
+        if split_pos == -1 or split_pos == 0:
+            split_pos = max_length
+
+        chunks.append(text[:split_pos])
+        text = text[split_pos:].lstrip('\n')
+    if text:
+        chunks.append(text)
+    return chunks
+
+def paginate_text(text: str, max_chars: int = 1000) -> list[str]:
+    pages = []
+    lines = text.split('\n')
+    current_page = ""
+    for line in lines:
+        if len(current_page) + len(line) + 1 > max_chars:
+            if current_page:
+                pages.append(current_page)
+            current_page = line + '\n'
+        else:
+            current_page += line + '\n'
+    if current_page:
+        pages.append(current_page)
+    
+    if not pages:
+        pages = ["Порожньо"]
+    return pages
+
+
+async def send_long_message(target, text, max_length=2000, **kwargs):
+    # TODO: epheremal fix
+    chunks = _split_text(text, max_length)
+    sent_messages = []
+    for chunk in chunks:
+        msg = await target.send(chunk, **kwargs)
+        sent_messages.append(msg)
+        await asyncio.sleep(0.25)
+    return sent_messages
 
 
 def get_phrases(guild_id=None):

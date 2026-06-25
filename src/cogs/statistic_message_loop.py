@@ -1,10 +1,7 @@
 import asyncio
-import aiohttp
 from datetime import datetime
-import time
 from disnake.ext import commands, tasks
 import traceback
-import disnake
 
 from settings import channels, embeds_blacklist
 import core.cache

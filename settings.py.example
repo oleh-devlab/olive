@@ -7,7 +7,8 @@ paths = {
     "cogs": "cogs",
     "discord_token_file": ".ds_bot_token",
     "genai_token_file": ".genai_token",
-    "config_ini": "config.ini"
+    "config_ini": "config.ini",
+    "auto_schedule_executable": "app" # Regarding the "modules/automatic_timetable/build" folder
 }
 # The configurable path to the Google GenAI token and others has not yet been implemented.
 
@@ -17,6 +18,10 @@ channels = {
     "terminal_channel": 123, # A channel where users can use the bot's commands. We plan to remove this setting.
     "statistic": [123, 123], # The channel(s) where the bot can post and edit its own messages.
     "add_logs": 123 # For the error handler (CoolDown and others)
+}
+
+schedule_categories = {
+    123456789: 987654321 # guild_id: category_id
 }
 
 guilds = [123, 456]
