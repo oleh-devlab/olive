@@ -148,12 +148,15 @@ class AutoSchedule(commands.Cog):
         await inter.response.defer(ephemeral=True)
         try:
             updates = {}
-            if name is not None: updates["name"] = name.replace('\t', ' ').replace('\n', ' ').strip()
+            
+            if name is not None: 
+                updates["name"] = name.replace('\t', ' ').replace('\n', ' ').strip()
             if total_dur_min is not None:
                 if total_dur_min <= 0:
                     return await inter.edit_original_response("Error: total_dur_min must be > 0.")
                 updates["total_dur"] = datetime.timedelta(minutes=total_dur_min)
-            if description is not None: updates["description"] = description.replace('\t', ' ').replace('\n', ' ').strip()
+            if description is not None: 
+                updates["description"] = description.replace('\t', ' ').replace('\n', ' ').strip()
             if priority is not None:
                 if priority < 1:
                     return await inter.edit_original_response("Error: priority must be >= 1.")
@@ -286,7 +289,7 @@ class AutoSchedule(commands.Cog):
                 et = b.end_time.strftime("%H:%M")
                 rep = "Repeatable" if b.is_repeatable else "One-time"
                 lines.append(f"`[{i + 1}]` {st} - {et} ({rep})")
-            except Exception as e:
+            except Exception:
                 lines.append(f"`[{i + 1}]` Invalid Block Data")
         
         await utils.send_long_message(inter.channel, "\n".join(lines))

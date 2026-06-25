@@ -3,12 +3,8 @@ from datetime import datetime, timezone
 import psutil
 import disnake
 
-import traceback
-
 import core.cache
-from settings import channels
 from core.task_handler import ResilientTaskHandler
-
 from core.utils import u_decline, format_embed_data, get_phrases
 
 async def get_memory_info():

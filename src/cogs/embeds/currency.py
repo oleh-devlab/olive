@@ -7,10 +7,7 @@ import aiohttp
 from core.utils import format_embed_data, get_phrases
 from aiohttp import ClientTimeout
 
-import traceback
-
 import core.cache
-from settings import channels
 from core.task_handler import ResilientTaskHandler
 
 class CurrencyEmbed(commands.Cog):

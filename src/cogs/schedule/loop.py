@@ -2,7 +2,6 @@ import asyncio
 from disnake.ext import commands, tasks
 import traceback
 
-from core.utils import get_phrases
 from core.task_handler import ResilientTaskHandler
 from modules.schedule_provider import ScheduleProvider
 
