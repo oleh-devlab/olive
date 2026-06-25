@@ -75,6 +75,10 @@ class AIAssistantCog(commands.Cog):
             await self.generate_answer(message)
         except asyncio.CancelledError:
             pass
+        finally:
+            guild_id = str(message.guild.id)
+            if self.response_tasks.get(guild_id) == asyncio.current_task():
+                del self.response_tasks[guild_id]
 
     async def generate_answer(self, message: disnake.Message):
         

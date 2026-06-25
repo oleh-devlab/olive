@@ -6,9 +6,12 @@ import disnake
 import aiohttp
 from core.utils import format_embed_data, get_phrases
 from aiohttp import ClientTimeout
+import logging
 
 import core.cache
 from core.task_handler import ResilientTaskHandler
+
+logger = logging.getLogger(__name__)
 
 class CurrencyEmbed(commands.Cog):
     def __init__(self, bot):
@@ -16,11 +19,13 @@ class CurrencyEmbed(commands.Cog):
         self.usd_eur_test = {'usd': 0, 'eur':0}
 
         self.CACHE_FILE = "currency_cache.json"
-        self.LAST_UPDATE_FILE = "last_currency_update.txt" # File to store the timestamp of the last successful update
         self.url = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchangenew?json"
         self.HTTP_TIMEOUT = ClientTimeout(total=10)
         
         self.error_handler = ResilientTaskHandler(bot, self.currency_embed, "CurrencyEmbedLoop")
+        
+        self.last_update = None
+        self.cached_currencies = None
 
         self.currency_embed.start()
 
@@ -32,31 +37,32 @@ class CurrencyEmbed(commands.Cog):
         currencies = None
         now = datetime.now()
         
-        # Try to read from cache
-        cached = None
-        try:
+        if self.last_update is None:
             if os.path.exists(self.CACHE_FILE):
-                with open(self.CACHE_FILE, "r", encoding="utf-8") as f:
-                    cached = json.load(f)
-        except Exception:
-            cached = None
-            
-        # Read last update time
-        if os.path.exists(self.LAST_UPDATE_FILE):
-            with open(self.LAST_UPDATE_FILE, "r", encoding="utf-8") as f:
                 try:
-                    last_update = datetime.strptime(f.read().strip(), "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    last_update = datetime.min
-        else:
-            last_update = datetime.min
+                    with open(self.CACHE_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        
+                        # Handle old structure vs new structure
+                        if "currencies" in data and "last_update" in data:
+                            self.cached_currencies = data["currencies"]
+                            self.last_update = datetime.strptime(data["last_update"], "%Y-%m-%d %H:%M:%S")
+                        else:
+                            self.cached_currencies = data  # Old format, assume it's just the currency dict
+                            self.last_update = datetime.min # Force update to rewrite in new format
+                except Exception:
+                    self.cached_currencies = None
+                    self.last_update = datetime.min
+            else:
+                self.last_update = datetime.min
+                self.cached_currencies = None
 
         # check if cache is still valid (less than 12 hours old)
-        if cached and (now - last_update) < timedelta(hours=12):
-            currencies = cached
+        if self.cached_currencies and (now - self.last_update) < timedelta(hours=12):
+            currencies = self.cached_currencies
         else: # Try to get new data from bank
             try:
-                print("Run currency update.")
+                logger.debug("Run currency update.")
                 async with aiohttp.ClientSession(timeout=self.HTTP_TIMEOUT) as session:
                     async with session.get(self.url) as response:
                         data = await response.json()
@@ -67,17 +73,20 @@ class CurrencyEmbed(commands.Cog):
                         currencies[item.get("cc")] = {"rate": item.get("rate"), "date": item.get("exchangedate")}
 
                 # Saving to cache
+                self.cached_currencies = currencies
+                self.last_update = now
                 try:
                     with open(self.CACHE_FILE, "w", encoding="utf-8") as f:
-                        json.dump(currencies, f)
-                    with open(self.LAST_UPDATE_FILE, "w", encoding="utf-8") as f:
-                        f.write(now.strftime("%Y-%m-%d %H:%M:%S"))
+                        json.dump({
+                            "last_update": now.strftime("%Y-%m-%d %H:%M:%S"),
+                            "currencies": currencies
+                        }, f, ensure_ascii=False, indent=4)
                 except Exception as e:
-                    print(f"[send] Error writing cache: {e}")
+                    logger.error(f"[send] Error writing cache: {e}")
             except Exception as e:
-                print(f"[send] Error with currency update: {e}")
-                if cached:
-                    currencies = cached
+                logger.error(f"[send] Error with currency update: {e}")
+                if self.cached_currencies:
+                    currencies = self.cached_currencies
                 else:
                     return
 
@@ -91,8 +100,8 @@ class CurrencyEmbed(commands.Cog):
             eur_date = eur.get('date') if isinstance(eur, dict) else 'N/A'
 
             if usd_rate is not None and eur_rate is not None and (self.usd_eur_test != {'usd': usd_rate, 'eur': eur_rate}):
-                print(f"USD: {usd_rate} грн, дата: {usd_date}")
-                print(f"EUR: {eur_rate} грн, дата: {eur_date}")
+                logger.debug(f"USD: {usd_rate} грн, дата: {usd_date}")
+                logger.debug(f"EUR: {eur_rate} грн, дата: {eur_date}")
                 self.usd_eur_test = {'usd': usd_rate, 'eur': eur_rate}
         
         raw_embed_data = get_phrases().get("currency_embed", {}).get("currency_embed_data", { "title": "Економіка" })

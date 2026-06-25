@@ -1,7 +1,7 @@
 # O.L.I.V.E.
 Operational Liaison for Intelligent Virtual Engagement
 
-![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white) [![Disnake](https://img.shields.io/badge/Disnake-Docs-5865F2?logo=discord&logoColor=white)](https://docs.disnake.dev/)
+![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white) [![Disnake](https://img.shields.io/badge/Disnake-Docs-5865F2?logo=discord&logoColor=white)](https://docs.disnake.dev/)
 
 ---
 
