@@ -67,58 +67,56 @@ class ChatOps(commands.Cog):
                 content = content
             )
         
+    def get_available_cogs(self) -> list:
+        available_cogs = []
+        for root, _, files in os.walk(cogs_directory):
+            for file in files:
+                if file.endswith('.py') and not file.startswith('__'):
+                    rel_path = os.path.relpath(os.path.join(root, file), cogs_directory)
+                    available_cogs.append(rel_path[:-3].replace(os.sep, '.'))
+        return available_cogs
+
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
     async def reload_cogs(self, inter: disnake.ApplicationCommandInteraction, cog_name: str = None):        
         if cog_name:
-            cog_path = f"{cogs_directory}/{cog_name}.py"
-            if os.path.exists(cog_path):
-                extension_name = f"{cogs_directory}.{cog_name}"
+            extension_name = f"{cogs_directory}.{cog_name}"
+            available_cogs = self.get_available_cogs()
+            if cog_name in available_cogs:
                 if extension_name in self.bot.extensions:
-                    self.bot.unload_extension(extension_name)
-                self.bot.load_extension(extension_name)
-
-                await inter.send(f"Cog '{cog_name}' has been restarted.",ephemeral=True)
+                    self.bot.reload_extension(extension_name)
+                else:
+                    self.bot.load_extension(extension_name)
+                await inter.send(f"Cog '{cog_name}' has been restarted.", ephemeral=True)
             else:
-                cog_files = [f for f in os.listdir(cogs_directory) if f.endswith('.py')]
-                cog_list = "\n".join(cog_files)
-                await inter.send(f"No such file '{cog_name}'. Available cogs:\n```py\n{cog_list}\n```",ephemeral=True)
+                cog_list = "\n".join(available_cogs)
+                await inter.send(f"No such file '{cog_name}'. Available cogs:\n```py\n{cog_list}\n```", ephemeral=True)
         else:
-            cog_files = [f for f in os.listdir(cogs_directory) if f.endswith('.py')]
-            for cog_file in cog_files:
-                cog_name = cog_file[:-3]
+            extensions = list(self.bot.extensions.keys())
+            for extension_name in extensions:
+                if extension_name.startswith(f"{cogs_directory}."):
+                    self.bot.reload_extension(extension_name)
 
-                extension_name = f"{cogs_directory}.{cog_name}"
-                if extension_name in self.bot.extensions:
-                    self.bot.unload_extension(extension_name)
-                self.bot.load_extension(extension_name)
-
-            await inter.send("All cogs have been restarted.", ephemeral=True)
+            await inter.send("All loaded cogs have been restarted.", ephemeral=True)
 
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
     async def unload_cogs(self, inter: disnake.ApplicationCommandInteraction, cog_name: str = None):
         if cog_name:
-            cog_path = f"{cogs_directory}/{cog_name}.py"
-            if os.path.exists(cog_path):
-                extension_name = f"{cogs_directory}.{cog_name}"
-                if extension_name in self.bot.extensions:
-                    self.bot.unload_extension(extension_name)
-                    await inter.send(f"Cog '{cog_name}' has been unloaded.",ephemeral=True)
-                else:
-                    await inter.send(f"Cog '{cog_name}' is already unloaded.",ephemeral=True)
+            extension_name = f"{cogs_directory}.{cog_name}"
+            if extension_name in self.bot.extensions:
+                self.bot.unload_extension(extension_name)
+                await inter.send(f"Cog '{cog_name}' has been unloaded.", ephemeral=True)
             else:
-                cog_files = [f for f in os.listdir(cogs_directory) if f.endswith('.py')]
-                cog_list = "\n".join(cog_files)
-                await inter.send(f"No such file '{cog_name}'. Available cogs:\n```py\n{cog_list}\n```",ephemeral=True)
+                available_cogs = self.get_available_cogs()
+                cog_list = "\n".join(available_cogs)
+                await inter.send(f"Cog '{cog_name}' is not loaded. Available cogs:\n```py\n{cog_list}\n```", ephemeral=True)
         else:
-            cog_files = [f for f in os.listdir(cogs_directory) if f.endswith('.py')]
-            for cog_file in cog_files:
-                cog_name = cog_file[:-3]
-                extension_name = f"{cogs_directory}.{cog_name}"
-                if extension_name in self.bot.extensions:
+            extensions = list(self.bot.extensions.keys())
+            for extension_name in extensions:
+                if extension_name.startswith(f"{cogs_directory}."):
                     self.bot.unload_extension(extension_name)
-            await inter.send("All cogs have been unloaded.", ephemeral=True)
+            await inter.send("All loaded cogs have been unloaded.", ephemeral=True)
     
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
