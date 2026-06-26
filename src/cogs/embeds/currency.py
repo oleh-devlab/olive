@@ -10,6 +10,9 @@ import logging
 
 import core.cache
 from core.task_handler import ResilientTaskHandler
+import settings
+
+UPDATE_SECONDS = getattr(settings, 'currency_update_seconds', 10)
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +34,8 @@ class CurrencyEmbed(commands.Cog):
 
     def cog_unload(self):
         self.currency_embed.stop()
-    
-    @tasks.loop(seconds=10)
+
+    @tasks.loop(seconds=UPDATE_SECONDS)
     async def currency_embed(self):
         currencies = None
         now = datetime.now()
@@ -107,6 +110,9 @@ class CurrencyEmbed(commands.Cog):
         raw_embed_data = get_phrases().get("currency_embed", {}).get("currency_embed_data", { "title": "Економіка" })
         formatted_embed_data = format_embed_data(raw_embed_data, usd_rate=(usd_rate if usd_rate is not None else 'N/A'), usd_date=usd_date, eur_rate=(eur_rate if eur_rate is not None else 'N/A'), eur_date=eur_date)
         embed0 = disnake.Embed.from_dict(formatted_embed_data)
+        
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        embed0.set_footer(text=footer_text)
         
         core.cache.embeds_to_send["currency"] = embed0
 

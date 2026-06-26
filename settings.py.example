@@ -38,6 +38,13 @@ embeds_blacklist = {
 
 cogs_blacklist = ["olive", "embeds.battery"] # If you disable the models that use LLM, you won't need to enter the Google GenAI token or load their library
 
+uptime_update_seconds = 30
+llm_limits_update_seconds = 15
+llm_context_update_seconds = 30
+hosting_update_seconds = 10
+currency_update_seconds = 10
+active_cogs_update_seconds = 45
+
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery
 cost_kwh = 4.32 # Electricity cost per kWh

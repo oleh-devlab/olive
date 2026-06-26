@@ -10,6 +10,8 @@ import core.cache
 from core.utils import format_embed_data, get_phrases
 from core.time_utils import tz
 
+UPDATE_SECONDS = getattr(settings, 'uptime_update_seconds', 30)
+
 class UptimeEmbed(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -24,7 +26,7 @@ class UptimeEmbed(commands.Cog):
     def cog_unload(self):
         self.update_uptime.cancel()
     
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=UPDATE_SECONDS)
     async def update_uptime(self):
         """
         Update the uptime embed with the current uptime and estimated cost based on power consumption.
@@ -56,6 +58,9 @@ class UptimeEmbed(commands.Cog):
         raw_embed_data = get_phrases().get("uptime_embed", {}).get("embed_data", { "title": "Uptime", "description": "{uptime_str}" })
         formatted_embed_data = format_embed_data(raw_embed_data, uptime_str=uptime_str, cost_str=cost_str)
         embed = disnake.Embed.from_dict(formatted_embed_data)
+
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        embed.set_footer(text=footer_text)
 
         core.cache.embeds_to_send["uptime"] = embed
 

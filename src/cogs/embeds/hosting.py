@@ -6,6 +6,9 @@ import disnake
 import core.cache
 from core.task_handler import ResilientTaskHandler
 from core.utils import u_decline, format_embed_data, get_phrases
+import settings
+
+UPDATE_SECONDS = getattr(settings, 'hosting_update_seconds', 10)
 
 async def get_memory_info():
     mem = psutil.virtual_memory()
@@ -76,8 +79,8 @@ class Hosting(commands.Cog):
         embed = disnake.Embed.from_dict(formatted_embed_data)
 
         return embed
-    
-    @tasks.loop(seconds=10)
+
+    @tasks.loop(seconds=UPDATE_SECONDS)
     async def hosting_loop(self):
         memory_info = await get_memory_info()
 
@@ -92,6 +95,9 @@ class Hosting(commands.Cog):
                                                  total_used=total_used, total_total=total_total, total_percent=total_percent)
         
         embed0 = disnake.Embed.from_dict(formatted_embed_data)
+
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        embed0.set_footer(text=footer_text)
 
         core.cache.embeds_to_send["server_load"] = embed0
 
