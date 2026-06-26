@@ -31,7 +31,16 @@ class LLMContextManager:
     def get_context(self, guild_id: str) -> list:
         if guild_id not in self.llm_context:
             self.llm_context[guild_id] = []
-        return self.llm_context[guild_id]
+        # Return API-compatible copies — internal bookkeeping fields
+        # We never mutate the stored dicts here, so token tracking keeps working.
+        return [self._api_content(m) for m in self.llm_context[guild_id]]
+
+    @staticmethod
+    def _api_content(message: dict) -> dict:
+        out = {"role": message["role"]}
+        if "parts" in message:
+            out["parts"] = message["parts"]
+        return out
 
     def add_user_message(self, guild_id: str, formatted_text: str):
         if guild_id not in self.llm_context:
