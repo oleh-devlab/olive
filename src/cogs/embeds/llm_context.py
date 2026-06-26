@@ -23,8 +23,7 @@ class LLMContextEmbed(commands.Cog):
         """
         raw_embed_data = get_phrases().get("llm_context_embed", {}).get("embed_data", {
             "title": "LLM Context",
-            "description": "Token usage per server context",
-            "color": 0x2b2d31
+            "description": "Token usage per server context"
         })
 
         formatted_embed_data = format_embed_data(raw_embed_data)

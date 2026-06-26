@@ -62,6 +62,32 @@ class AIAssistantCog(commands.Cog):
         time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 
         new_text = f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""
+
+        if message.reference and message.reference.message_id:
+            try:
+                replied_msg = message.reference.resolved
+                if isinstance(replied_msg, disnake.DeletedReferencedMessage):
+                    logger.debug(f"Referenced message {message.reference.message_id} is deleted.")
+                    pass 
+                    
+                else:
+                    if not replied_msg:
+                        logger.debug(f"Referenced message not in cache, fetching {message.reference.message_id}")
+                        replied_msg = await message.channel.fetch_message(message.reference.message_id)
+                    if isinstance(replied_msg, disnake.Message):
+                        logger.debug(f"Successfully resolved replied message from {replied_msg.author.name}")
+                        reply_dt = replied_msg.created_at.astimezone(tz)
+                        reply_time = f"{days_uk[reply_dt.weekday()]}, {reply_dt.strftime('%d.%m.%Y %H:%M:%S')}"
+                        
+                        new_text = f"[This is a reply to {replied_msg.author.name} ({reply_time})] {new_text}"
+
+            except disnake.NotFound:
+                pass 
+            except disnake.HTTPException as e:
+                logger.warning(f"HTTP error while fetching replied message: {e}")
+            except Exception as e:
+                logger.warning(f"Unexpected error handling replied message: {e}")
+
         self.context_manager.add_user_message(guild_id, new_text)
 
         if guild_id in self.response_tasks:
