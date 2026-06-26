@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,22 @@ class LLMContextManager:
             self.llm_context = {}
 
     async def write_to_file(self):
-        with open(self.context_file_name, "w", encoding="utf-8") as f:
-            json.dump(self.llm_context, f, ensure_ascii=False, indent=4)
+        # TODO: fix async
+        dir_name = os.path.dirname(self.context_file_name)
+        if dir_name and not os.path.exists(dir_name):
+            os.makedirs(dir_name, exist_ok=True)
+            
+        temp_path = self.context_file_name + ".tmp"
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(self.llm_context, f, ensure_ascii=False, separators=(',', ':'))
+            os.replace(temp_path, self.context_file_name)
+        except Exception as e:
+            logger.error("Error writing LLM context file: %s", e)
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     def get_context(self, guild_id: str) -> list:
         if guild_id not in self.llm_context:
