@@ -119,11 +119,16 @@ class LLMClient:
             
         return await self.client.aio.aclose()
 
-    async def get_response(self, contents, config, cheap_first: bool = False) -> types.Content:
+    async def get_response(self, contents, config, cheap_first: bool = False, model_priority: list[str] | None = None) -> types.Content:
         now = time.time()
         attempted_errors = []
 
-        models_to_use = reversed(self.models) if cheap_first else self.models
+        models_to_use = []
+        if model_priority:
+            models_dict = {m.name: m for m in self.models}
+            models_to_use = [models_dict[name] for name in model_priority if name in models_dict]
+        if not models_to_use:
+            models_to_use = list(reversed(self.models)) if cheap_first else self.models
 
         for model in models_to_use:
             if not model.is_available(now):
