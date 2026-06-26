@@ -132,18 +132,18 @@ class AIAssistantCog(commands.Cog):
         system_instruction = self._resolve_system_instruction(message.guild.id)
 
         try:
-            test_instruction_addition = get_phrases(message.guild.id).get("olive", {}).get("test_instruction_addition", None)
+            test_instruction_addition = get_phrases().get("olive", {}).get("test_instruction_addition", None)
             if test_instruction_addition:
                 test_system_instruction = f"{system_instruction}\n\n{test_instruction_addition}"
 
                 test_schema = {
                     'properties': {
-                        'i_should_answer': {
-                            'description': 'True if the assistant should answer in the context, False otherwise.',
+                        'i_want_to_reply': {
+                            'description': 'True if you genuinely want to reply in this conversation, False if you have nothing meaningful to add.',
                             'type': 'boolean'
                         }
                     },
-                    'required': ['i_should_answer'],
+                    'required': ['i_want_to_reply'],
                     'type': 'object',
                 }
 
@@ -164,9 +164,9 @@ class AIAssistantCog(commands.Cog):
                 try:
                     if hasattr(test_response, 'parsed') and test_response.parsed is not None:
                         if isinstance(test_response.parsed, dict):
-                            i_should_answer = test_response.parsed.get("i_should_answer", False)
+                            i_want_to_reply = test_response.parsed.get("i_want_to_reply", False)
                         else:
-                            i_should_answer = getattr(test_response.parsed, "i_should_answer", False)
+                            i_want_to_reply = getattr(test_response.parsed, "i_want_to_reply", False)
                     else:
                         raw_text = (test_response.text or "").strip()
                         
@@ -179,12 +179,12 @@ class AIAssistantCog(commands.Cog):
                             raw_text = raw_text[:-3].strip()
                         
                         data = json.loads(raw_text)
-                        i_should_answer = data.get("i_should_answer", False)
+                        i_want_to_reply = data.get("i_want_to_reply", False)
                 except Exception as e:
                     logger.error("Error parsing test response JSON: %s", e)
-                    i_should_answer = False
+                    i_want_to_reply = False
 
-                if not i_should_answer:
+                if not i_want_to_reply:
                     return
 
             reply_config = types.GenerateContentConfig(
