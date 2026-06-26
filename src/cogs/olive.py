@@ -106,9 +106,30 @@ class AIAssistantCog(commands.Cog):
             if self.response_tasks.get(guild_id) == asyncio.current_task():
                 del self.response_tasks[guild_id]
 
+    @staticmethod
+    def _resolve_system_instruction(guild_id) -> str:
+        """
+        Resolves the system instruction for a guild using a hierarchical approach:
+        - Server-specific system_instruction takes priority over the global one.
+        - system_instruction_addition is always appended (with two newlines) if present.
+        """
+        guild_olive = get_phrases(guild_id).get("olive", {})
+        global_olive = get_phrases().get("olive", {})
+
+        instruction = (
+            guild_olive.get("system_instruction")
+            or global_olive.get("system_instruction", "You're the AI assistant on the Discord server.")
+        )
+
+        addition = guild_olive.get("system_instruction_addition")
+        if addition:
+            instruction = f"{instruction}\n\n{addition}"
+
+        return instruction
+
     async def generate_answer(self, message: disnake.Message):
         
-        system_instruction = get_phrases(message.guild.id).get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")
+        system_instruction = self._resolve_system_instruction(message.guild.id)
 
         try:
             test_instruction_addition = get_phrases(message.guild.id).get("olive", {}).get("test_instruction_addition", None)
