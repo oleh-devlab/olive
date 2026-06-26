@@ -93,7 +93,7 @@ class LLMClient:
             if model.thinking_level:
                 thinking_kwargs["thinking_level"] = model.thinking_level
                 
-            current_config.thinking_config = types.ThinkingConfig(**thinking_kwargs)
+            current_config.thinking_config = types.ThinkingConfig(**thinking_kwargs, include_thoughts=True)
             
         return current_config
 

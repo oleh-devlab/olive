@@ -131,7 +131,7 @@ class AIAssistantCog(commands.Cog):
                     response_mime_type="application/json",
                     response_json_schema=test_schema
                 )
-                test_models_priority = get_phrases(message.guild.id).get("olive", {}).get("test_models_priority", None)
+                test_models_priority = get_phrases().get("olive", {}).get("test_models_priority", None)
                 
                 test_response = await cache.llm_client.get_response(
                     self.context_manager.get_context(str(message.guild.id)), 
