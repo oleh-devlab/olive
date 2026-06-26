@@ -96,7 +96,7 @@ class Hosting(commands.Cog):
         
         embed0 = disnake.Embed.from_dict(formatted_embed_data)
 
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=UPDATE_SECONDS)
         embed0.set_footer(text=footer_text)
 
         core.cache.embeds_to_send["server_load"] = embed0

@@ -71,7 +71,7 @@ class Battery(commands.Cog):
             )
         )
         
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=battery_update_seconds)
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=battery_update_seconds)
         embed.set_footer(text=footer_text)
         
         core.cache.embeds_to_send["battery"] = embed

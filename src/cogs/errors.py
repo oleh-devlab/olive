@@ -2,10 +2,8 @@ import disnake
 from disnake.ext import commands
 from datetime import datetime, timedelta, timezone
 
-import core.cache
 from core.utils import format_embed_data, get_phrases
 import settings
-
 from core.time_utils import tz
 
 class Errors(commands.Cog):

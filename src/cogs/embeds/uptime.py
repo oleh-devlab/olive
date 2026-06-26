@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 import disnake
 from disnake.ext import commands, tasks
@@ -59,7 +58,7 @@ class UptimeEmbed(commands.Cog):
         formatted_embed_data = format_embed_data(raw_embed_data, uptime_str=uptime_str, cost_str=cost_str)
         embed = disnake.Embed.from_dict(formatted_embed_data)
 
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=UPDATE_SECONDS)
         embed.set_footer(text=footer_text)
 
         core.cache.embeds_to_send["uptime"] = embed

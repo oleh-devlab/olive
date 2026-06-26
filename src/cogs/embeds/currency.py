@@ -111,7 +111,7 @@ class CurrencyEmbed(commands.Cog):
         formatted_embed_data = format_embed_data(raw_embed_data, usd_rate=(usd_rate if usd_rate is not None else 'N/A'), usd_date=usd_date, eur_rate=(eur_rate if eur_rate is not None else 'N/A'), eur_date=eur_date)
         embed0 = disnake.Embed.from_dict(formatted_embed_data)
         
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=UPDATE_SECONDS)
         embed0.set_footer(text=footer_text)
         
         core.cache.embeds_to_send["currency"] = embed0

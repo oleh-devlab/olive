@@ -1,11 +1,10 @@
-import asyncio
 import disnake
 from disnake.ext import commands, tasks
 
 import core.cache
 from core.utils import format_embed_data, get_phrases
-
 import settings
+
 UPDATE_SECONDS = getattr(settings, 'llm_limits_update_seconds', 30)
 
 class LLMLimitsEmbed(commands.Cog):
@@ -29,7 +28,7 @@ class LLMLimitsEmbed(commands.Cog):
         formatted_embed_data = format_embed_data(raw_embed_data)
         embed = disnake.Embed.from_dict(formatted_embed_data)
 
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=UPDATE_SECONDS)
         embed.set_footer(text=footer_text)
         
         if getattr(core.cache, "llm_client", None):

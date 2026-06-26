@@ -30,7 +30,7 @@ class LLMContextEmbed(commands.Cog):
         formatted_embed_data = format_embed_data(raw_embed_data)
         embed = disnake.Embed.from_dict(formatted_embed_data)
 
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds..").format(seconds=UPDATE_SECONDS)
+        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=UPDATE_SECONDS)
         embed.set_footer(text=footer_text)
 
         olive_cog = self.bot.get_cog("AIAssistantCog")
