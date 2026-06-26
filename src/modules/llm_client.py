@@ -5,6 +5,7 @@ import time
 import os
 import json
 import logging
+import copy
 
 from core.utils import get_phrases
 from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
@@ -59,6 +60,8 @@ class LLMClient:
                     rpd=m.get("rpd", 1500),
                     tpm=m.get("tpm", None),
                     max_context_tokens=m.get("max_context_tokens", 128000),
+                    thinking_level=m.get("thinking_level", None),
+                    thinking_budget=m.get("thinking_budget", None),
                 )
                 for m in models_raw
                 if isinstance(m, dict) and "name" in m
@@ -67,6 +70,32 @@ class LLMClient:
         # Legacy fallback: single model_name
         legacy_name = olive_cfg.get("model_name", "gemma-4-31b-it")
         return [ModelConfig(name=legacy_name)]
+
+    @staticmethod
+    def _prepare_model_config(base_config, model: ModelConfig):
+        """Creates a model-specific configuration, merging base settings with model-specific overrides (like thinking)."""
+        current_config = base_config
+        if current_config is not None:
+            current_config = copy.copy(base_config)
+            
+        if model.thinking_budget == 0:
+            if not current_config:
+                current_config = types.GenerateContentConfig()
+            current_config.thinking_config = types.ThinkingConfig(thinking_budget=0)
+        elif model.thinking_budget is not None or model.thinking_level is not None:
+            if not current_config:
+                current_config = types.GenerateContentConfig()
+            
+            thinking_kwargs = {}
+            if model.thinking_budget is not None:
+                thinking_kwargs["thinking_budget"] = model.thinking_budget
+                
+            if model.thinking_level:
+                thinking_kwargs["thinking_level"] = model.thinking_level
+                
+            current_config.thinking_config = types.ThinkingConfig(**thinking_kwargs)
+            
+        return current_config
 
     @property
     def is_available(self) -> bool:
@@ -104,9 +133,12 @@ class LLMClient:
             logger.info("Using model '%s' for request", model.name)
 
             try:
+                # Apply model-specific configuration (e.g. thinking config)
+                current_config = self._prepare_model_config(config, model)
+
                 response = await self.client.aio.models.generate_content(
                     model=model.name,
-                    config=config,
+                    config=current_config,
                     contents=contents,
                 )
                 

@@ -163,7 +163,10 @@ class AIAssistantCog(commands.Cog):
                 if not i_should_answer:
                     return
 
-            reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
+            reply_config = types.GenerateContentConfig(
+                system_instruction=system_instruction, 
+                max_output_tokens=1500
+            )
 
             async with message.channel.typing():
                 response = await cache.llm_client.get_response(self.context_manager.get_context(str(message.guild.id)), reply_config)

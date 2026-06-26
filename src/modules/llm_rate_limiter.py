@@ -12,6 +12,8 @@ class ModelConfig:
     rpd: int = 1500 # requests per day
     tpm: int | None = None # tokens per minute
     max_context_tokens: int = 128000 # context size limit in tokens
+    thinking_level: str | None = None
+    thinking_budget: int | None = None
 
     # Internal state
     _minute_requests: int = field(default=0, repr=False)
