@@ -3,7 +3,9 @@ embeds_to_send = {
     "currency": None,
     "battery": None,
     "active_cogs": None,
-    "uptime": None
+    "uptime": None,
+    "llm_limits": None,
+    "llm_context": None,
 }
 
 configLock = None
