@@ -46,20 +46,22 @@ def _build_consent_embed(current_consent: bool) -> disnake.Embed:
     description = olive_phrases.get(
         "explanation",
         "The LLM provider used by this bot processes your messages. "
-        "By agreeing, you consent to your messages being sent to the AI model for processing."
+        "By agreeing, you consent to your messages being sent to the AI model for processing.",
     )
 
-    status_label = olive_phrases.get("status_agreed", "✅ Agreed") if current_consent else olive_phrases.get("status_not_agreed", "❌ Not agreed")
+    status_label = (
+        olive_phrases.get("status_agreed", "✅ Agreed")
+        if current_consent
+        else olive_phrases.get("status_not_agreed", "❌ Not agreed")
+    )
 
     embed = disnake.Embed(
         title=olive_phrases.get("title", "OLIVE — Data Consent"),
         description=description,
-        color=disnake.Color.green() if current_consent else disnake.Color.orange()
+        color=disnake.Color.green() if current_consent else disnake.Color.orange(),
     )
     embed.add_field(
-        name=olive_phrases.get("status_field_name", "Your current status"),
-        value=status_label,
-        inline=False
+        name=olive_phrases.get("status_field_name", "Your current status"), value=status_label, inline=False
     )
     return embed
 
@@ -67,13 +69,12 @@ def _build_consent_embed(current_consent: bool) -> disnake.Embed:
 class LLMConsentCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-    
+
     async def cog_load(self):
         self.bot.add_view(ConsentView())
 
     @commands.slash_command(
-        name="olive_data_consent",
-        description="View and manage your OLIVE AI data processing consent."
+        name="olive_data_consent", description="View and manage your OLIVE AI data processing consent."
     )
     async def olive_data_consent(self, ctx: disnake.ApplicationCommandInteraction):
         if not cache.llm_consent:

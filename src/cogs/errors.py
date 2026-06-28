@@ -6,17 +6,18 @@ from core.utils import format_embed_data, get_phrases
 import settings
 from core.time_utils import tz
 
+
 class Errors(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.users = {}
         self.last_time_not_found = datetime.now(timezone.utc) - timedelta(seconds=15)
 
-    @commands.Cog.listener('on_command_error')
+    @commands.Cog.listener("on_command_error")
     async def on_command_error(self, ctx, error):
         await self.handle_error(ctx, error)
 
-    @commands.Cog.listener('on_slash_command_error')
+    @commands.Cog.listener("on_slash_command_error")
     async def on_slash_command_error(self, inter, error):
         await self.handle_error(inter, error)
 
@@ -30,7 +31,7 @@ class Errors(commands.Cog):
             remaining_time = error.retry_after
 
             local_time = datetime.now(tz)
-            formatted_time = local_time.strftime('%d.%m.%Y %H:%M:%S')
+            formatted_time = local_time.strftime("%d.%m.%Y %H:%M:%S")
 
             try:
                 time_since_last = (datetime.now(timezone.utc) - self.users[str(ctx_or_inter.author.id)]).total_seconds()
@@ -44,9 +45,14 @@ class Errors(commands.Cog):
                 f"User {ctx_or_inter.author.mention} in channel {ctx_or_inter.channel.mention} "
                 f"encountered an error:\n> {error}"
             )
-            
-            message = get_phrases(guild_id).get("errors", {}).get("cooldown_message", "You are on cooldown. Try again in {remaining_time:.2f} seconds.").format(mention=ctx_or_inter.author.mention, remaining_time=remaining_time)
-            
+
+            message = (
+                get_phrases(guild_id)
+                .get("errors", {})
+                .get("cooldown_message", "You are on cooldown. Try again in {remaining_time:.2f} seconds.")
+                .format(mention=ctx_or_inter.author.mention, remaining_time=remaining_time)
+            )
+
             if is_slash:
                 await ctx_or_inter.send(message, ephemeral=True)
             else:
@@ -54,18 +60,20 @@ class Errors(commands.Cog):
 
             # анти-флуд логіка
             if 0 < time_since_last < 4:
-                raw_embed_data = get_phrases(guild_id).get("errors", {}).get("antiflood_kick_message_to_user_embed", {
-                    "title": "Server",
-                    "description": "You have been kicked for flooding commands."
-                })
+                raw_embed_data = (
+                    get_phrases(guild_id)
+                    .get("errors", {})
+                    .get(
+                        "antiflood_kick_message_to_user_embed",
+                        {"title": "Server", "description": "You have been kicked for flooding commands."},
+                    )
+                )
                 embed = disnake.Embed.from_dict(raw_embed_data)
-                
+
                 try:
                     await ctx_or_inter.author.send(embed=embed)
                 except disnake.Forbidden:
                     log_message += "\nSend to DM failed."
-
-                
 
                 log_message += "\nLess than 4 seconds — bot tries to kick the user."
                 try:
@@ -75,7 +83,7 @@ class Errors(commands.Cog):
                             f"CoolDown: {remaining_time:.2f} s."
                         )
                     )
-                    
+
                 except disnake.Forbidden:
                     log_message += "\nKick failed."
                     is_kicked = False
@@ -84,22 +92,41 @@ class Errors(commands.Cog):
 
                 log_channel = await self.bot.get_or_fetch_channel(settings.channels.get("add_logs"))
                 if is_kicked:
-                    raw_embed_data = get_phrases(guild_id).get("errors", {}).get("antiflood_kicked_log_embed", {"title": "Anti-flood kicked a user"})
-                    formatted_embed_data = format_embed_data(raw_embed_data, author_name=ctx_or_inter.author.name, user_mention=ctx_or_inter.author.mention, user_id=ctx_or_inter.author.id, channel_mention=ctx_or_inter.channel.mention, time_since_last=time_since_last, remaining_time=remaining_time)
-                    log_embed = disnake.Embed.from_dict(formatted_embed_data)
-                    
-                    await log_channel.send(
-                        "@everyone",
-                        embed=log_embed
+                    raw_embed_data = (
+                        get_phrases(guild_id)
+                        .get("errors", {})
+                        .get("antiflood_kicked_log_embed", {"title": "Anti-flood kicked a user"})
                     )
+                    formatted_embed_data = format_embed_data(
+                        raw_embed_data,
+                        author_name=ctx_or_inter.author.name,
+                        user_mention=ctx_or_inter.author.mention,
+                        user_id=ctx_or_inter.author.id,
+                        channel_mention=ctx_or_inter.channel.mention,
+                        time_since_last=time_since_last,
+                        remaining_time=remaining_time,
+                    )
+                    log_embed = disnake.Embed.from_dict(formatted_embed_data)
+
+                    await log_channel.send("@everyone", embed=log_embed)
                 else:
-                    raw_embed_data = get_phrases(guild_id).get("errors", {}).get("antiflood_not_kicked_log_embed", {"title": "Anti-flood (almost) triggered"})
-                    formatted_embed_data = format_embed_data(raw_embed_data, author_name=ctx_or_inter.author.name, user_mention=ctx_or_inter.author.mention, user_id=ctx_or_inter.author.id, channel_mention=ctx_or_inter.channel.mention, time_since_last=time_since_last, remaining_time=remaining_time)
-                    log_embed = disnake.Embed.from_dict(formatted_embed_data)
-                    
-                    await log_channel.send(
-                        embed=log_embed
+                    raw_embed_data = (
+                        get_phrases(guild_id)
+                        .get("errors", {})
+                        .get("antiflood_not_kicked_log_embed", {"title": "Anti-flood (almost) triggered"})
                     )
+                    formatted_embed_data = format_embed_data(
+                        raw_embed_data,
+                        author_name=ctx_or_inter.author.name,
+                        user_mention=ctx_or_inter.author.mention,
+                        user_id=ctx_or_inter.author.id,
+                        channel_mention=ctx_or_inter.channel.mention,
+                        time_since_last=time_since_last,
+                        remaining_time=remaining_time,
+                    )
+                    log_embed = disnake.Embed.from_dict(formatted_embed_data)
+
+                    await log_channel.send(embed=log_embed)
 
             else:
                 log_message += f"\nRetry after {time_since_last:.2f} seconds, which is within the normal range."
@@ -111,17 +138,26 @@ class Errors(commands.Cog):
 
             if is_slash:
                 return
-        
+
             time_refresh = (datetime.now(timezone.utc) - self.last_time_not_found).total_seconds()
             if time_refresh < 10 or len(ctx_or_inter.message.content) >= 100:
                 return
 
-            text = get_phrases(guild_id).get("errors", {}).get("command_not_found", "Command **\"{command}\"** not found.").format(command=ctx_or_inter.message.content.split()[0])
+            text = (
+                get_phrases(guild_id)
+                .get("errors", {})
+                .get("command_not_found", 'Command **"{command}"** not found.')
+                .format(command=ctx_or_inter.message.content.split()[0])
+            )
             await ctx_or_inter.reply(text)
             self.last_time_not_found = datetime.now(timezone.utc)
 
         elif isinstance(error, commands.NotOwner) or isinstance(error, commands.MissingPermissions):
-            message = get_phrases(guild_id).get("errors", {}).get("access_denied", "You do not have the required permissions to use this command.")
+            message = (
+                get_phrases(guild_id)
+                .get("errors", {})
+                .get("access_denied", "You do not have the required permissions to use this command.")
+            )
             if is_slash:
                 await ctx_or_inter.send(message, ephemeral=True)
             else:

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import datetime
 from typing import Optional
 
+
 @dataclass
 class Task:
     id: int
@@ -13,6 +14,7 @@ class Task:
     session_dur: datetime.timedelta = datetime.timedelta(minutes=45)
     break_dur: datetime.timedelta = datetime.timedelta(minutes=15)
     min_session: Optional[datetime.timedelta] = None
+
 
 @dataclass
 class TimeBlock:

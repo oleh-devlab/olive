@@ -9,7 +9,8 @@ import core.cache
 from core.utils import format_embed_data, get_phrases
 from core.time_utils import tz
 
-UPDATE_SECONDS = getattr(settings, 'uptime_update_seconds', 30)
+UPDATE_SECONDS = getattr(settings, "uptime_update_seconds", 30)
+
 
 class UptimeEmbed(commands.Cog):
     def __init__(self, bot):
@@ -17,14 +18,13 @@ class UptimeEmbed(commands.Cog):
 
         self.watt = 0.6
 
-        self.start_time = datetime.now(tz) # Approximate bot start time
+        self.start_time = datetime.now(tz)  # Approximate bot start time
 
         self.update_uptime.start()
 
-
     def cog_unload(self):
         self.update_uptime.cancel()
-    
+
     @tasks.loop(seconds=UPDATE_SECONDS)
     async def update_uptime(self):
         """
@@ -39,29 +39,37 @@ class UptimeEmbed(commands.Cog):
 
         uptime_str = (
             f"{days} дн. {hours} год. {minutes} хв. {seconds} сек."
-            if days > 0 else
-            f"{hours} год. {minutes} хв. {seconds} сек."
+            if days > 0
+            else f"{hours} год. {minutes} хв. {seconds} сек."
         )
-        
+
         if is_battery:
-            cost_kwh = getattr(settings, 'cost_kwh', 4.32)
+            cost_kwh = getattr(settings, "cost_kwh", 4.32)
         else:
             cost_kwh = 0
 
         uptime_all_hours = delta.total_seconds() / 3600
-        
-        cost_session = (self.watt/1000)*uptime_all_hours*cost_kwh
-        
+
+        cost_session = (self.watt / 1000) * uptime_all_hours * cost_kwh
+
         cost_str = f"{cost_session:.4f}{'' if is_battery else '(VPS)'} uah."
 
-        raw_embed_data = get_phrases().get("uptime_embed", {}).get("embed_data", { "title": "Uptime", "description": "{uptime_str}" })
+        raw_embed_data = (
+            get_phrases().get("uptime_embed", {}).get("embed_data", {"title": "Uptime", "description": "{uptime_str}"})
+        )
         formatted_embed_data = format_embed_data(raw_embed_data, uptime_str=uptime_str, cost_str=cost_str)
         embed = disnake.Embed.from_dict(formatted_embed_data)
 
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=UPDATE_SECONDS)
+        footer_text = (
+            get_phrases()
+            .get("utils", {})
+            .get("update_interval", "Updates every {seconds} seconds.")
+            .format(seconds=UPDATE_SECONDS)
+        )
         embed.set_footer(text=footer_text)
 
         core.cache.embeds_to_send["uptime"] = embed
+
 
 def setup(bot):
     bot.add_cog(UptimeEmbed(bot))

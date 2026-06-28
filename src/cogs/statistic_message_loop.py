@@ -9,6 +9,7 @@ from core.utils import get_phrases
 from core.task_handler import ResilientTaskHandler
 from core.time_utils import tz
 
+
 class MessageLoop(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -23,14 +24,13 @@ class MessageLoop(commands.Cog):
 
         self.main_loop.start()
 
-
     def cog_unload(self):
         self.main_loop.cancel()
 
     @tasks.loop(seconds=10)
     async def main_loop(self):
         now = datetime.now(tz)
-        formatted_time = now.strftime('%d.%m.%Y %H:%M:%S')
+        formatted_time = now.strftime("%d.%m.%Y %H:%M:%S")
         content = f"`{formatted_time} UTC+2`"
 
         # TODO: Optimize this
@@ -43,9 +43,9 @@ class MessageLoop(commands.Cog):
             for emb_name, emb in core.cache.embeds_to_send.items():
                 if (emb is not None) and (emb_name not in embeds_blacklist.get(channel_guild_id, [])):
                     valid_embeds.append(emb)
-            
+
             self.channels_valid_embeds[channel_id] = valid_embeds
-        
+
         # self.channels_valid_embeds = {channel_id: [emb1, emb2, ...]}
 
         # Compare current embeds to avoid unnecessary edits
@@ -55,7 +55,7 @@ class MessageLoop(commands.Cog):
                 new_embeds_dicts[channel_id] = [e.to_dict() for e in embeds]
             except Exception:
                 print(f"Error converting new embeds to dicts for {content} in channel {channel_id}.")
-                new_embeds_dicts[channel_id] = []            
+                new_embeds_dicts[channel_id] = []
 
         for message in self.messages:
             message_channel_id = message.channel.id
@@ -71,12 +71,12 @@ class MessageLoop(commands.Cog):
     @main_loop.before_loop
     async def before_main_loop(self):
         await self.bot.wait_until_ready()
-        
+
         try:
             self.channels = []
             self.channels_valid_embeds = {}
             self.messages = []
-            
+
             # 1. Getting channels
             for channel_id in channels["statistic"]:
                 try:
@@ -96,15 +96,21 @@ class MessageLoop(commands.Cog):
 
             # 3. Sending initial messages and filling the list for future edits
             await asyncio.sleep(0.5)
-            
+
             for channel in self.channels:
                 try:
-                    text = get_phrases(channel.guild.id).get("statistic_message_loop", {}).get("welcome_message", "Error with getting message for statistic channel.")
+                    text = (
+                        get_phrases(channel.guild.id)
+                        .get("statistic_message_loop", {})
+                        .get("welcome_message", "Error with getting message for statistic channel.")
+                    )
                     msg = await channel.send(text)
                     self.messages.append(msg)
                     print(f"Initial message sent to channel {channel.id} for MessageLoop.")
                 except Exception as e:
-                    print(f"[ERROR before_main_loop : send initial message] Error sending initial message to channel {channel.id}: {e}")
+                    print(
+                        f"[ERROR before_main_loop : send initial message] Error sending initial message to channel {channel.id}: {e}"
+                    )
 
         except Exception as e:
             print(f"[ERROR in before_main_loop]: {e}")
@@ -113,6 +119,7 @@ class MessageLoop(commands.Cog):
     @main_loop.error
     async def on_main_loop_error(self, error):
         await self.error_handler.handle_error(error)
+
 
 def setup(bot):
     bot.add_cog(MessageLoop(bot))

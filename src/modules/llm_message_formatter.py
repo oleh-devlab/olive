@@ -30,7 +30,7 @@ async def format_user_message(message: disnake.Message, has_consent: bool = True
     time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 
     content = message.content if has_consent else _get_no_consent_placeholder()
-    text = f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{content}\""
+    text = f'[{time_now}][{message.author.display_name}][{message.author.name}]: "{content}"'
 
     if has_consent and message.reference and message.reference.message_id:
         reply_prefix = _resolve_reply_prefix(message)

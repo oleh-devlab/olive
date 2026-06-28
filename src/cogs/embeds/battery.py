@@ -25,7 +25,6 @@ class Battery(commands.Cog):
             # raw_embed = get_phrases().get("battery_embed", {}).get("no_battery_embed", {"title": "No battery information available", "description": "This device does not have battery information or it cannot be accessed."})
             # core.cache.embeds_to_send["battery"] = disnake.Embed.from_dict(raw_embed)
 
-
     def cog_unload(self):
         self.battery_loop.cancel()
 
@@ -48,32 +47,45 @@ class Battery(commands.Cog):
             print("Error occurred while fetching battery information")
             return
 
-        safe_battery_percent = ((percentage - min_perc) / (max_perc - min_perc)) * 100 if min_perc <= percentage <= max_perc else (100 if percentage >= max_perc else 0)
+        safe_battery_percent = (
+            ((percentage - min_perc) / (max_perc - min_perc)) * 100
+            if min_perc <= percentage <= max_perc
+            else (100 if percentage >= max_perc else 0)
+        )
         plus_percent = percentage > max_perc
         time_to_end = (percentage - min_perc) * HOURS_PER_PERCENT if percentage >= min_perc else 0
 
-        plus_sign = '+' if plus_percent else ''
-        
-        raw_embed = get_phrases().get("battery_embed", {}).get("battery_embed", {"title": "Battery Information", "description": "Error with getting text."})
+        plus_sign = "+" if plus_percent else ""
+
+        raw_embed = (
+            get_phrases()
+            .get("battery_embed", {})
+            .get("battery_embed", {"title": "Battery Information", "description": "Error with getting text."})
+        )
 
         embed = disnake.Embed.from_dict(
             core.utils.format_embed_data(
-                raw_embed, 
-                health=health, 
-                percentage=percentage, 
-                plugged=plugged, 
-                status=status, 
-                temperature=temperature, 
-                current=current, 
-                safe_battery_percent=safe_battery_percent, 
-                time_to_end=time_to_end, 
-                plus_sign=plus_sign
+                raw_embed,
+                health=health,
+                percentage=percentage,
+                plugged=plugged,
+                status=status,
+                temperature=temperature,
+                current=current,
+                safe_battery_percent=safe_battery_percent,
+                time_to_end=time_to_end,
+                plus_sign=plus_sign,
             )
         )
-        
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=battery_update_seconds)
+
+        footer_text = (
+            get_phrases()
+            .get("utils", {})
+            .get("update_interval", "Updates every {seconds} seconds.")
+            .format(seconds=battery_update_seconds)
+        )
         embed.set_footer(text=footer_text)
-        
+
         core.cache.embeds_to_send["battery"] = embed
 
 

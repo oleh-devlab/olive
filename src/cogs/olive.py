@@ -28,7 +28,7 @@ class AIAssistantCog(commands.Cog):
         try:
             cache.llm_client = LLMClient()
             logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
-            
+
             await self.context_manager.load_from_file()
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
@@ -42,20 +42,23 @@ class AIAssistantCog(commands.Cog):
             self.bot.loop.create_task(cache.llm_client.shutdown())
             cache.llm_client = None
 
-            text = get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
+            text = (
+                get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
+            )
             logger.info(text)
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
-        if (not self.olive_enabled 
-            or message.author.bot 
-            or not cache.llm_client 
+        if (
+            not self.olive_enabled
+            or message.author.bot
+            or not cache.llm_client
             or not message.content
             or not message.guild
             or not cache.llm_client.is_available
         ):
             return
-        
+
         guild_id = str(message.guild.id)
         has_consent = cache.llm_consent.has_consent(message.author.id) if cache.llm_consent else False
 
@@ -65,7 +68,7 @@ class AIAssistantCog(commands.Cog):
             # Deduplicate consecutive no-consent stubs from the same user
             if self.context_manager.is_duplicate_no_consent(guild_id, message.author.name):
                 return
-            
+
             self.context_manager.add_user_message(guild_id, new_text, no_consent=True)
             return
 
@@ -73,9 +76,9 @@ class AIAssistantCog(commands.Cog):
 
         if guild_id in self.response_tasks:
             self.response_tasks[guild_id].cancel()
-            
+
         self.response_tasks[guild_id] = self.bot.loop.create_task(self.delayed_generate_answer(message))
-        
+
     async def delayed_generate_answer(self, message: disnake.Message):
         try:
             await asyncio.sleep(3)
@@ -97,9 +100,8 @@ class AIAssistantCog(commands.Cog):
         guild_olive = get_phrases(guild_id).get("olive", {})
         global_olive = get_phrases().get("olive", {})
 
-        instruction = (
-            guild_olive.get("system_instruction")
-            or global_olive.get("system_instruction", "You're the AI assistant on the Discord server.")
+        instruction = guild_olive.get("system_instruction") or global_olive.get(
+            "system_instruction", "You're the AI assistant on the Discord server."
         )
 
         addition = guild_olive.get("system_instruction_addition")
@@ -117,18 +119,15 @@ class AIAssistantCog(commands.Cog):
             if not await want_respond(cache.llm_client, context, system_instruction, message.guild.id):
                 return
 
-            reply_config = types.GenerateContentConfig(
-                system_instruction=system_instruction, 
-                max_output_tokens=1500
-            )
+            reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
 
             async with message.channel.typing():
                 response = await cache.llm_client.get_response(context, reply_config)
 
                 candidate_tokens = 0
-                if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
-                    prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
-                    candidate_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
+                if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
+                    prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
+                    candidate_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
                     if prompt_tokens > 0:
                         self.context_manager.update_latest_user_message_tokens(guild_id, prompt_tokens)
 
@@ -154,8 +153,14 @@ class AIAssistantCog(commands.Cog):
     async def turn_olive(self, ctx: disnake.ApplicationCommandInteraction):
         self.olive_enabled = not self.olive_enabled
         status = "enabled" if self.olive_enabled else "disabled"
-        text = get_phrases(ctx.guild.id).get("olive", {}).get("olive_status", "Olive is now {status}.").format(status=status)
+        text = (
+            get_phrases(ctx.guild.id)
+            .get("olive", {})
+            .get("olive_status", "Olive is now {status}.")
+            .format(status=status)
+        )
         await ctx.send(text, ephemeral=True)
+
 
 def setup(bot: commands.Bot):
     bot.add_cog(AIAssistantCog(bot))
