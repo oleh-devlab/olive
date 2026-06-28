@@ -57,10 +57,32 @@ class LLMContextManager:
             out["parts"] = message["parts"]
         return out
 
-    def add_user_message(self, guild_id: str, formatted_text: str):
+    def add_user_message(self, guild_id: str, formatted_text: str, no_consent: bool = False):
         if guild_id not in self.llm_context:
             self.llm_context[guild_id] = []
-        self.llm_context[guild_id].append({"role": "user", "parts": [{"text": formatted_text}]})
+        entry = {"role": "user", "parts": [{"text": formatted_text}]}
+        if no_consent:
+            entry["no_consent"] = True
+        self.llm_context[guild_id].append(entry)
+
+    def is_last_no_consent_from(self, guild_id: str, author_name: str) -> bool:
+        """
+        Checks whether the last user message in the guild context is a no-consent stub
+        from the given author. Used to prevent consecutive stub messages.
+        """
+        messages = self.llm_context.get(guild_id, [])
+        if not messages:
+            return False
+
+        last_msg = messages[-1]
+        if last_msg.get("role") != "user" or not last_msg.get("no_consent"):
+            return False
+
+        # Check if the author name matches in the formatted text
+        parts = last_msg.get("parts", [])
+        if parts:
+            return f"][{author_name}]:" in parts[0].get("text", "")
+        return False
 
     def get_message_tokens(self, message: dict) -> int:
         if "tokens" in message:

@@ -3,24 +3,36 @@ import logging
 from datetime import datetime
 
 from core.time_utils import tz
+from core.utils import get_phrases
 
 logger = logging.getLogger(__name__)
 
 days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
+_NO_CONSENT_FALLBACK = "*This message is hidden.*"
 
-async def format_user_message(message: disnake.Message) -> str:
+
+def _get_no_consent_placeholder() -> str:
+    """Returns the no-consent placeholder text from phrases."""
+    return get_phrases().get("olive", {}).get("no_consent_placeholder", _NO_CONSENT_FALLBACK)
+
+
+async def format_user_message(message: disnake.Message, has_consent: bool = True) -> str:
     """
     Formats a Discord message into a text string for the LLM context.
     Includes timestamp, author info, message content, and reply metadata if applicable.
+
+    If the user has not given consent, the message content is replaced with a placeholder
+    and reply metadata is omitted.
     """
     dt_now = datetime.now(tz)
     day_name = days_uk[dt_now.weekday()]
     time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 
-    text = f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""
+    content = message.content if has_consent else _get_no_consent_placeholder()
+    text = f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{content}\""
 
-    if message.reference and message.reference.message_id:
+    if has_consent and message.reference and message.reference.message_id:
         reply_prefix = _resolve_reply_prefix(message)
         if reply_prefix is None:
             reply_prefix = await _fetch_reply_prefix(message)

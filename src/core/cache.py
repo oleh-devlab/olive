@@ -11,6 +11,7 @@ embeds_to_send = {
 configLock = None
 
 llm_client = None
+llm_consent = None
 
 active_cogs_list = {}
 

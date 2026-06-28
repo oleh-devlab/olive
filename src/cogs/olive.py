@@ -7,6 +7,7 @@ import logging
 from modules.llm_client import LLMClient
 from modules.llm_rate_limiter import RateLimitExceeded
 from modules.llm_context_manager import LLMContextManager
+from modules.llm_consent_manager import LLMConsentManager
 from modules.llm_message_formatter import format_user_message
 from modules.llm_response_gate import want_respond
 import core.cache as cache
@@ -21,7 +22,7 @@ class AIAssistantCog(commands.Cog):
         self.context_manager = LLMContextManager()
         self.response_tasks = {}
 
-        self.olive_enabled = False
+        self.olive_enabled = True
 
     async def cog_load(self):
         try:
@@ -32,6 +33,9 @@ class AIAssistantCog(commands.Cog):
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
             cache.llm_client = None
+
+        cache.llm_consent = LLMConsentManager()
+        await cache.llm_consent.load_from_file()
 
     def cog_unload(self):
         if cache.llm_client:
@@ -53,8 +57,18 @@ class AIAssistantCog(commands.Cog):
             return
         
         guild_id = str(message.guild.id)
+        has_consent = cache.llm_consent.has_consent(message.author.id) if cache.llm_consent else False
 
-        new_text = await format_user_message(message)
+        new_text = await format_user_message(message, has_consent=has_consent)
+
+        if not has_consent:
+            # Deduplicate consecutive no-consent stubs from the same user
+            if self.context_manager.is_last_no_consent_from(guild_id, message.author.name):
+                return
+            
+            self.context_manager.add_user_message(guild_id, new_text, no_consent=True)
+            return
+
         self.context_manager.add_user_message(guild_id, new_text)
 
         if guild_id in self.response_tasks:
