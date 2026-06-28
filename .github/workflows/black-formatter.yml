@@ -1,0 +1,48 @@
+name: Auto-format Python code
+
+on:
+  push:
+    branches:
+      - main
+      - 'mk*'
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and run Black
+        run: pip install black && black .
+
+      - name: Commit and create PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            
+            FORMAT_BRANCH="auto-format-${TARGET_BRANCH}"
+            
+            git checkout -b "$FORMAT_BRANCH"
+            git add .
+            git commit -m "style: apply black formatting to ${TARGET_BRANCH}"
+            git push -f origin "$FORMAT_BRANCH"
+
+            gh pr create --title "Style: Auto-format Python code (${TARGET_BRANCH})" \
+                         --body "Automatic code formatting using Black for branch \`${TARGET_BRANCH}\`." \
+                         --base "$TARGET_BRANCH" \
+                         --head "$FORMAT_BRANCH" || true
+          fi
