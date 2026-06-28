@@ -14,6 +14,7 @@ import settings
 
 logger = logging.getLogger(__name__)
 
+
 class LLMClient:
     def __init__(self):
         self.client = get_new_client()
@@ -46,7 +47,7 @@ class LLMClient:
         Load models from phrases.json → olive → models.
         Falls back to the legacy 'model_name' key for backward compatibility.
 
-        We recommend making sure that the models are ordered from “best/most expensive" to "weakest/cheapest," 
+        We recommend making sure that the models are ordered from “best/most expensive" to "weakest/cheapest,"
         as this may affect certain features of this class, such as the reverse cycle.
         """
         olive_cfg = get_phrases().get("olive", {})
@@ -77,7 +78,7 @@ class LLMClient:
         current_config = base_config
         if current_config is not None:
             current_config = copy.copy(base_config)
-            
+
         if model.thinking_budget == 0:
             if not current_config:
                 current_config = types.GenerateContentConfig()
@@ -85,16 +86,16 @@ class LLMClient:
         elif model.thinking_budget is not None or model.thinking_level is not None:
             if not current_config:
                 current_config = types.GenerateContentConfig()
-            
+
             thinking_kwargs = {}
             if model.thinking_budget is not None:
                 thinking_kwargs["thinking_budget"] = model.thinking_budget
-                
+
             if model.thinking_level:
                 thinking_kwargs["thinking_level"] = model.thinking_level
-                
+
             current_config.thinking_config = types.ThinkingConfig(**thinking_kwargs, include_thoughts=True)
-            
+
         return current_config
 
     @property
@@ -116,10 +117,12 @@ class LLMClient:
             logger.info("Saved LLM rate limits state to %s", self.state_file)
         except Exception as e:
             logger.error("Failed to save LLM rate limits state: %s", e)
-            
+
         return await self.client.aio.aclose()
 
-    async def get_response(self, contents, config, cheap_first: bool = False, model_priority: list[str] | None = None) -> types.Content:
+    async def get_response(
+        self, contents, config, cheap_first: bool = False, model_priority: list[str] | None = None
+    ) -> types.Content:
         now = time.time()
         attempted_errors = []
 
@@ -133,7 +136,7 @@ class LLMClient:
         for model in models_to_use:
             if not model.is_available(now):
                 continue
-                
+
             model.record_request(now)
             logger.info("Using model '%s' for request", model.name)
 
@@ -146,45 +149,51 @@ class LLMClient:
                     config=current_config,
                     contents=contents,
                 )
-                
-                if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
+
+                if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
                     usage = response.usage_metadata
-                    total_tokens = getattr(usage, 'total_token_count', 0)
-                    prompt_tokens = getattr(usage, 'prompt_token_count', 0)
-                    response_tokens = getattr(usage, 'candidates_token_count', 0)
-                    thoughts_tokens = getattr(usage, 'thoughts_token_count', 0)
-                    
+                    total_tokens = getattr(usage, "total_token_count", 0)
+                    prompt_tokens = getattr(usage, "prompt_token_count", 0)
+                    response_tokens = getattr(usage, "candidates_token_count", 0)
+                    thoughts_tokens = getattr(usage, "thoughts_token_count", 0)
+
                     # TPM (Tokens Per Minute) зазвичай враховує лише вхідні токени (input)
                     model.record_tokens(time.time(), prompt_tokens)
-                    
+
                     logger.info(
-                        "Token usage for '%s': total=%s, prompt (input)=%s, response=%s, thoughts=%s", 
-                        model.name, total_tokens, prompt_tokens, response_tokens, thoughts_tokens
+                        "Token usage for '%s': total=%s, prompt (input)=%s, response=%s, thoughts=%s",
+                        model.name,
+                        total_tokens,
+                        prompt_tokens,
+                        response_tokens,
+                        thoughts_tokens,
                     )
-                    
+
                 model.record_success()
                 return response
-            
+
             except errors.APIError as e:
                 model.refund_request()
-                code = getattr(e, 'code', 0)
-                message = getattr(e, 'message', str(e))
+                code = getattr(e, "code", 0)
+                message = getattr(e, "message", str(e))
                 logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
-                
+
                 # 5xx - Server Errors (Internal Server Error, Service Unavailable, etc.)
                 if code == 429:
                     model.handle_429()
                     attempted_errors.append(f"{model.name} (APIError {code})")
-                    logger.warning("Attempting fallback to next model due to 429 (Consecutive: %d)", model._consecutive_429s)
+                    logger.warning(
+                        "Attempting fallback to next model due to 429 (Consecutive: %d)", model._consecutive_429s
+                    )
                     continue
                 elif code >= 500:
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning("Attempting fallback to next model due to server error %s", code)
                     continue
-                
+
                 # 4xx client errors (like 400 Bad Request) mean our request is invalid
                 raise
-                
+
             except Exception as e:
                 model.refund_request()
                 logger.error("Exception on model '%s': %s", model.name, str(e))
@@ -197,7 +206,9 @@ class LLMClient:
             logger.error(error_msg)
             raise RateLimitExceeded(error_msg)
         else:
-            logger.warning("All models rate-limited locally. Status: %s", [m.get_status(time.time()) for m in self.models])
+            logger.warning(
+                "All models rate-limited locally. Status: %s", [m.get_status(time.time()) for m in self.models]
+            )
             raise RateLimitExceeded("All configured models have exceeded their rate limits")
 
     def get_limits_status(self) -> list[dict]:
@@ -213,6 +224,7 @@ def read_api_token():
         if token:
             return token
     return os.environ.get("GENAI_API_KEY")
+
 
 def get_new_client():
     token = read_api_token()

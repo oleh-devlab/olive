@@ -5,7 +5,8 @@ import core.cache
 from core.utils import format_embed_data, get_phrases
 import settings
 
-UPDATE_SECONDS = getattr(settings, 'llm_context_update_seconds', 30)
+UPDATE_SECONDS = getattr(settings, "llm_context_update_seconds", 30)
+
 
 class LLMContextEmbed(commands.Cog):
     def __init__(self, bot):
@@ -21,15 +22,21 @@ class LLMContextEmbed(commands.Cog):
         Update the LLM context embed with per-guild token counts.
         Server IDs are anonymized — only last three digits are shown.
         """
-        raw_embed_data = get_phrases().get("llm_context_embed", {}).get("embed_data", {
-            "title": "LLM Context",
-            "description": "Token usage per server context"
-        })
+        raw_embed_data = (
+            get_phrases()
+            .get("llm_context_embed", {})
+            .get("embed_data", {"title": "LLM Context", "description": "Token usage per server context"})
+        )
 
         formatted_embed_data = format_embed_data(raw_embed_data)
         embed = disnake.Embed.from_dict(formatted_embed_data)
 
-        footer_text = get_phrases().get("utils", {}).get("update_interval", "Updates every {seconds} seconds.").format(seconds=UPDATE_SECONDS)
+        footer_text = (
+            get_phrases()
+            .get("utils", {})
+            .get("update_interval", "Updates every {seconds} seconds.")
+            .format(seconds=UPDATE_SECONDS)
+        )
         embed.set_footer(text=footer_text)
 
         olive_cog = self.bot.get_cog("AIAssistantCog")
@@ -39,11 +46,7 @@ class LLMContextEmbed(commands.Cog):
             return
 
         ctx_mgr = olive_cog.context_manager
-        max_tokens = (
-            core.cache.llm_client.min_context_tokens
-            if getattr(core.cache, "llm_client", None)
-            else 128000
-        )
+        max_tokens = core.cache.llm_client.min_context_tokens if getattr(core.cache, "llm_client", None) else 128000
 
         if not ctx_mgr.llm_context:
             embed.description = "No active contexts."

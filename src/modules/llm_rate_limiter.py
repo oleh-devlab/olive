@@ -1,17 +1,21 @@
 from dataclasses import dataclass, field
 
+
 class RateLimitExceeded(Exception):
     """Raised when all models have exhausted their rate limits."""
+
     pass
+
 
 @dataclass
 class ModelConfig:
     """Configuration and rate-limit state for a single model."""
+
     name: str
-    rpm: int = 15 # requests per minute
-    rpd: int = 1500 # requests per day
-    tpm: int | None = None # tokens per minute
-    max_context_tokens: int = 128000 # context size limit in tokens
+    rpm: int = 15  # requests per minute
+    rpd: int = 1500  # requests per day
+    tpm: int | None = None  # tokens per minute
+    max_context_tokens: int = 128000  # context size limit in tokens
     thinking_level: str | None = None
     thinking_budget: int | None = None
 
@@ -26,7 +30,11 @@ class ModelConfig:
 
     def _reset_windows_if_needed(self, now: float):
         """Reset counters if their time windows have expired. Handles NTP backwards jumps."""
-        if self._minute_window_start is None or now < self._minute_window_start or (now - self._minute_window_start) >= 60.0:
+        if (
+            self._minute_window_start is None
+            or now < self._minute_window_start
+            or (now - self._minute_window_start) >= 60.0
+        ):
             self._minute_requests = 0
             self._minute_tokens = 0
             self._minute_window_start = now
@@ -87,8 +95,9 @@ class ModelConfig:
     def handle_429(self):
         """Apply rate limits on 429: first minute limit, then daily. Handles concurrent 429s."""
         # If the penalty is already active for this window, ignore concurrent 429s
-        if (self._minute_requests >= self.rpm and self._consecutive_429s == 1) or \
-           (self._day_requests >= self.rpd and self._consecutive_429s >= 2):
+        if (self._minute_requests >= self.rpm and self._consecutive_429s == 1) or (
+            self._day_requests >= self.rpd and self._consecutive_429s >= 2
+        ):
             return
 
         self._consecutive_429s += 1

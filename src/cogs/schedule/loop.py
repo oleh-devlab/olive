@@ -7,6 +7,7 @@ from modules.schedule_provider import ScheduleProvider
 
 provider = ScheduleProvider()
 
+
 class ScheduleMessageLoop(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -31,10 +32,10 @@ class ScheduleMessageLoop(commands.Cog):
     @main_loop.before_loop
     async def before_main_loop(self):
         await self.bot.wait_until_ready()
-        
+
         try:
             channels = []
-            
+
             # 1. Getting channels from JSON
             data = provider.load_channels()
 
@@ -57,7 +58,7 @@ class ScheduleMessageLoop(commands.Cog):
 
             # 3. Sending initial messages and filling the list for future edits
             await asyncio.sleep(0.5)
-            
+
             for channel, user_id in channels:
                 try:
                     self.bot.dispatch("schedule_init", channel, user_id)
@@ -72,6 +73,7 @@ class ScheduleMessageLoop(commands.Cog):
     @main_loop.error
     async def on_main_loop_error(self, error):
         await self.error_handler.handle_error(error)
+
 
 def setup(bot):
     bot.add_cog(ScheduleMessageLoop(bot))
