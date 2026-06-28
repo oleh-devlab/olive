@@ -63,7 +63,7 @@ class AIAssistantCog(commands.Cog):
 
         if not has_consent:
             # Deduplicate consecutive no-consent stubs from the same user
-            if self.context_manager.is_last_no_consent_from(guild_id, message.author.name):
+            if self.context_manager.is_duplicate_no_consent(guild_id, message.author.name):
                 return
             
             self.context_manager.add_user_message(guild_id, new_text, no_consent=True)

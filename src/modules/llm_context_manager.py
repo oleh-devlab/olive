@@ -65,23 +65,29 @@ class LLMContextManager:
             entry["no_consent"] = True
         self.llm_context[guild_id].append(entry)
 
-    def is_last_no_consent_from(self, guild_id: str, author_name: str) -> bool:
+    def is_duplicate_no_consent(self, guild_id: str, author_name: str) -> bool:
         """
-        Checks whether the last user message in the guild context is a no-consent stub
-        from the given author. Used to prevent consecutive stub messages.
+        Checks whether there's already a no-consent stub from the given author in the
+        current unconsented block. The block is broken by a model message or a user message
+        with consent. Used to prevent consecutive stub messages from the same user.
         """
         messages = self.llm_context.get(guild_id, [])
         if not messages:
             return False
 
-        last_msg = messages[-1]
-        if last_msg.get("role") != "user" or not last_msg.get("no_consent"):
-            return False
+        for msg in reversed(messages):
+            if msg.get("role") != "user":
+                return False
 
-        # Check if the author name matches in the formatted text
-        parts = last_msg.get("parts", [])
-        if parts:
-            return f"][{author_name}]:" in parts[0].get("text", "")
+            if not msg.get("no_consent"):
+                return False
+
+            parts = msg.get("parts", [])
+            if parts:
+                text = parts[0].get("text", "")
+                if f"][{author_name}]:" in text:
+                    return True
+
         return False
 
     def get_message_tokens(self, message: dict) -> int:
