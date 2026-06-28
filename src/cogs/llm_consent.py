@@ -67,7 +67,9 @@ def _build_consent_embed(current_consent: bool) -> disnake.Embed:
 class LLMConsentCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        bot.add_view(ConsentView())
+    
+    async def cog_load(self):
+        self.bot.add_view(ConsentView())
 
     @commands.slash_command(
         name="olive_data_consent",
