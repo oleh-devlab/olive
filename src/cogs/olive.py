@@ -1,22 +1,19 @@
 import asyncio
 import disnake
 from disnake.ext import commands
-import json
 from google.genai import types
+import logging
 
 from modules.llm_client import LLMClient
 from modules.llm_rate_limiter import RateLimitExceeded
 from modules.llm_context_manager import LLMContextManager
+from modules.llm_message_formatter import format_user_message
+from modules.llm_response_gate import want_respond
 import core.cache as cache
 from core.utils import get_phrases
-from core.time_utils import tz
 
-from datetime import datetime
-
-import logging
 logger = logging.getLogger(__name__)
 
-days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -57,37 +54,7 @@ class AIAssistantCog(commands.Cog):
         
         guild_id = str(message.guild.id)
 
-        dt_now = datetime.now(tz)
-        day_name = days_uk[dt_now.weekday()]
-        time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
-
-        new_text = f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""
-
-        if message.reference and message.reference.message_id:
-            try:
-                replied_msg = message.reference.resolved
-                if isinstance(replied_msg, disnake.DeletedReferencedMessage):
-                    logger.debug(f"Referenced message {message.reference.message_id} is deleted.")
-                    pass 
-                    
-                else:
-                    if not replied_msg:
-                        logger.debug(f"Referenced message not in cache, fetching {message.reference.message_id}")
-                        replied_msg = await message.channel.fetch_message(message.reference.message_id)
-                    if isinstance(replied_msg, disnake.Message):
-                        logger.debug(f"Successfully resolved replied message from {replied_msg.author.name}")
-                        reply_dt = replied_msg.created_at.astimezone(tz)
-                        reply_time = f"{days_uk[reply_dt.weekday()]}, {reply_dt.strftime('%d.%m.%Y %H:%M:%S')}"
-                        
-                        new_text = f"[This is a reply to {replied_msg.author.name} ({reply_time})] {new_text}"
-
-            except disnake.NotFound:
-                pass 
-            except disnake.HTTPException as e:
-                logger.warning(f"HTTP error while fetching replied message: {e}")
-            except Exception as e:
-                logger.warning(f"Unexpected error handling replied message: {e}")
-
+        new_text = await format_user_message(message)
         self.context_manager.add_user_message(guild_id, new_text)
 
         if guild_id in self.response_tasks:
@@ -128,64 +95,13 @@ class AIAssistantCog(commands.Cog):
         return instruction
 
     async def generate_answer(self, message: disnake.Message):
-        
+        guild_id = str(message.guild.id)
         system_instruction = self._resolve_system_instruction(message.guild.id)
+        context = self.context_manager.get_context(guild_id)
 
         try:
-            test_instruction_addition = get_phrases().get("olive", {}).get("test_instruction_addition", None)
-            if test_instruction_addition:
-                test_system_instruction = f"{system_instruction}\n\n{test_instruction_addition}"
-
-                test_schema = {
-                    'properties': {
-                        'i_want_to_reply': {
-                            'description': 'True if you genuinely want to reply in this conversation, False if you have nothing meaningful to add.',
-                            'type': 'boolean'
-                        }
-                    },
-                    'required': ['i_want_to_reply'],
-                    'type': 'object',
-                }
-
-                test_config = types.GenerateContentConfig(
-                    system_instruction=test_system_instruction, 
-                    response_mime_type="application/json",
-                    response_json_schema=test_schema
-                )
-                test_models_priority = get_phrases().get("olive", {}).get("test_models_priority", None)
-                
-                test_response = await cache.llm_client.get_response(
-                    self.context_manager.get_context(str(message.guild.id)), 
-                    test_config,
-                    cheap_first=True,
-                    model_priority=test_models_priority
-                )
-
-                try:
-                    if hasattr(test_response, 'parsed') and test_response.parsed is not None:
-                        if isinstance(test_response.parsed, dict):
-                            i_want_to_reply = test_response.parsed.get("i_want_to_reply", False)
-                        else:
-                            i_want_to_reply = getattr(test_response.parsed, "i_want_to_reply", False)
-                    else:
-                        raw_text = (test_response.text or "").strip()
-                        
-                        if raw_text.startswith("```"):
-                            raw_text = raw_text[3:].strip()
-                            if raw_text.lower().startswith("json"):
-                                raw_text = raw_text[4:].strip()
-                                
-                        if raw_text.endswith("```"):
-                            raw_text = raw_text[:-3].strip()
-                        
-                        data = json.loads(raw_text)
-                        i_want_to_reply = data.get("i_want_to_reply", False)
-                except Exception as e:
-                    logger.error("Error parsing test response JSON: %s", e)
-                    i_want_to_reply = False
-
-                if not i_want_to_reply:
-                    return
+            if not await want_respond(cache.llm_client, context, system_instruction, message.guild.id):
+                return
 
             reply_config = types.GenerateContentConfig(
                 system_instruction=system_instruction, 
@@ -193,20 +109,20 @@ class AIAssistantCog(commands.Cog):
             )
 
             async with message.channel.typing():
-                response = await cache.llm_client.get_response(self.context_manager.get_context(str(message.guild.id)), reply_config)
+                response = await cache.llm_client.get_response(context, reply_config)
 
                 candidate_tokens = 0
                 if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
                     prompt_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
                     candidate_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
                     if prompt_tokens > 0:
-                        self.context_manager.update_latest_user_message_tokens(str(message.guild.id), prompt_tokens)
+                        self.context_manager.update_latest_user_message_tokens(guild_id, prompt_tokens)
 
                 if not response.text:
                     logger.warning("Model returned empty response (possibly blocked by safety filters)")
                     return
 
-                self.context_manager.add_model_message(str(message.guild.id), response.text, tokens=candidate_tokens)
+                self.context_manager.add_model_message(guild_id, response.text, tokens=candidate_tokens)
                 await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
 
         except RateLimitExceeded:
