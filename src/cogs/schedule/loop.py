@@ -42,6 +42,13 @@ class ScheduleMessageLoop(commands.Cog):
             for user_id_str, info in data.items():
                 channel_id = info.get("channel_id")
                 user_id = int(user_id_str)
+                tasks_channel_id = info.get("tasks_channel_id")
+                
+                if not hasattr(cache, 'tasks_channels'):
+                    cache.tasks_channels = {}
+                if tasks_channel_id:
+                    cache.tasks_channels[tasks_channel_id] = user_id
+                    
                 try:
                     channel = await self.bot.get_or_fetch_channel(channel_id)
                     channels.append((channel, user_id))

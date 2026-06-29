@@ -75,10 +75,13 @@ class AIAssistantCog(commands.Cog):
             self.context_manager.add_user_message(guild_id, new_text, no_consent=True)
             return
 
-        # Intercept schedule channels
-        if message.channel.id in cache.schedule_states:
-            state = cache.schedule_states[message.channel.id]
-            self.bot.loop.create_task(run_schedule_agent(self.bot, message, state["user_id"], new_text))
+        # Intercept schedule management in tasks_channel
+        if not hasattr(cache, 'tasks_channels'):
+            cache.tasks_channels = {}
+            
+        if message.channel.id in cache.tasks_channels:
+            user_id = cache.tasks_channels[message.channel.id]
+            self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text))
             return
 
         self.context_manager.add_user_message(guild_id, new_text)
