@@ -338,7 +338,12 @@ class AutoSchedule(commands.Cog):
             return
 
         try:
-            overwrites = {
+            schedule_overwrites = {
+                inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
+                inter.author: disnake.PermissionOverwrite(read_messages=True, send_messages=False),
+                inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
+            }
+            tasks_overwrites = {
                 inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
                 inter.author: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
                 inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
@@ -347,14 +352,14 @@ class AutoSchedule(commands.Cog):
             schedule_channel = await inter.guild.create_text_channel(
                 name=f"schedule-{inter.author.display_name}",
                 category=category,
-                overwrites=overwrites,
+                overwrites=schedule_overwrites,
                 reason="Automatic creation of schedule channel",
             )
 
             tasks_channel = await inter.guild.create_text_channel(
                 name=f"tasks-{inter.author.display_name}",
                 category=category,
-                overwrites=overwrites,
+                overwrites=tasks_overwrites,
                 reason="Automatic creation of tasks channel",
             )
 

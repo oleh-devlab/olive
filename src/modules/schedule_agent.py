@@ -187,7 +187,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     for t in tools_instance.used_tools:
                         if t not in unique_tools:
                             unique_tools.append(t)
-                    text_response += "\n\n**Used tools:** " + ", ".join(unique_tools)
+                    text_response += "\n\n---\nUsed tools:\n" + "\n".join(f"- {t}" for t in unique_tools)
 
                 # Append to context securely with token tracking
                 schedule_context_manager.add_model_message(channel_id_str, text_response, tokens=candidate_tokens)
