@@ -359,13 +359,13 @@ class AutoSchedule(commands.Cog):
             )
 
             data[user_id_str] = {
-                "channel_id": schedule_channel.id, 
+                "channel_id": schedule_channel.id,
                 "tasks_channel_id": tasks_channel.id,
-                "guild_id": inter.guild.id
+                "guild_id": inter.guild.id,
             }
             provider.save_channels(data)
-            
-            if not hasattr(cache, 'tasks_channels'):
+
+            if not hasattr(cache, "tasks_channels"):
                 cache.tasks_channels = {}
             cache.tasks_channels[tasks_channel.id] = inter.author.id
 

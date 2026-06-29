@@ -47,10 +47,10 @@ class ConfirmUndoView(disnake.ui.View):
     async def confirm_yes(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.author.id != self.user_id:
             return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)
-            
+
         self.provider.restore_backup(self.user_id, self.backup)
         self.bot.dispatch("schedule_update", interaction.channel.id)
-        
+
         for child in self.children:
             child.disabled = True
         button.label = "Canceled"
@@ -61,11 +61,12 @@ class ConfirmUndoView(disnake.ui.View):
     async def confirm_no(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.author.id != self.user_id:
             return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)
-            
+
         for child in self.children:
             child.disabled = True
         button.label = "Left unchanged"
         await interaction.response.edit_message(view=self)
+
 
 class UndoScheduleView(disnake.ui.View):
     def __init__(self, bot, user_id: int, backup_data: dict, post_run_data: dict):
@@ -80,25 +81,27 @@ class UndoScheduleView(disnake.ui.View):
     async def undo_button(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.author.id != self.user_id:
             return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)
-            
+
         current_state = self.provider.create_backup(self.user_id)
-        
+
         if current_state != self.post_run_data:
             confirm_view = ConfirmUndoView(self.bot, self.user_id, self.backup_data, self.provider)
             await interaction.response.send_message(
                 "Attention! The schedule has changed since this action was taken. Canceling it now will undo both this action and all subsequent ones. Are you sure?",
                 view=confirm_view,
-                ephemeral=True
+                ephemeral=True,
             )
             return
-            
+
         self.provider.restore_backup(self.user_id, self.backup_data)
         self.bot.dispatch("schedule_update", interaction.channel.id)
-        
+
         button.disabled = True
         button.label = "Canceled"
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send("The changes have been canceled, and the schedule has been restored to its previous state.", ephemeral=True)
+        await interaction.followup.send(
+            "The changes have been canceled, and the schedule has been restored to its previous state.", ephemeral=True
+        )
 
 
 async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_text: str):
@@ -115,7 +118,6 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
     tools_instance = ScheduleAgentTools(user_id)
     provider = ScheduleProvider()
     backup_data = provider.create_backup(user_id)
-    total_schedule_modified = False
 
     # Expose the bound methods as tools
     agent_tools = [
@@ -136,7 +138,6 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
 
     max_iterations = 7
     iteration = 0
-    used_tools = []
 
     async with message.channel.typing():
         while iteration < max_iterations:
@@ -146,7 +147,11 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
             context = schedule_context_manager.get_context(channel_id_str)
 
             try:
-                response = await cache.llm_client.get_response(context, reply_config)
+                response = await cache.llm_client.get_response(
+                    context,
+                    reply_config,
+                    model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
+                )
             except Exception as e:
                 logger.error("Error in schedule agent get_response: %s", e)
                 await message.reply(f"An error occurred while communicating with the model: {e}")
@@ -170,29 +175,36 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                 # No function calls, the model responded with text.
                 text_response = response.text or ""
                 if not text_response:
-                    logger.warning("Agent returned empty response")
-                    break
-                
-                if used_tools:
-                    text_response += "\n\n**Used tools:** " + ", ".join(used_tools)
-                    
+                    if tools_instance.used_tools:
+                        text_response = "The action was completed (the model did not provide a text response)."
+                    else:
+                        logger.warning("Agent returned empty response")
+                        break
+
+                if tools_instance.used_tools:
+                    # Deduplicate in case SDK auto-retried
+                    unique_tools = []
+                    for t in tools_instance.used_tools:
+                        if t not in unique_tools:
+                            unique_tools.append(t)
+                    text_response += "\n\n**Used tools:** " + ", ".join(unique_tools)
+
                 # Append to context securely with token tracking
                 schedule_context_manager.add_model_message(channel_id_str, text_response, tokens=candidate_tokens)
-                
+
                 kwargs = {"fail_if_not_exists": False, "mention_author": False}
-                if total_schedule_modified:
+                if tools_instance.schedule_modified:
                     post_run_data = provider.create_backup(user_id)
                     kwargs["view"] = UndoScheduleView(bot, user_id, backup_data, post_run_data)
-                    
+
                 await message.reply(text_response, **kwargs)
                 break
-                
+
             # Model made function calls. We must append them as pure dicts to survive json.dump
             model_parts = []
             for fc in function_calls:
                 args_dict = dict(fc.args) if fc.args else {}
                 model_parts.append({"function_call": {"name": fc.name, "args": args_dict}})
-                used_tools.append(f"`{fc.name}`")
 
             schedule_context_manager.llm_context[channel_id_str].append(
                 {"role": "model", "parts": model_parts, "tokens": candidate_tokens}
@@ -220,7 +232,6 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         result = {"result": res}
                         if func_name in ["add_task", "remove_task", "edit_task", "spend_task_time"]:
                             schedule_modified = True
-                            total_schedule_modified = True
 
                     except Exception as e:
                         logger.warning("Tool execution error for %s: %s", func_name, str(e))

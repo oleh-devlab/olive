@@ -76,7 +76,7 @@ class ScheduleProvider:
         files = {
             "tasks": get_tasks_file(user_id),
             "time_blocks": get_time_blocks_file(user_id),
-            "completed_tasks": get_completed_tasks_file(user_id)
+            "completed_tasks": get_completed_tasks_file(user_id),
         }
         backup = {}
         for key, filepath in files.items():
@@ -92,7 +92,7 @@ class ScheduleProvider:
         files = {
             "tasks": get_tasks_file(user_id),
             "time_blocks": get_time_blocks_file(user_id),
-            "completed_tasks": get_completed_tasks_file(user_id)
+            "completed_tasks": get_completed_tasks_file(user_id),
         }
         for key, filepath in files.items():
             content = backup.get(key)

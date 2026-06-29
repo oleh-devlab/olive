@@ -76,9 +76,9 @@ class AIAssistantCog(commands.Cog):
             return
 
         # Intercept schedule management in tasks_channel
-        if not hasattr(cache, 'tasks_channels'):
+        if not hasattr(cache, "tasks_channels"):
             cache.tasks_channels = {}
-            
+
         if message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
             self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text))

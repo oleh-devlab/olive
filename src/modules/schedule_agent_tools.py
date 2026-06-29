@@ -10,12 +10,15 @@ class ScheduleAgentTools:
     def __init__(self, user_id: int):
         self.user_id = user_id
         self.provider = ScheduleProvider()
+        self.used_tools = []
+        self.schedule_modified = False
 
     async def get_current_schedule(self) -> str:
         """
         Fetches the current automatically generated schedule for the user (the placed timetable).
         Use this if the user explicitly asks to see their schedule or what they should do next.
         """
+        self.used_tools.append("`get_current_schedule`")
         try:
             full_schedule = await auto_timetable.get_schedule(self.user_id)
             lines = full_schedule.strip().split("\n")
@@ -36,6 +39,7 @@ class ScheduleAgentTools:
         Returns a list of all current tasks and their IDs.
         Use this to find a task's ID before editing, removing, or spending time on it, or when the user asks what tasks they have.
         """
+        self.used_tools.append("`list_tasks`")
         tasks = self.provider.list_tasks(self.user_id)
         if not tasks:
             return "No tasks found."
@@ -50,6 +54,7 @@ class ScheduleAgentTools:
         """
         Returns a list of all time blocks (fixed schedule events).
         """
+        self.used_tools.append("`list_time_blocks`")
         blocks = self.provider.list_time_blocks(self.user_id)
         if not blocks:
             return "No time blocks found."
@@ -88,6 +93,8 @@ class ScheduleAgentTools:
             min_session_min: Minimum allowed shortened session in minutes. Set to 0 if not allowed.
             deadline: Deadline string in format 'DD.MM.YYYY HH:MM'. Empty string if no deadline.
         """
+        self.used_tools.append("`add_task`")
+        self.schedule_modified = True
         deadline_dt = None
         if deadline:
             try:
@@ -119,6 +126,8 @@ class ScheduleAgentTools:
         Args:
             task_id: The ID of the task to remove.
         """
+        self.used_tools.append("`remove_task`")
+        self.schedule_modified = True
         removed = self.provider.remove_task(self.user_id, task_id)
         if removed:
             return f"Task {task_id} removed successfully."
@@ -149,8 +158,11 @@ class ScheduleAgentTools:
             session_dur_min: New session duration (0 to keep unchanged).
             break_dur_min: New break duration (-1 to keep unchanged).
             min_session_min: New min session duration (-1 to keep unchanged, 0 to remove).
+            min_session_min: New min session duration (-1 to keep unchanged, 0 to remove).
             deadline: New deadline 'DD.MM.YYYY HH:MM' ('none' to remove, empty to keep unchanged).
         """
+        self.used_tools.append("`edit_task`")
+        self.schedule_modified = True
         updates = {}
 
         if name:
@@ -194,6 +206,8 @@ class ScheduleAgentTools:
             task_id: The ID of the task.
             minutes: Number of minutes spent working on the task.
         """
+        self.used_tools.append("`spend_task_time`")
+        self.schedule_modified = True
         if minutes <= 0:
             raise ValueError("minutes must be > 0.")
 
