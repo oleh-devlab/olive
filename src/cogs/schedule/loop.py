@@ -3,6 +3,7 @@ from disnake.ext import commands, tasks
 import traceback
 
 from core.task_handler import ResilientTaskHandler
+import core.cache as cache
 from modules.schedule_provider import ScheduleProvider
 
 provider = ScheduleProvider()

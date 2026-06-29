@@ -4,6 +4,7 @@ import datetime
 
 import settings
 import core.utils as utils
+import core.cache as cache
 from core.time_utils import tz
 
 from modules.schedule_models import Task, TimeBlock
