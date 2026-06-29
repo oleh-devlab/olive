@@ -71,6 +71,38 @@ class ScheduleProvider:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
+    def create_backup(self, user_id: int) -> dict:
+        """Create an in-memory snapshot of the user's schedule files."""
+        files = {
+            "tasks": get_tasks_file(user_id),
+            "time_blocks": get_time_blocks_file(user_id),
+            "completed_tasks": get_completed_tasks_file(user_id)
+        }
+        backup = {}
+        for key, filepath in files.items():
+            if filepath.exists():
+                with open(filepath, "r", encoding="utf-8") as f:
+                    backup[key] = f.read()
+            else:
+                backup[key] = None
+        return backup
+
+    def restore_backup(self, user_id: int, backup: dict):
+        """Restore the user's schedule files from an in-memory snapshot."""
+        files = {
+            "tasks": get_tasks_file(user_id),
+            "time_blocks": get_time_blocks_file(user_id),
+            "completed_tasks": get_completed_tasks_file(user_id)
+        }
+        for key, filepath in files.items():
+            content = backup.get(key)
+            if content is None:
+                if filepath.exists():
+                    filepath.unlink()
+            else:
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(content)
+
     def _parse_task_row(self, row: dict) -> Task:
         has_deadline = int(row["has_deadline"])
         deadline_dt = None

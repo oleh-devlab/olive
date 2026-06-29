@@ -368,7 +368,6 @@ class AutoSchedule(commands.Cog):
             if not hasattr(cache, 'tasks_channels'):
                 cache.tasks_channels = {}
             cache.tasks_channels[tasks_channel.id] = inter.author.id
-            print(f"[ROUTING DEBUG tools.py] Created new tasks_channel {tasks_channel.id} for user {inter.author.id} and added to cache.")
 
             # Initialize channel in the loop via event dispatch
             self.bot.dispatch("schedule_init", schedule_channel, inter.author.id)

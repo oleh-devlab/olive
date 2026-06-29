@@ -10,6 +10,7 @@ import core.cache as cache
 from core.utils import get_phrases
 from modules.llm_context_manager import LLMContextManager
 from modules.schedule_agent_tools import ScheduleAgentTools
+from modules.schedule_provider import ScheduleProvider
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +24,6 @@ async def load_schedule_context():
 
 
 def _get_schedule_instruction(guild_id: int) -> str:
-    guild_olive = get_phrases(guild_id).get("olive", {})
-    global_olive = get_phrases().get("olive", {})
-
-    base = guild_olive.get("system_instruction") or global_olive.get(
-        "system_instruction", "You're the AI assistant on the Discord server."
-    )
-
     agent_prompt = (
         "You are now operating in the Schedule Management mode. "
         "Your primary goal is to help the user manage their tasks and timetable. "
@@ -38,14 +32,79 @@ def _get_schedule_instruction(guild_id: int) -> str:
         "When you use a tool that modifies the schedule, the user's UI will automatically update. "
         "If a tool returns an error, inform the user about the error and ask how they'd like to proceed, or fix your parameters and try again."
     )
-    return f"{base}\n\n{agent_prompt}"
+    return agent_prompt
+
+
+class ConfirmUndoView(disnake.ui.View):
+    def __init__(self, bot, user_id: int, backup: dict, provider):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.user_id = user_id
+        self.backup = backup
+        self.provider = provider
+
+    @disnake.ui.button(label="Yes, undo all", style=disnake.ButtonStyle.danger)
+    async def confirm_yes(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        if interaction.author.id != self.user_id:
+            return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)
+            
+        self.provider.restore_backup(self.user_id, self.backup)
+        self.bot.dispatch("schedule_update", interaction.channel.id)
+        
+        for child in self.children:
+            child.disabled = True
+        button.label = "Canceled"
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("All changes have been undone.", ephemeral=True)
+
+    @disnake.ui.button(label="Ні", style=disnake.ButtonStyle.secondary)
+    async def confirm_no(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        if interaction.author.id != self.user_id:
+            return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)
+            
+        for child in self.children:
+            child.disabled = True
+        button.label = "Left unchanged"
+        await interaction.response.edit_message(view=self)
+
+class UndoScheduleView(disnake.ui.View):
+    def __init__(self, bot, user_id: int, backup_data: dict, post_run_data: dict):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.user_id = user_id
+        self.backup_data = backup_data
+        self.post_run_data = post_run_data
+        self.provider = ScheduleProvider()
+
+    @disnake.ui.button(label="Скасувати (Undo)", style=disnake.ButtonStyle.danger)
+    async def undo_button(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        if interaction.author.id != self.user_id:
+            return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)
+            
+        current_state = self.provider.create_backup(self.user_id)
+        
+        if current_state != self.post_run_data:
+            confirm_view = ConfirmUndoView(self.bot, self.user_id, self.backup_data, self.provider)
+            await interaction.response.send_message(
+                "Attention! The schedule has changed since this action was taken. Canceling it now will undo both this action and all subsequent ones. Are you sure?",
+                view=confirm_view,
+                ephemeral=True
+            )
+            return
+            
+        self.provider.restore_backup(self.user_id, self.backup_data)
+        self.bot.dispatch("schedule_update", interaction.channel.id)
+        
+        button.disabled = True
+        button.label = "Canceled"
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("The changes have been canceled, and the schedule has been restored to its previous state.", ephemeral=True)
 
 
 async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_text: str):
     """
     Agentic loop that allows OLIVE to call tools.
     """
-    logger.info(f"[AGENT] run_schedule_agent started for channel {message.channel.id}, user {user_id}")
     channel_id_str = str(message.channel.id)
 
     schedule_context_manager.add_user_message(channel_id_str, new_text)
@@ -54,6 +113,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
     system_instruction = _get_schedule_instruction(message.guild.id)
 
     tools_instance = ScheduleAgentTools(user_id)
+    provider = ScheduleProvider()
+    backup_data = provider.create_backup(user_id)
+    total_schedule_modified = False
 
     # Expose the bound methods as tools
     agent_tools = [
@@ -74,6 +136,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
 
     max_iterations = 7
     iteration = 0
+    used_tools = []
 
     async with message.channel.typing():
         while iteration < max_iterations:
@@ -109,17 +172,27 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                 if not text_response:
                     logger.warning("Agent returned empty response")
                     break
-
+                
+                if used_tools:
+                    text_response += "\n\n**Used tools:** " + ", ".join(used_tools)
+                    
                 # Append to context securely with token tracking
                 schedule_context_manager.add_model_message(channel_id_str, text_response, tokens=candidate_tokens)
-                await message.reply(text_response, fail_if_not_exists=False, mention_author=False)
+                
+                kwargs = {"fail_if_not_exists": False, "mention_author": False}
+                if total_schedule_modified:
+                    post_run_data = provider.create_backup(user_id)
+                    kwargs["view"] = UndoScheduleView(bot, user_id, backup_data, post_run_data)
+                    
+                await message.reply(text_response, **kwargs)
                 break
-
+                
             # Model made function calls. We must append them as pure dicts to survive json.dump
             model_parts = []
             for fc in function_calls:
                 args_dict = dict(fc.args) if fc.args else {}
                 model_parts.append({"function_call": {"name": fc.name, "args": args_dict}})
+                used_tools.append(f"`{fc.name}`")
 
             schedule_context_manager.llm_context[channel_id_str].append(
                 {"role": "model", "parts": model_parts, "tokens": candidate_tokens}
@@ -147,6 +220,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         result = {"result": res}
                         if func_name in ["add_task", "remove_task", "edit_task", "spend_task_time"]:
                             schedule_modified = True
+                            total_schedule_modified = True
 
                     except Exception as e:
                         logger.warning("Tool execution error for %s: %s", func_name, str(e))
