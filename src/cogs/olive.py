@@ -10,6 +10,7 @@ from modules.llm_context_manager import LLMContextManager
 from modules.llm_consent_manager import LLMConsentManager
 from modules.llm_message_formatter import format_user_message
 from modules.llm_response_gate import want_respond
+from modules.schedule_agent import load_schedule_context, run_schedule_agent
 import core.cache as cache
 from core.utils import get_phrases
 
@@ -30,6 +31,8 @@ class AIAssistantCog(commands.Cog):
             logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
             await self.context_manager.load_from_file()
+
+            await load_schedule_context()
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
             cache.llm_client = None
@@ -70,6 +73,12 @@ class AIAssistantCog(commands.Cog):
                 return
 
             self.context_manager.add_user_message(guild_id, new_text, no_consent=True)
+            return
+
+        # Intercept schedule channels
+        if message.channel.id in cache.schedule_states:
+            state = cache.schedule_states[message.channel.id]
+            self.bot.loop.create_task(run_schedule_agent(self.bot, message, state["user_id"], new_text))
             return
 
         self.context_manager.add_user_message(guild_id, new_text)

@@ -56,16 +56,6 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            if total_dur_min <= 0:
-                return await inter.edit_original_response("Error: total_dur_min must be > 0.")
-            if session_dur_min <= 0 or session_dur_min > total_dur_min:
-                return await inter.edit_original_response("Error: session_dur_min must be > 0 and <= total_dur_min.")
-            if break_dur_min < 0:
-                return await inter.edit_original_response("Error: break_dur_min must be >= 0.")
-            if priority < 1:
-                return await inter.edit_original_response("Error: priority must be >= 1.")
-            if min_session_min is not None and (min_session_min <= 0 or min_session_min > session_dur_min):
-                return await inter.edit_original_response("Error: min_session_min must be > 0 and <= session_dur_min.")
             deadline_dt = None
             if deadline:
                 try:
@@ -156,22 +146,14 @@ class AutoSchedule(commands.Cog):
             if name is not None:
                 updates["name"] = name.replace("\t", " ").replace("\n", " ").strip()
             if total_dur_min is not None:
-                if total_dur_min <= 0:
-                    return await inter.edit_original_response("Error: total_dur_min must be > 0.")
                 updates["total_dur"] = datetime.timedelta(minutes=total_dur_min)
             if description is not None:
                 updates["description"] = description.replace("\t", " ").replace("\n", " ").strip()
             if priority is not None:
-                if priority < 1:
-                    return await inter.edit_original_response("Error: priority must be >= 1.")
                 updates["priority"] = priority
             if session_dur_min is not None:
-                if session_dur_min <= 0:
-                    return await inter.edit_original_response("Error: session_dur_min must be > 0.")
                 updates["session_dur"] = datetime.timedelta(minutes=session_dur_min)
             if break_dur_min is not None:
-                if break_dur_min < 0:
-                    return await inter.edit_original_response("Error: break_dur_min must be >= 0.")
                 updates["break_dur"] = datetime.timedelta(minutes=break_dur_min)
             if min_session_min is not None:
                 if min_session_min <= 0:

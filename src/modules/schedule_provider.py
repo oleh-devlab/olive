@@ -125,7 +125,27 @@ class ScheduleProvider:
                 tasks.append(row)
         return tasks
 
+    def _validate_task(self, task: Task):
+        total_dur_min = int(task.total_dur.total_seconds() // 60)
+        session_dur_min = int(task.session_dur.total_seconds() // 60)
+        break_dur_min = int(task.break_dur.total_seconds() // 60)
+
+        if total_dur_min <= 0:
+            raise ValueError("total_dur_min must be > 0.")
+        if session_dur_min <= 0 or session_dur_min > total_dur_min:
+            raise ValueError("session_dur_min must be > 0 and <= total_dur_min.")
+        if break_dur_min < 0:
+            raise ValueError("break_dur_min must be >= 0.")
+        if task.priority < 1:
+            raise ValueError("priority must be >= 1.")
+
+        if task.min_session is not None:
+            min_session_min = int(task.min_session.total_seconds() // 60)
+            if min_session_min <= 0 or min_session_min > session_dur_min:
+                raise ValueError("min_session_min must be > 0 and <= session_dur_min.")
+
     def add_task(self, user_id: int, task: Task) -> int:
+        self._validate_task(task)
         filepath = get_tasks_file(user_id)
         _ensure_file(filepath, TASKS_HEADER)
 
@@ -229,6 +249,8 @@ class ScheduleProvider:
         for k, v in kwargs.items():
             if hasattr(task, k):
                 setattr(task, k, v)
+
+        self._validate_task(task)
 
         filepath = get_tasks_file(user_id)
         raw_tasks = self._list_tasks_raw(filepath)
