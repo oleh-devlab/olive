@@ -48,6 +48,9 @@ class ScheduleMessageLoop(commands.Cog):
                     cache.tasks_channels = {}
                 if tasks_channel_id:
                     cache.tasks_channels[tasks_channel_id] = user_id
+                    print(f"[ROUTING DEBUG loop.py] Loaded tasks_channel_id {tasks_channel_id} for user {user_id} into cache.")
+                else:
+                    print(f"[ROUTING DEBUG loop.py] User {user_id} has no tasks_channel_id in JSON.")
                     
                 try:
                     channel = await self.bot.get_or_fetch_channel(channel_id)

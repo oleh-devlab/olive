@@ -45,6 +45,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
     """
     Agentic loop that allows OLIVE to call tools.
     """
+    logger.info(f"[AGENT] run_schedule_agent started for channel {message.channel.id}, user {user_id}")
     channel_id_str = str(message.channel.id)
 
     schedule_context_manager.add_user_message(channel_id_str, new_text)

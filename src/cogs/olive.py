@@ -77,12 +77,19 @@ class AIAssistantCog(commands.Cog):
 
         # Intercept schedule management in tasks_channel
         if not hasattr(cache, 'tasks_channels'):
+            logger.info("[ROUTING] Initializing cache.tasks_channels (was not present).")
             cache.tasks_channels = {}
+            
+        logger.info(f"[ROUTING] Message from {message.author.name} in channel {message.channel.id} '{getattr(message.channel, 'name', 'Unknown')}'. "
+                    f"Current tasks_channels keys: {list(cache.tasks_channels.keys())}")
             
         if message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
+            logger.info(f"[ROUTING] Match found! Routing channel {message.channel.id} to schedule agent for user {user_id}.")
             self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text))
             return
+            
+        logger.info(f"[ROUTING] Channel {message.channel.id} NOT in tasks_channels. Routing to general context.")
 
         self.context_manager.add_user_message(guild_id, new_text)
 
