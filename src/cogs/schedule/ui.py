@@ -33,8 +33,21 @@ async def update_schedule_message(bot, channel_id):
         print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
         schedule_data = f"Error fetching schedule: {e}"
 
-    pages = paginate_text(schedule_data, 1000)
-    pages.reverse()
+    pages = []
+    text = schedule_data.strip("\n")
+    while len(text) > 1000:
+        split_idx = text.find("\n", len(text) - 1000)
+        if split_idx == -1:
+            split_idx = len(text) - 1000
+            
+        pages.append(text[split_idx:].strip("\n"))
+        text = text[:split_idx].strip("\n")
+        
+    if text:
+        pages.append(text)
+        
+    if not pages:
+        pages = ["Порожньо"]
 
     state["max_pages"] = len(pages)
     if current_page >= len(pages):
