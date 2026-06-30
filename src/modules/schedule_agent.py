@@ -29,8 +29,8 @@ def _get_schedule_instruction(guild_id: int) -> str:
     agent_prompt = (
         "You are now operating in the Schedule Management mode. "
         "Your primary goal is to help the user manage their tasks and timetable. "
-        "You have access to tools to list tasks, list time blocks, get the generated schedule, add/remove/edit tasks, and spend time. "
-        "Use list_tasks() to find task IDs when you need to edit or delete them. "
+        "You have access to tools to list tasks, get detailed task info (like deadlines), list time blocks, get the generated schedule, add/remove/edit tasks, and spend time. "
+        "Use list_tasks() to find task IDs, and get_task_info(task_id) to see full details (deadline, description, etc). "
         "When you use a tool that modifies the schedule, the user's UI will automatically update. "
         "If a tool returns an error, inform the user about the error and ask how they'd like to proceed, or fix your parameters and try again."
     )
@@ -125,6 +125,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
     agent_tools = [
         tools_instance.get_current_schedule,
         tools_instance.list_tasks,
+        tools_instance.get_task_info,
         tools_instance.list_time_blocks,
         tools_instance.add_task,
         tools_instance.remove_task,

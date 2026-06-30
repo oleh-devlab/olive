@@ -50,6 +50,37 @@ class ScheduleAgentTools:
             lines.append(f"[ID: {t.id}] {t.name} - {dur_mins} min (Priority: {t.priority})")
         return "\n".join(lines)
 
+    def get_task_info(self, task_id: int) -> str:
+        """
+        Returns detailed information about a specific task, including its deadline, description, session duration, and break duration.
+        Use this to check specific details like deadlines.
+        """
+        self.used_tools.append(f"`get_task_info({task_id})`")
+        task = self.provider.get_task(self.user_id, task_id)
+        if not task:
+            return f"Task {task_id} not found."
+
+        lines = [
+            f"ID: {task.id}",
+            f"Name: {task.name}",
+            f"Description: {task.description if task.description.strip() else '(none)'}",
+            f"Priority: {task.priority}",
+            f"Total Duration: {int(task.total_dur.total_seconds() // 60)} min",
+            f"Session: {int(task.session_dur.total_seconds() // 60)} min",
+            f"Break: {int(task.break_dur.total_seconds() // 60)} min",
+        ]
+
+        if task.deadline:
+            dl_str = task.deadline.strftime("%d.%m.%Y %H:%M")
+            lines.append(f"Deadline: {dl_str}")
+        else:
+            lines.append("Deadline: none")
+
+        if task.min_session:
+            lines.append(f"Min session shortening allowed: {int(task.min_session.total_seconds() // 60)} min")
+
+        return "\n".join(lines)
+
     def list_time_blocks(self) -> str:
         """
         Returns a list of all time blocks (fixed schedule events).
