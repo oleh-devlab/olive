@@ -34,6 +34,7 @@ async def update_schedule_message(bot, channel_id):
         schedule_data = f"Error fetching schedule: {e}"
 
     pages = paginate_text(schedule_data, 1000)
+    pages.reverse()
 
     state["max_pages"] = len(pages)
     if current_page >= len(pages):

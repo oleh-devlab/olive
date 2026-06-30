@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 # This ensures it uses the same robust clipping (apply_restrictions) as the main bot.
 schedule_context_manager = LLMContextManager(context_file_name="schedule_agent_context.json")
 
+UNDO_TIMEOUT_MINUTES = 15
+UNDO_TIMEOUT_SECONDS = UNDO_TIMEOUT_MINUTES * 60
 
 async def load_schedule_context():
     await schedule_context_manager.load_from_file()
@@ -70,14 +72,14 @@ class ConfirmUndoView(disnake.ui.View):
 
 class UndoScheduleView(disnake.ui.View):
     def __init__(self, bot, user_id: int, backup_data: dict, post_run_data: dict):
-        super().__init__(timeout=300)
+        super().__init__(timeout=UNDO_TIMEOUT_SECONDS)
         self.bot = bot
         self.user_id = user_id
         self.backup_data = backup_data
         self.post_run_data = post_run_data
         self.provider = ScheduleProvider()
 
-    @disnake.ui.button(label="Скасувати (Undo)", style=disnake.ButtonStyle.danger)
+    @disnake.ui.button(label=f"Cancel (Unavailable for {UNDO_TIMEOUT_MINUTES} minutes)", style=disnake.ButtonStyle.danger)
     async def undo_button(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.author.id != self.user_id:
             return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)
@@ -181,6 +183,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         logger.warning("Agent returned empty response")
                         break
 
+                # Append to context securely with token tracking (BEFORE adding used tools footer)
+                schedule_context_manager.add_model_message(channel_id_str, text_response, tokens=candidate_tokens)
+
                 if tools_instance.used_tools:
                     # Deduplicate in case SDK auto-retried
                     unique_tools = []
@@ -188,9 +193,6 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         if t not in unique_tools:
                             unique_tools.append(t)
                     text_response += "\n\n---\nUsed tools:\n" + "\n".join(f"- {t}" for t in unique_tools)
-
-                # Append to context securely with token tracking
-                schedule_context_manager.add_model_message(channel_id_str, text_response, tokens=candidate_tokens)
 
                 kwargs = {"fail_if_not_exists": False, "mention_author": False}
                 if tools_instance.schedule_modified:
