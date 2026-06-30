@@ -33,18 +33,28 @@ async def update_schedule_message(bot, channel_id):
         print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
         schedule_data = f"Error fetching schedule: {e}"
 
+    # Paginate backwards to fill the first page from the bottom (chronological start)
     pages = []
-    text = schedule_data.strip("\n")
-    while len(text) > 1000:
-        split_idx = text.find("\n", len(text) - 1000)
-        if split_idx == -1:
-            split_idx = len(text) - 1000
+    lines = schedule_data.split("\n")
+    current_page_lines = []
+    current_len = 0
+    
+    for line in reversed(lines):
+        # Skip trailing empty lines at the very end of the string
+        if not line and current_len == 0 and not pages:
+            continue
             
-        pages.append(text[split_idx:].strip("\n"))
-        text = text[:split_idx].strip("\n")
-        
-    if text:
-        pages.append(text)
+        line_len = len(line)
+        if current_len + line_len + (1 if current_len > 0 else 0) > 1000 and current_page_lines:
+            pages.append("\n".join(reversed(current_page_lines)))
+            current_page_lines = [line]
+            current_len = line_len
+        else:
+            current_page_lines.append(line)
+            current_len += line_len + (1 if current_len > 0 else 0)
+            
+    if current_page_lines:
+        pages.append("\n".join(reversed(current_page_lines)))
         
     if not pages:
         pages = ["Порожньо"]
