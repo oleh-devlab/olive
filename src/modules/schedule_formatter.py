@@ -4,8 +4,6 @@ from core.time_utils import tz
 from modules.schedule_models import ScheduleItem
 from modules.schedule_engine import get_raw_schedule_items
 
-_UK_WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
-
 
 def _format_block(item: ScheduleItem) -> str:
     """Format a single schedule item into display lines."""
@@ -13,10 +11,12 @@ def _format_block(item: ScheduleItem) -> str:
 
     if item.is_task:
         header = f"  > {item.task_name}"
-        if item.total_sessions > 1:
-            header += f"  [session {item.session_index}/{item.total_sessions}]"
         lines.append(header)
-        lines.append(f"    {item.dt_start.strftime('%H:%M')} -> {item.dt_end.strftime('%H:%M')}  ({item.duration_min} min)")
+        
+        time_str = f"    {item.dt_start.strftime('%H:%M')} -> {item.dt_end.strftime('%H:%M')}  ({item.duration_min} min)"
+        if item.total_sessions > 1:
+            time_str += f"  [s. {item.session_index}/{item.total_sessions}]"
+        lines.append(time_str)
     else:
         note = item.algo_notes if item.algo_notes else "Break"
         lines.append(f"  - {note}")
@@ -43,11 +43,27 @@ async def _get_parsed_schedule_days(client_ID: int) -> list[dict]:
             days_dict[date_obj] = {
                 "date_obj": date_obj,
                 "date_str": item.dt_start.strftime("%d.%m.%Y"),
-                "weekday": _UK_WEEKDAYS[date_obj.weekday()],
+                "weekday": date_obj.strftime("%A"),
                 "blocks": []
             }
 
-        days_dict[date_obj]["blocks"].append(_format_block(item))
+        base_block = _format_block(item)
+        days_dict[date_obj]["blocks"].append(base_block)
+
+        # Duplicate the task onto the next day if it crosses midnight
+        end_date = item.dt_end.date()
+        if end_date > date_obj and (item.dt_end.hour > 0 or item.dt_end.minute > 0):
+            if end_date not in days_dict:
+                days_dict[end_date] = {
+                    "date_obj": end_date,
+                    "date_str": item.dt_end.strftime("%d.%m.%Y"),
+                    "weekday": end_date.strftime("%A"),
+                    "blocks": []
+                }
+            
+            # Add a visual marker for the spillover block
+            spillover_block = base_block.replace("  > ", "  > [From yesterday] ").replace("  - ", "  - [From yesterday] ")
+            days_dict[end_date]["blocks"].append(spillover_block)
 
     return sorted(days_dict.values(), key=lambda x: x["date_obj"])
 
