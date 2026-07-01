@@ -3,7 +3,7 @@ import datetime
 from core.time_utils import tz
 from modules.schedule_models import Task
 from modules.schedule_provider import ScheduleProvider
-import modules.automatic_timetable as auto_timetable
+import modules.schedule_formatter as auto_timetable
 
 
 class ScheduleAgentTools:

@@ -5,7 +5,7 @@ from datetime import datetime
 import core.cache as cache
 from core.utils import paginate_text, get_phrases
 from core.time_utils import tz
-import modules.automatic_timetable as auto_timetable
+import modules.schedule_formatter as auto_timetable
 
 
 async def update_schedule_message(bot, channel_id):
