@@ -58,29 +58,25 @@ def _parse_tsv_timetable(tsv_content: str) -> dict:
     return dict
 
 
-async def get_schedule(client_ID: int) -> str:
+async def _get_parsed_schedule_days(client_ID: int) -> list[dict]:
     tasks_file = Path(__file__).resolve().parent.parent.parent / "data" / f"{client_ID}_tasks.tsv"
     if not tasks_file.exists():
-        return "У вас ще немає завдань. Скористайтеся `/task add`, щоб додати перше завдання.\n"
+        return []
 
     tsv_content = await _generate_tsv_timetable(client_ID)
     data = _parse_tsv_timetable(tsv_content)
 
-    # TODO: рефакторинг: перевести типи даних і спростити
-
-    def fmt_datetime(ts_minutes_str):  # Заглушка
+    def get_datetime(ts_minutes_str):
         ts_seconds = int(ts_minutes_str) * 60
-        dt_localized = datetime.datetime.fromtimestamp(ts_seconds, tz=tz)
-        return dt_localized.strftime("%Y-%m-%d %H:%M")
+        return datetime.datetime.fromtimestamp(ts_seconds, tz=tz)
 
     def duration_min(start_str, end_str):
         return int(end_str) - int(start_str)
 
-    output_lines = []
-
+    days_dict = {}
     n = len(data["is_task"])
 
-    for i in range(n - 1, -1, -1):
+    for i in range(n):
         is_task = int(data["is_task"][i]) != 0
         task_name = str(data["task_name"][i]).strip() if data["task_name"][i] else ""
         start_time = data["start_time"][i]
@@ -92,22 +88,61 @@ async def get_schedule(client_ID: int) -> str:
         algo_notes = str(raw_algo_notes).strip() if raw_algo_notes is not None else ""
 
         dur = duration_min(start_time, end_time)
+        dt_start = get_datetime(start_time)
+        dt_end = get_datetime(end_time)
 
+        date_obj = dt_start.date()
+        date_str = dt_start.strftime("%d.%m.%Y")
+
+        uk_weekdays = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+        weekday = uk_weekdays[date_obj.weekday()]
+
+        if date_obj not in days_dict:
+            days_dict[date_obj] = {
+                "date_obj": date_obj,
+                "date_str": date_str,
+                "weekday": weekday,
+                "blocks": []
+            }
+
+        block_lines = []
         if is_task:
             header = f"  > {task_name}"
             if total_sessions > 1:
                 header += f"  [session {session_index}/{total_sessions}]"
-            output_lines.append(header)
-
-            output_lines.append(f"    {fmt_datetime(start_time)} -> {fmt_datetime(end_time)}  ({dur} min)")
+            block_lines.append(header)
+            block_lines.append(f"    {dt_start.strftime('%H:%M')} -> {dt_end.strftime('%H:%M')}  ({dur} min)")
         else:
             note = algo_notes if algo_notes else "Break"
-            output_lines.append(f"  - {note}")
-
+            block_lines.append(f"  - {note}")
             if dur > 0:
-                output_lines.append(f"    {fmt_datetime(start_time)} -> {fmt_datetime(end_time)}  ({dur} min)")
+                block_lines.append(f"    {dt_start.strftime('%H:%M')} -> {dt_end.strftime('%H:%M')}  ({dur} min)")
 
         if algo_notes and is_task:
-            output_lines.append(f"    !!! {algo_notes}")
+            block_lines.append(f"    !!! {algo_notes}")
 
-    return "\n".join(output_lines) + "\n"
+        days_dict[date_obj]["blocks"].append("\n".join(block_lines))
+
+    sorted_days = sorted(days_dict.values(), key=lambda x: x["date_obj"])
+    return sorted_days
+
+
+async def get_schedule(client_ID: int) -> str:
+    """Returns a full formatted schedule string for the agent."""
+    days = await _get_parsed_schedule_days(client_ID)
+    if not days:
+        return "У вас ще немає завдань. Скористайтеся `/task add`, щоб додати перше завдання.\n"
+
+    flat_lines = []
+    for day in days:
+        flat_lines.append(f"=== {day['date_str']} ({day['weekday']}) ===")
+        # For the agent, forward chronological order is most logical
+        flat_lines.extend(day["blocks"])
+        flat_lines.append("") # Empty line between days
+
+    return "\n".join(flat_lines)
+
+
+async def get_schedule_by_day(client_ID: int) -> list[dict]:
+    """Returns structured schedule data for the UI paginator."""
+    return await _get_parsed_schedule_days(client_ID)

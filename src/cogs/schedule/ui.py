@@ -28,36 +28,52 @@ async def update_schedule_message(bot, channel_id):
     phrases = get_phrases(guild_id).get("schedule", {})
 
     try:
-        schedule_data = await auto_timetable.get_schedule(user_id)
+        schedule_days = await auto_timetable.get_schedule_by_day(user_id)
+        error_msg = None
     except Exception as e:
         print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
-        schedule_data = f"Error fetching schedule: {e}"
+        schedule_days = []
+        error_msg = f"Error fetching schedule: {e}"
 
-    # Paginate backwards to fill the first page from the bottom (chronological start)
     pages = []
-    lines = schedule_data.split("\n")
-    current_page_lines = []
-    current_len = 0
     
-    for line in reversed(lines):
-        # Skip trailing empty lines at the very end of the string
-        if not line and current_len == 0 and not pages:
-            continue
+    if error_msg:
+        pages = [error_msg]
+    elif not schedule_days:
+        pages = ["У вас ще немає завдань. Скористайтеся `/task add`, щоб додати перше завдання."]
+    else:
+        for day in schedule_days:
+            header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
+            blocks = day["blocks"]
             
-        line_len = len(line)
-        if current_len + line_len + (1 if current_len > 0 else 0) > 1000 and current_page_lines:
-            pages.append("\n".join(reversed(current_page_lines)))
-            current_page_lines = [line]
-            current_len = line_len
-        else:
-            current_page_lines.append(line)
-            current_len += line_len + (1 if current_len > 0 else 0)
+            # UX: We want the tasks inside the day reversed (bottom to top chronological)
+            blocks_reversed = list(reversed(blocks))
             
-    if current_page_lines:
-        pages.append("\n".join(reversed(current_page_lines)))
-        
-    if not pages:
-        pages = ["Порожньо"]
+            day_pages = []
+            current_page_blocks = []
+            current_len = len(header)
+            
+            for block in blocks_reversed:
+                block_len = len(block)
+                if current_len + block_len + (1 if current_len > len(header) else 0) > 1500 and current_page_blocks:
+                    day_pages.append(header + "\n".join(current_page_blocks))
+                    current_page_blocks = [block]
+                    current_len = len(header) + block_len
+                else:
+                    current_page_blocks.append(block)
+                    current_len += block_len + (1 if current_len > len(header) else 0)
+                    
+            if current_page_blocks:
+                day_pages.append(header + "\n".join(current_page_blocks))
+                
+            # If multiple pages for a day, append "(Частина X)" to the headers
+            if len(day_pages) > 1:
+                for i, p in enumerate(day_pages):
+                    part_header = f"=== {day['date_str']} ({day['weekday']}) (Частина {i+1}) ===\n"
+                    p = p.replace(header, part_header, 1)
+                    pages.append(p)
+            else:
+                pages.extend(day_pages)
 
     state["max_pages"] = len(pages)
     if current_page >= len(pages):
