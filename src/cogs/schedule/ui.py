@@ -36,7 +36,7 @@ async def update_schedule_message(bot, channel_id):
         error_msg = f"Error fetching schedule: {e}"
 
     pages = []
-    
+
     if error_msg:
         pages = [error_msg]
     elif not schedule_days:
@@ -45,14 +45,14 @@ async def update_schedule_message(bot, channel_id):
         for day in schedule_days:
             header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
             blocks = day["blocks"]
-            
+
             # UX: We want the tasks inside the day reversed (bottom to top chronological)
             blocks_reversed = list(reversed(blocks))
-            
+
             day_pages = []
             current_page_blocks = []
             current_len = len(header)
-            
+
             for block in blocks_reversed:
                 block_len = len(block)
                 if current_len + block_len + (1 if current_len > len(header) else 0) > 1500 and current_page_blocks:
@@ -62,10 +62,10 @@ async def update_schedule_message(bot, channel_id):
                 else:
                     current_page_blocks.append(block)
                     current_len += block_len + (1 if current_len > len(header) else 0)
-                    
+
             if current_page_blocks:
                 day_pages.append(header + "\n".join(current_page_blocks))
-                
+
             # If multiple pages for a day, append "(Частина X)" to the headers
             if len(day_pages) > 1:
                 for i, p in enumerate(day_pages):

@@ -21,6 +21,7 @@ schedule_context_manager = LLMContextManager(context_file_name="schedule_agent_c
 UNDO_TIMEOUT_MINUTES = 15
 UNDO_TIMEOUT_SECONDS = UNDO_TIMEOUT_MINUTES * 60
 
+
 async def load_schedule_context():
     await schedule_context_manager.load_from_file()
 
@@ -79,7 +80,9 @@ class UndoScheduleView(disnake.ui.View):
         self.post_run_data = post_run_data
         self.provider = ScheduleProvider()
 
-    @disnake.ui.button(label=f"Cancel (Unavailable for {UNDO_TIMEOUT_MINUTES} minutes)", style=disnake.ButtonStyle.danger)
+    @disnake.ui.button(
+        label=f"Cancel (Unavailable for {UNDO_TIMEOUT_MINUTES} minutes)", style=disnake.ButtonStyle.danger
+    )
     async def undo_button(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
         if interaction.author.id != self.user_id:
             return await interaction.response.send_message("This isn't your schedule.", ephemeral=True)

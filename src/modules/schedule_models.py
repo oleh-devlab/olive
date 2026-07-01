@@ -9,8 +9,8 @@ from core.time_utils import tz
 class ScheduleItem:
     is_task: bool
     task_name: str
-    start_time: int        # minutes since epoch
-    end_time: int          # minutes since epoch
+    start_time: int  # minutes since epoch
+    end_time: int  # minutes since epoch
     session_index: str
     total_sessions: int
     algo_notes: str
