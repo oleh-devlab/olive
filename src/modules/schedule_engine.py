@@ -46,15 +46,17 @@ def _parse_tsv_timetable(tsv_content: str) -> list[ScheduleItem]:
 
     items = []
     for row in tsv_reader:
-        items.append(ScheduleItem(
-            is_task=int(row.get("is_task", "0")) != 0,
-            task_name=str(row.get("task_name", "")).strip(),
-            start_time=int(row.get("start_time", "0")),
-            end_time=int(row.get("end_time", "0")),
-            session_index=str(row.get("session_index", "")),
-            total_sessions=int(row.get("total_sessions", "0")),
-            algo_notes=str(row.get("algo_notes", "") or "").strip(),
-        ))
+        items.append(
+            ScheduleItem(
+                is_task=int(row.get("is_task", "0")) != 0,
+                task_name=str(row.get("task_name", "")).strip(),
+                start_time=int(row.get("start_time", "0")),
+                end_time=int(row.get("end_time", "0")),
+                session_index=str(row.get("session_index", "")),
+                total_sessions=int(row.get("total_sessions", "0")),
+                algo_notes=str(row.get("algo_notes", "") or "").strip(),
+            )
+        )
 
     return items
 

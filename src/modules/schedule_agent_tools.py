@@ -124,7 +124,7 @@ class ScheduleAgentTools:
             min_session_min: Minimum allowed shortened session in minutes. Set to 0 if not allowed.
             deadline: Deadline string in format 'DD.MM.YYYY HH:MM'. Empty string if no deadline.
         """
-        args = {k: v for k, v in locals().items() if k != 'self'}
+        args = {k: v for k, v in locals().items() if k != "self"}
         args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
         self.used_tools.append(f"`add_task({args_str})`")
         self.schedule_modified = True
@@ -159,7 +159,7 @@ class ScheduleAgentTools:
         Args:
             task_id: The ID of the task to remove.
         """
-        args = {k: v for k, v in locals().items() if k != 'self'}
+        args = {k: v for k, v in locals().items() if k != "self"}
         args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
         self.used_tools.append(f"`remove_task({args_str})`")
         self.schedule_modified = True
@@ -196,7 +196,7 @@ class ScheduleAgentTools:
             min_session_min: New min session duration (-1 to keep unchanged, 0 to remove).
             deadline: New deadline 'DD.MM.YYYY HH:MM' ('none' to remove, empty to keep unchanged).
         """
-        args = {k: v for k, v in locals().items() if k != 'self'}
+        args = {k: v for k, v in locals().items() if k != "self"}
         args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
         self.used_tools.append(f"`edit_task({args_str})`")
         self.schedule_modified = True
@@ -243,7 +243,7 @@ class ScheduleAgentTools:
             task_id: The ID of the task.
             minutes: Number of minutes spent working on the task.
         """
-        args = {k: v for k, v in locals().items() if k != 'self'}
+        args = {k: v for k, v in locals().items() if k != "self"}
         args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
         self.used_tools.append(f"`spend_task_time({args_str})`")
         self.schedule_modified = True
