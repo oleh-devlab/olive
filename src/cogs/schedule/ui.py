@@ -3,7 +3,7 @@ from disnake.ext import commands
 from datetime import datetime
 
 import core.cache as cache
-from core.utils import paginate_text, get_phrases
+from core.utils import get_phrases
 from core.time_utils import tz
 import modules.schedule_formatter as auto_timetable
 

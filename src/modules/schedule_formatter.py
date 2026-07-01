@@ -1,6 +1,5 @@
 import datetime
 
-from core.time_utils import tz
 from modules.schedule_models import ScheduleItem
 from modules.schedule_engine import get_raw_schedule_items
 
