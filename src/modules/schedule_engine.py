@@ -1,4 +1,6 @@
 import asyncio
+import datetime
+from core.time_utils import tz
 from modules.schedule_models import ScheduleItem
 from modules.schedule_provider import ScheduleProvider
 from modules.automatic_timetable_py.src.scheduler import Scheduler
@@ -19,7 +21,9 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
     for b in time_blocks:
         scheduler.add_time_block(b)
 
-    result = scheduler.solve()
+    # Pass the timezone-aware start time so that it matches the timezone-aware deadlines
+    now_tz = datetime.datetime.now(tz).replace(second=0, microsecond=0)
+    result = scheduler.solve(start_time=now_tz)
 
     items = []
     if result.is_successful:
