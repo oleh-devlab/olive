@@ -142,7 +142,7 @@ class ScheduleAgentTools:
             min_chunk = datetime.timedelta(minutes=min(15, max_chunk_duration_min))
         else:
             min_chunk = None
-            
+
         max_chunk = datetime.timedelta(minutes=max_chunk_duration_min) if max_chunk_duration_min > 0 else None
 
         new_task = Task(
@@ -226,7 +226,7 @@ class ScheduleAgentTools:
             # If user explicitly sets 0, we should ensure chunking is still possible if session_dur exists.
             # But to be safe, we just remove the strict minimum and let the task be unsplittable,
             # OR we default it to 15 if session_dur is in updates or already set.
-            # For simplicity, if they pass 0, we will set it to None (disabling chunking) UNLESS 
+            # For simplicity, if they pass 0, we will set it to None (disabling chunking) UNLESS
             # session_dur is provided, in which case we set a default 15.
             if max_chunk_duration_min > 0:
                 updates["min_chunk_duration"] = datetime.timedelta(minutes=min(15, max_chunk_duration_min))

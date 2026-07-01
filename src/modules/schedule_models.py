@@ -3,7 +3,11 @@ import datetime
 from typing import Optional
 
 from core.time_utils import tz
-from modules.automatic_timetable_py.src.data_structs import Task as BaseTask, TimeBlock as BaseTimeBlock, Routine as BaseRoutine
+from modules.automatic_timetable_py.src.data_structs import (
+    Task as BaseTask,
+    TimeBlock as BaseTimeBlock,
+    Routine as BaseRoutine,
+)
 
 
 @dataclass
@@ -12,6 +16,7 @@ class Task(BaseTask):
     Olive-specific Task model that extends the scheduling core's Task
     with an ID and description.
     """
+
     id: Optional[int] = None
     description: str = ""
 
