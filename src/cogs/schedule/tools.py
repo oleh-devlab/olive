@@ -66,18 +66,25 @@ class AutoSchedule(commands.Cog):
                     await inter.edit_original_response("Invalid deadline format. Use 'DD.MM.YYYY HH:MM'")
                     return
 
-            min_sess = datetime.timedelta(minutes=min_session_min) if min_session_min else None
+            if min_session_min and min_session_min > 0:
+                min_chunk = datetime.timedelta(minutes=min_session_min)
+            elif session_dur_min > 0 and total_dur_min > session_dur_min:
+                min_chunk = datetime.timedelta(minutes=min(15, session_dur_min))
+            else:
+                min_chunk = None
+
+            max_chunk = datetime.timedelta(minutes=session_dur_min) if session_dur_min > 0 else None
 
             new_task = Task(
-                id=0,  # Provider will generate
+                id=0,
                 name=name,
-                total_dur=datetime.timedelta(minutes=total_dur_min),
+                duration=datetime.timedelta(minutes=total_dur_min),
                 description=description,
                 deadline=deadline_dt,
                 priority=priority,
-                session_dur=datetime.timedelta(minutes=session_dur_min),
-                break_dur=datetime.timedelta(minutes=break_dur_min),
-                min_session=min_sess,
+                max_chunk_duration=max_chunk,
+                break_duration=datetime.timedelta(minutes=break_dur_min),
+                min_chunk_duration=min_chunk,
             )
 
             new_id = provider.add_task(inter.author.id, new_task)
@@ -104,7 +111,7 @@ class AutoSchedule(commands.Cog):
 
         lines = ["**Your Tasks:**"]
         for t in tasks:
-            dur_mins = int(t.total_dur.total_seconds() // 60)
+            dur_mins = int(t.duration.total_seconds() // 60)
             lines.append(f"`[ID: {t.id}]` **{t.name}** - {dur_mins} min (Priority: {t.priority})")
 
         await utils.send_long_message(inter.channel, "\n".join(lines))
@@ -147,20 +154,23 @@ class AutoSchedule(commands.Cog):
             if name is not None:
                 updates["name"] = name.replace("\t", " ").replace("\n", " ").strip()
             if total_dur_min is not None:
-                updates["total_dur"] = datetime.timedelta(minutes=total_dur_min)
+                updates["duration"] = datetime.timedelta(minutes=total_dur_min)
             if description is not None:
                 updates["description"] = description.replace("\t", " ").replace("\n", " ").strip()
             if priority is not None:
                 updates["priority"] = priority
             if session_dur_min is not None:
-                updates["session_dur"] = datetime.timedelta(minutes=session_dur_min)
+                updates["max_chunk_duration"] = datetime.timedelta(minutes=session_dur_min)
             if break_dur_min is not None:
-                updates["break_dur"] = datetime.timedelta(minutes=break_dur_min)
+                updates["break_duration"] = datetime.timedelta(minutes=break_dur_min)
             if min_session_min is not None:
-                if min_session_min <= 0:
-                    updates["min_session"] = None
+                if min_session_min > 0:
+                    updates["min_chunk_duration"] = datetime.timedelta(minutes=min_session_min)
                 else:
-                    updates["min_session"] = datetime.timedelta(minutes=min_session_min)
+                    if session_dur_min is not None and session_dur_min > 0:
+                        updates["min_chunk_duration"] = datetime.timedelta(minutes=min(15, session_dur_min))
+                    else:
+                        updates["min_chunk_duration"] = None
 
             if deadline is not None:
                 if deadline.lower() == "none":
@@ -192,8 +202,8 @@ class AutoSchedule(commands.Cog):
             f"**Name:** {task.name}",
             f"**Description:** {task.description if task.description.strip() else '(none)'}",
             f"**Priority:** {task.priority}",
-            f"**Total Duration:** {int(task.total_dur.total_seconds() // 60)} min",
-            f"**Session:** {int(task.session_dur.total_seconds() // 60)} min  |  **Break:** {int(task.break_dur.total_seconds() // 60)} min",
+            f"**Total Duration:** {int(task.duration.total_seconds() // 60)} min",
+            f"**Session:** {int(task.max_chunk_duration.total_seconds() // 60) if task.max_chunk_duration else 'N/A'} min  |  **Break:** {int(task.break_duration.total_seconds() // 60)} min",
         ]
 
         if task.deadline:
@@ -202,8 +212,8 @@ class AutoSchedule(commands.Cog):
         else:
             lines.insert(3, "**Deadline:** none")
 
-        if task.min_session:
-            lines.append(f"**Min session shortening allowed:** {int(task.min_session.total_seconds() // 60)} min")
+        if task.min_chunk_duration:
+            lines.append(f"**Min session shortening allowed:** {int(task.min_chunk_duration.total_seconds() // 60)} min")
 
         await inter.edit_original_response("\n".join(lines))
 

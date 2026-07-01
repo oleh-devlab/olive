@@ -1,62 +1,84 @@
 import asyncio
-from pathlib import Path
-import csv
-import io
-
-import settings
 from modules.schedule_models import ScheduleItem
+from modules.schedule_provider import ScheduleProvider
+from modules.automatic_timetable_py.src.scheduler import Scheduler
 
 
-async def _generate_tsv_timetable(client_ID: int) -> str:
-    if not isinstance(client_ID, int):
-        raise ValueError("client_ID must be an integer.")
+def _solve_sync(client_ID: int) -> list[ScheduleItem]:
+    provider = ScheduleProvider()
+    tasks = provider.list_tasks(client_ID)
+    time_blocks = provider.list_time_blocks(client_ID)
+    # Note: routines could also be added here if ScheduleProvider supports them in the future.
 
-    base_dir = Path(__file__).parent.resolve() / "automatic_timetable" / "build"
-    app_path = base_dir / settings.paths["auto_schedule_executable"]
+    if not tasks:
+        return []
 
-    cmd = [
-        str(app_path),
-        "--get_schedule",
-        "--tasks_file",
-        f"../../../../data/{client_ID}_tasks.tsv",
-        "--time_blocks_file",
-        f"../../../../data/{client_ID}_time_blocks.tsv",
-        "--completed_tasks_file",
-        f"../../../../data/{client_ID}_completed_tasks.tsv",
-    ]
+    scheduler = Scheduler(max_horizon_days=14, priority_threshold=10)
+    for t in tasks:
+        scheduler.add_task(t)
+    for b in time_blocks:
+        scheduler.add_time_block(b)
 
-    process = await asyncio.create_subprocess_exec(
-        *cmd, cwd=str(base_dir), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-
-    stdout, stderr = await process.communicate()
-
-    if process.returncode == 0:
-        content = str(stdout.decode("utf-8").strip())
-    else:
-        content = str(stderr.decode("utf-8").strip())
-        raise RuntimeError(content)
-
-    return content
-
-
-def _parse_tsv_timetable(tsv_content: str) -> list[ScheduleItem]:
-    file_like_tsv = io.StringIO(tsv_content)
-    tsv_reader = csv.DictReader(file_like_tsv, delimiter="\t")
+    result = scheduler.solve()
 
     items = []
-    for row in tsv_reader:
-        items.append(
-            ScheduleItem(
-                is_task=int(row.get("is_task", "0")) != 0,
-                task_name=str(row.get("task_name", "")).strip(),
-                start_time=int(row.get("start_time", "0")),
-                end_time=int(row.get("end_time", "0")),
-                session_index=str(row.get("session_index", "")),
-                total_sessions=int(row.get("total_sessions", "0")),
-                algo_notes=str(row.get("algo_notes", "") or "").strip(),
-            )
-        )
+    if result.is_successful:
+        # We can map routines here in the future if we need them as ScheduleItems
+        for st in result.scheduled_tasks:
+            if st.chunks:
+                for i, chunk in enumerate(st.chunks):
+                    items.append(
+                        ScheduleItem(
+                            is_task=True,
+                            task_name=st.task.name,
+                            dt_start=chunk.start_time,
+                            dt_end=chunk.end_time,
+                            session_index=str(i + 1),
+                            total_sessions=len(st.chunks),
+                            algo_notes="",
+                        )
+                    )
+                    break_end = chunk.end_time + st.task.break_duration
+                    if break_end > chunk.end_time:
+                        items.append(
+                            ScheduleItem(
+                                is_task=False,
+                                task_name="",
+                                dt_start=chunk.end_time,
+                                dt_end=break_end,
+                                session_index="",
+                                total_sessions=0,
+                                algo_notes="Перерва",
+                            )
+                        )
+            else:
+                items.append(
+                    ScheduleItem(
+                        is_task=True,
+                        task_name=st.task.name,
+                        dt_start=st.start_time,
+                        dt_end=st.end_time,
+                        session_index="1",
+                        total_sessions=1,
+                        algo_notes="",
+                    )
+                )
+                break_end = st.end_time + st.task.break_duration
+                if break_end > st.end_time:
+                    items.append(
+                        ScheduleItem(
+                            is_task=False,
+                            task_name="",
+                            dt_start=st.end_time,
+                            dt_end=break_end,
+                            session_index="",
+                            total_sessions=0,
+                            algo_notes="Перерва",
+                        )
+                    )
+
+    # Sort the items sequentially so they appear in order
+    items.sort(key=lambda x: x.dt_start)
 
     return items
 
@@ -65,10 +87,6 @@ async def get_raw_schedule_items(client_ID: int) -> list[ScheduleItem]:
     """
     Main entry point for the schedule engine.
     Fetches the schedule using the current active algorithm.
+    Runs the CPU-intensive solve operation in a background thread.
     """
-    tasks_file = Path(__file__).resolve().parent.parent.parent / "data" / f"{client_ID}_tasks.tsv"
-    if not tasks_file.exists():
-        return []
-
-    tsv_content = await _generate_tsv_timetable(client_ID)
-    return _parse_tsv_timetable(tsv_content)
+    return await asyncio.to_thread(_solve_sync, client_ID)
