@@ -213,7 +213,9 @@ class AutoSchedule(commands.Cog):
             lines.insert(3, "**Deadline:** none")
 
         if task.min_chunk_duration:
-            lines.append(f"**Min session shortening allowed:** {int(task.min_chunk_duration.total_seconds() // 60)} min")
+            lines.append(
+                f"**Min session shortening allowed:** {int(task.min_chunk_duration.total_seconds() // 60)} min"
+            )
 
         await inter.edit_original_response("\n".join(lines))
 

@@ -146,13 +146,16 @@ class ScheduleProvider:
             raise ValueError("priority must be >= 1.")
 
         if task.min_chunk_duration is not None and task.max_chunk_duration is not None:
-            if task.min_chunk_duration <= datetime.timedelta(minutes=0) or task.min_chunk_duration > task.max_chunk_duration:
+            if (
+                task.min_chunk_duration <= datetime.timedelta(minutes=0)
+                or task.min_chunk_duration > task.max_chunk_duration
+            ):
                 raise ValueError("min_chunk_duration must be > 0 and <= max_chunk_duration.")
 
     def add_task(self, user_id: int, task: Task) -> int:
         self._validate_task(task)
         data = self._load_data(user_id)
-        
+
         max_id = 0
         for t in data["tasks"] + data["completed_tasks"]:
             if t.get("id", 0) > max_id:
@@ -167,7 +170,7 @@ class ScheduleProvider:
         data = self._load_data(user_id)
         initial_len = len(data["tasks"])
         data["tasks"] = [t for t in data["tasks"] if t.get("id") != task_id]
-        
+
         if len(data["tasks"]) != initial_len:
             self._save_data(user_id, data)
             return True
