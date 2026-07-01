@@ -47,12 +47,12 @@ class AutoSchedule(commands.Cog):
         self,
         inter: disnake.ApplicationCommandInteraction,
         name: str,
-        total_dur_min: int,
+        duration_min: int,
         description: str = "",
         priority: int = 1,
-        session_dur_min: int = 45,
-        break_dur_min: int = 15,
-        min_session_min: int = None,
+        max_chunk_duration_min: int = 45,
+        break_duration_min: int = 15,
+        min_chunk_duration_min: int = None,
         deadline: str = None,
     ):
         await inter.response.defer(ephemeral=True)
@@ -66,24 +66,24 @@ class AutoSchedule(commands.Cog):
                     await inter.edit_original_response("Invalid deadline format. Use 'DD.MM.YYYY HH:MM'")
                     return
 
-            if min_session_min and min_session_min > 0:
-                min_chunk = datetime.timedelta(minutes=min_session_min)
-            elif session_dur_min > 0 and total_dur_min > session_dur_min:
-                min_chunk = datetime.timedelta(minutes=min(15, session_dur_min))
+            if min_chunk_duration_min and min_chunk_duration_min > 0:
+                min_chunk = datetime.timedelta(minutes=min_chunk_duration_min)
+            elif max_chunk_duration_min > 0 and duration_min > max_chunk_duration_min:
+                min_chunk = datetime.timedelta(minutes=min(15, max_chunk_duration_min))
             else:
                 min_chunk = None
 
-            max_chunk = datetime.timedelta(minutes=session_dur_min) if session_dur_min > 0 else None
+            max_chunk = datetime.timedelta(minutes=max_chunk_duration_min) if max_chunk_duration_min > 0 else None
 
             new_task = Task(
                 id=0,
                 name=name,
-                duration=datetime.timedelta(minutes=total_dur_min),
+                duration=datetime.timedelta(minutes=duration_min),
                 description=description,
                 deadline=deadline_dt,
                 priority=priority,
                 max_chunk_duration=max_chunk,
-                break_duration=datetime.timedelta(minutes=break_dur_min),
+                break_duration=datetime.timedelta(minutes=break_duration_min),
                 min_chunk_duration=min_chunk,
             )
 
@@ -139,12 +139,12 @@ class AutoSchedule(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         task_id: int,
         name: str = None,
-        total_dur_min: int = None,
+        duration_min: int = None,
         description: str = None,
         priority: int = None,
-        session_dur_min: int = None,
-        break_dur_min: int = None,
-        min_session_min: int = None,
+        max_chunk_duration_min: int = None,
+        break_duration_min: int = None,
+        min_chunk_duration_min: int = None,
         deadline: str = None,
     ):
         await inter.response.defer(ephemeral=True)
@@ -153,22 +153,22 @@ class AutoSchedule(commands.Cog):
 
             if name is not None:
                 updates["name"] = name.replace("\t", " ").replace("\n", " ").strip()
-            if total_dur_min is not None:
-                updates["duration"] = datetime.timedelta(minutes=total_dur_min)
+            if duration_min is not None:
+                updates["duration"] = datetime.timedelta(minutes=duration_min)
             if description is not None:
                 updates["description"] = description.replace("\t", " ").replace("\n", " ").strip()
             if priority is not None:
                 updates["priority"] = priority
-            if session_dur_min is not None:
-                updates["max_chunk_duration"] = datetime.timedelta(minutes=session_dur_min)
-            if break_dur_min is not None:
-                updates["break_duration"] = datetime.timedelta(minutes=break_dur_min)
-            if min_session_min is not None:
-                if min_session_min > 0:
-                    updates["min_chunk_duration"] = datetime.timedelta(minutes=min_session_min)
+            if max_chunk_duration_min is not None:
+                updates["max_chunk_duration"] = datetime.timedelta(minutes=max_chunk_duration_min)
+            if break_duration_min is not None:
+                updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
+            if min_chunk_duration_min is not None:
+                if min_chunk_duration_min > 0:
+                    updates["min_chunk_duration"] = datetime.timedelta(minutes=min_chunk_duration_min)
                 else:
-                    if session_dur_min is not None and session_dur_min > 0:
-                        updates["min_chunk_duration"] = datetime.timedelta(minutes=min(15, session_dur_min))
+                    if max_chunk_duration_min is not None and max_chunk_duration_min > 0:
+                        updates["min_chunk_duration"] = datetime.timedelta(minutes=min(15, max_chunk_duration_min))
                     else:
                         updates["min_chunk_duration"] = None
 
@@ -243,19 +243,15 @@ class AutoSchedule(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         start_time: str,
         end_time: str,
-        is_repeatable: bool = True,
-        is_every_day: bool = True,
-        day_of_week: int = 0,
+        daily: bool = True,
     ):
         await inter.response.defer(ephemeral=True)
         try:
             start_dt, end_dt = hhmm_to_datetime(start_time, end_time)
             block = TimeBlock(
-                start_time=start_dt,
-                end_time=end_dt,
-                is_repeatable=is_repeatable,
-                is_every_day=is_every_day,
-                day_of_week=day_of_week,
+                start=start_dt,
+                end=end_dt,
+                daily=daily,
             )
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
@@ -282,9 +278,9 @@ class AutoSchedule(commands.Cog):
         lines = ["**Your Time Blocks:**"]
         for i, b in enumerate(blocks):
             try:
-                st = b.start_time.strftime("%H:%M")
-                et = b.end_time.strftime("%H:%M")
-                rep = "Repeatable" if b.is_repeatable else "One-time"
+                st = b.start.strftime("%H:%M") if hasattr(b.start, "strftime") else "???"
+                et = b.end.strftime("%H:%M") if hasattr(b.end, "strftime") else "???"
+                rep = "Daily" if getattr(b, "daily", False) else "One-time"
                 lines.append(f"`[{i + 1}]` {st} - {et} ({rep})")
             except Exception:
                 lines.append(f"`[{i + 1}]` Invalid Block Data")

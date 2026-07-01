@@ -93,9 +93,9 @@ class ScheduleAgentTools:
         lines = []
         for i, b in enumerate(blocks):
             try:
-                st = b.start_time.strftime("%H:%M")
-                et = b.end_time.strftime("%H:%M")
-                rep = "Repeatable" if b.is_repeatable else "One-time"
+                st = b.start.strftime("%H:%M") if hasattr(b.start, "strftime") else "???"
+                et = b.end.strftime("%H:%M") if hasattr(b.end, "strftime") else "???"
+                rep = "Daily" if getattr(b, "daily", False) else "One-time"
                 lines.append(f"[{i + 1}] {st} - {et} ({rep})")
             except Exception:
                 pass
@@ -104,24 +104,24 @@ class ScheduleAgentTools:
     def add_task(
         self,
         name: str,
-        total_dur_min: int,
+        duration_min: int,
         description: str = "",
         priority: int = 1,
-        session_dur_min: int = 45,
-        break_dur_min: int = 15,
-        min_session_min: int = 0,
+        max_chunk_duration_min: int = 45,
+        break_duration_min: int = 15,
+        min_chunk_duration_min: int = 0,
         deadline: str = "",
     ) -> str:
         """
         Adds a new task to the user's schedule.
         Args:
             name: The name of the task.
-            total_dur_min: The total duration of the task in minutes. Must be > 0.
+            duration_min: The total duration of the task in minutes. Must be > 0.
             description: Optional detailed description.
             priority: Priority of the task (>= 1).
-            session_dur_min: Length of a single work session in minutes. Default 45.
-            break_dur_min: Length of the break after a session in minutes. Default 15.
-            min_session_min: Minimum allowed shortened session in minutes. Set to 0 if not allowed.
+            max_chunk_duration_min: Length of a single work session in minutes. Default 45.
+            break_duration_min: Length of the break after a session in minutes. Default 15.
+            min_chunk_duration_min: Minimum allowed shortened session in minutes. Set to 0 if not allowed.
             deadline: Deadline string in format 'DD.MM.YYYY HH:MM'. Empty string if no deadline.
         """
         args = {k: v for k, v in locals().items() if k != "self"}
@@ -136,24 +136,24 @@ class ScheduleAgentTools:
             except ValueError:
                 raise ValueError("Invalid deadline format. Use 'DD.MM.YYYY HH:MM'")
 
-        if min_session_min > 0:
-            min_chunk = datetime.timedelta(minutes=min_session_min)
-        elif session_dur_min > 0 and total_dur_min > session_dur_min:
-            min_chunk = datetime.timedelta(minutes=min(15, session_dur_min))
+        if min_chunk_duration_min > 0:
+            min_chunk = datetime.timedelta(minutes=min_chunk_duration_min)
+        elif max_chunk_duration_min > 0 and duration_min > max_chunk_duration_min:
+            min_chunk = datetime.timedelta(minutes=min(15, max_chunk_duration_min))
         else:
             min_chunk = None
             
-        max_chunk = datetime.timedelta(minutes=session_dur_min) if session_dur_min > 0 else None
+        max_chunk = datetime.timedelta(minutes=max_chunk_duration_min) if max_chunk_duration_min > 0 else None
 
         new_task = Task(
             id=0,
             name=name,
-            duration=datetime.timedelta(minutes=total_dur_min),
+            duration=datetime.timedelta(minutes=duration_min),
             description=description,
             deadline=deadline_dt,
             priority=priority,
             max_chunk_duration=max_chunk,
-            break_duration=datetime.timedelta(minutes=break_dur_min),
+            break_duration=datetime.timedelta(minutes=break_duration_min),
             min_chunk_duration=min_chunk,
         )
 
@@ -180,12 +180,12 @@ class ScheduleAgentTools:
         self,
         task_id: int,
         name: str = "",
-        total_dur_min: int = 0,
+        duration_min: int = 0,
         description: str = "",
         priority: int = 0,
-        session_dur_min: int = 0,
-        break_dur_min: int = -1,
-        min_session_min: int = -1,
+        max_chunk_duration_min: int = 0,
+        break_duration_min: int = -1,
+        min_chunk_duration_min: int = -1,
         deadline: str = "",
     ) -> str:
         """
@@ -194,13 +194,12 @@ class ScheduleAgentTools:
         Args:
             task_id: The ID of the task to edit.
             name: New name (leave empty to keep unchanged).
-            total_dur_min: New total duration (0 to keep unchanged).
+            duration_min: New total duration (0 to keep unchanged).
             description: New description (leave empty to keep unchanged).
             priority: New priority (0 to keep unchanged).
-            session_dur_min: New session duration (0 to keep unchanged).
-            break_dur_min: New break duration (-1 to keep unchanged).
-            min_session_min: New min session duration (-1 to keep unchanged, 0 to remove).
-            min_session_min: New min session duration (-1 to keep unchanged, 0 to remove).
+            max_chunk_duration_min: New session duration (0 to keep unchanged).
+            break_duration_min: New break duration (-1 to keep unchanged).
+            min_chunk_duration_min: New min session duration (-1 to keep unchanged, 0 to remove).
             deadline: New deadline 'DD.MM.YYYY HH:MM' ('none' to remove, empty to keep unchanged).
         """
         args = {k: v for k, v in locals().items() if k != "self"}
@@ -211,26 +210,26 @@ class ScheduleAgentTools:
 
         if name:
             updates["name"] = name.replace("\t", " ").replace("\n", " ").strip()
-        if total_dur_min > 0:
-            updates["duration"] = datetime.timedelta(minutes=total_dur_min)
+        if duration_min > 0:
+            updates["duration"] = datetime.timedelta(minutes=duration_min)
         if description:
             updates["description"] = description.replace("\t", " ").replace("\n", " ").strip()
         if priority > 0:
             updates["priority"] = priority
-        if session_dur_min > 0:
-            updates["max_chunk_duration"] = datetime.timedelta(minutes=session_dur_min)
-        if break_dur_min >= 0:
-            updates["break_duration"] = datetime.timedelta(minutes=break_dur_min)
-        if min_session_min > 0:
-            updates["min_chunk_duration"] = datetime.timedelta(minutes=min_session_min)
-        elif min_session_min == 0:
+        if max_chunk_duration_min > 0:
+            updates["max_chunk_duration"] = datetime.timedelta(minutes=max_chunk_duration_min)
+        if break_duration_min >= 0:
+            updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
+        if min_chunk_duration_min > 0:
+            updates["min_chunk_duration"] = datetime.timedelta(minutes=min_chunk_duration_min)
+        elif min_chunk_duration_min == 0:
             # If user explicitly sets 0, we should ensure chunking is still possible if session_dur exists.
             # But to be safe, we just remove the strict minimum and let the task be unsplittable,
             # OR we default it to 15 if session_dur is in updates or already set.
             # For simplicity, if they pass 0, we will set it to None (disabling chunking) UNLESS 
             # session_dur is provided, in which case we set a default 15.
-            if session_dur_min > 0:
-                updates["min_chunk_duration"] = datetime.timedelta(minutes=min(15, session_dur_min))
+            if max_chunk_duration_min > 0:
+                updates["min_chunk_duration"] = datetime.timedelta(minutes=min(15, max_chunk_duration_min))
             else:
                 updates["min_chunk_duration"] = None
 
