@@ -193,7 +193,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     for t in tools_instance.used_tools:
                         if t not in unique_tools:
                             unique_tools.append(t)
-                    text_response += "\n\n---\nUsed tools:\n" + "\n".join(f"- {t}" for t in unique_tools)
+                    
+                    iters_str = f" ({iteration} iteration{'s' if iteration != 1 else ''})"
+                    text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(f"- {t}" for t in unique_tools)
 
                 kwargs = {"fail_if_not_exists": False, "mention_author": False}
                 if tools_instance.schedule_modified:

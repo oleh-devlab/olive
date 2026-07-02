@@ -9,6 +9,8 @@ from core.time_utils import tz
 
 from modules.schedule_models import Task, TimeBlock
 from modules.schedule_provider import ScheduleProvider
+from modules.schedule_exceptions import ScheduleValidationError
+from modules.schedule_validators import validate_task_creation_data, validate_task_update_data
 
 # We can instantiate the provider here.
 provider = ScheduleProvider()
@@ -49,46 +51,28 @@ class AutoSchedule(commands.Cog):
         name: str,
         duration_min: int,
         description: str = "",
-        priority: int = 1,
-        max_chunk_duration_min: int = 45,
-        break_duration_min: int = 15,
+        priority: int = getattr(settings, "schedule_default_priority", 1),
+        max_chunk_duration_min: int = getattr(settings, "schedule_default_max_chunk_min", 45),
+        break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
         min_chunk_duration_min: int = None,
         deadline: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            deadline_dt = None
-            if deadline:
-                try:
-                    dt = datetime.datetime.strptime(deadline, "%d.%m.%Y %H:%M")
-                    deadline_dt = dt.replace(tzinfo=tz)
-                except ValueError:
-                    await inter.edit_original_response("Invalid deadline format. Use 'DD.MM.YYYY HH:MM'")
-                    return
-
-            if min_chunk_duration_min and min_chunk_duration_min > 0:
-                min_chunk = datetime.timedelta(minutes=min_chunk_duration_min)
-            elif max_chunk_duration_min > 0 and duration_min > max_chunk_duration_min:
-                min_chunk = datetime.timedelta(minutes=min(15, max_chunk_duration_min))
-            else:
-                min_chunk = None
-
-            max_chunk = datetime.timedelta(minutes=max_chunk_duration_min) if max_chunk_duration_min > 0 else None
-
-            new_task = Task(
-                id=0,
+            new_task = validate_task_creation_data(
                 name=name,
-                duration=datetime.timedelta(minutes=duration_min),
+                duration_min=duration_min,
                 description=description,
-                deadline=deadline_dt,
                 priority=priority,
-                max_chunk_duration=max_chunk,
-                break_duration=datetime.timedelta(minutes=break_duration_min),
-                min_chunk_duration=min_chunk,
+                max_chunk_duration_min=max_chunk_duration_min,
+                break_duration_min=break_duration_min,
+                min_chunk_duration_min=min_chunk_duration_min,
+                deadline=deadline,
             )
-
             new_id = provider.add_task(inter.author.id, new_task)
             await inter.edit_original_response(f"Task '{name}' added successfully with ID {new_id}.")
+        except ScheduleValidationError as e:
+            await inter.edit_original_response(str(e))
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
@@ -149,43 +133,24 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            updates = {}
-
-            if name is not None:
-                updates["name"] = name.replace("\t", " ").replace("\n", " ").strip()
-            if duration_min is not None:
-                updates["duration"] = datetime.timedelta(minutes=duration_min)
-            if description is not None:
-                updates["description"] = description.replace("\t", " ").replace("\n", " ").strip()
-            if priority is not None:
-                updates["priority"] = priority
-            if max_chunk_duration_min is not None:
-                updates["max_chunk_duration"] = datetime.timedelta(minutes=max_chunk_duration_min)
-            if break_duration_min is not None:
-                updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
-            if min_chunk_duration_min is not None:
-                if min_chunk_duration_min > 0:
-                    updates["min_chunk_duration"] = datetime.timedelta(minutes=min_chunk_duration_min)
-                else:
-                    if max_chunk_duration_min is not None and max_chunk_duration_min > 0:
-                        updates["min_chunk_duration"] = datetime.timedelta(minutes=min(15, max_chunk_duration_min))
-                    else:
-                        updates["min_chunk_duration"] = None
-
-            if deadline is not None:
-                if deadline.lower() == "none":
-                    updates["deadline"] = None
-                else:
-                    dt = datetime.datetime.strptime(deadline, "%d.%m.%Y %H:%M")
-                    updates["deadline"] = dt.replace(tzinfo=tz)
+            updates = validate_task_update_data(
+                name=name,
+                duration_min=duration_min,
+                description=description,
+                priority=priority,
+                max_chunk_duration_min=max_chunk_duration_min,
+                break_duration_min=break_duration_min,
+                min_chunk_duration_min=min_chunk_duration_min,
+                deadline=deadline,
+            )
 
             success = provider.edit_task(inter.author.id, task_id, **updates)
             if success:
                 await inter.edit_original_response(f"Task {task_id} updated successfully.")
             else:
                 await inter.edit_original_response(f"Task {task_id} not found.")
-        except ValueError:
-            await inter.edit_original_response("Invalid deadline format. Use 'DD.MM.YYYY HH:MM' or 'none'.")
+        except ScheduleValidationError as e:
+            await inter.edit_original_response(str(e))
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
