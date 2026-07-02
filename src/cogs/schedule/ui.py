@@ -29,7 +29,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
 
     if recalculate or not state.get("pages"):
         try:
-            schedule_days, perf_time, planning_days, skipped_ids = await auto_timetable.get_schedule_by_day(user_id)
+            schedule_days, perf_time, planning_days, skipped_ids, status_text = await auto_timetable.get_schedule_by_day(user_id)
             error_msg = None
         except Exception as e:
             print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
@@ -37,6 +37,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
             perf_time = 0.0
             planning_days = 0
             skipped_ids = []
+            status_text = "ERROR"
             error_msg = f"Error fetching schedule: {e}"
 
         pages = []
@@ -83,11 +84,13 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
         state["perf_time"] = perf_time
         state["planning_days"] = planning_days
         state["skipped_ids"] = skipped_ids
+        state["status_text"] = status_text
     else:
         pages = state.get("pages", ["No data."])
         perf_time = state.get("perf_time", 0.0)
         planning_days = state.get("planning_days", 0)
         skipped_ids = state.get("skipped_ids", [])
+        status_text = state.get("status_text", "UNKNOWN")
 
     state["max_pages"] = len(pages)
     if current_page >= len(pages):
@@ -101,7 +104,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
 
     schedule_format = phrases.get(
         "schedule_page_format",
-        "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n`The minimum planning horizon is {planning_days} days.`\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
+        "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n`Status: {status_text}`\n`The minimum planning horizon is {planning_days} days.`\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
     )
     # Provide defaults if missing, but typically we have valid perf_time and planning_days
     schedule_content = schedule_format.format(
@@ -110,7 +113,8 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
         max_pages=len(pages), 
         page_content=page_content,
         planning_days=planning_days,
-        perf_time=perf_time
+        perf_time=perf_time,
+        status_text=status_text
     )
 
     if skipped_ids:
@@ -221,7 +225,8 @@ class ScheduleUI(commands.Cog):
             "pages": [],
             "perf_time": 0.0,
             "planning_days": 0,
-            "skipped_ids": []
+            "skipped_ids": [],
+            "status_text": "INIT"
         }
 
         await update_schedule_message(self.bot, channel.id, recalculate=True)

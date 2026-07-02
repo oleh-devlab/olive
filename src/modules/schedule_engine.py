@@ -85,28 +85,13 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                     total_sessions=1,
                     algo_notes=r_note,
                 )
-            )
-            break_end = sr.end_time + sr.task.break_duration
-            if break_end > sr.end_time:
-                items.append(
-                    ScheduleItem(
-                        is_task=False,
-                        task_name="",
-                        dt_start=sr.end_time,
-                        dt_end=break_end,
-                        session_index="",
-                        total_sessions=0,
-                        algo_notes="Break",
-                    )
-                )
-
-    # Sort the items sequentially so they appear in order
+            )    # Sort the items sequentially so they appear in order
     items.sort(key=lambda x: x.dt_start)
 
-    return items, solve_time, planning_days, skipped_ids
+    return items, solve_time, planning_days, skipped_ids, result.status
 
 
-async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int]]:
+async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], str]:
     """
     Main entry point for the schedule engine.
     Fetches the schedule using the current active algorithm.

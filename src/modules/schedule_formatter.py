@@ -32,10 +32,10 @@ def _format_block(item: ScheduleItem) -> str:
     return "\n".join(lines)
 
 
-async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, int, list[int]]:
-    items, solve_time, planning_days, skipped_ids = await get_raw_schedule_items(client_ID)
+async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, int, list[int], str]:
+    items, solve_time, planning_days, skipped_ids, status_text = await get_raw_schedule_items(client_ID)
     if not items:
-        return [], solve_time, planning_days, skipped_ids
+        return [], solve_time, planning_days, skipped_ids, status_text
 
     days_dict: dict[datetime.date, dict] = {}
 
@@ -70,12 +70,12 @@ async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, 
             )
             days_dict[end_date]["blocks"].append(spillover_block)
 
-    return sorted(days_dict.values(), key=lambda x: x["date_obj"]), solve_time, planning_days, skipped_ids
+    return sorted(days_dict.values(), key=lambda x: x["date_obj"]), solve_time, planning_days, skipped_ids, status_text
 
 
 async def get_schedule(client_ID: int) -> str:
     """Returns a full formatted schedule string for the agent."""
-    days, solve_time, planning_days, skipped_ids = await _get_parsed_schedule_days(client_ID)
+    days, solve_time, planning_days, skipped_ids, status_text = await _get_parsed_schedule_days(client_ID)
     if not days:
         return "You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items.\n"
 
@@ -88,6 +88,6 @@ async def get_schedule(client_ID: int) -> str:
     return "\n".join(flat_lines)
 
 
-async def get_schedule_by_day(client_ID: int) -> tuple[list[dict], float, int, list[int]]:
+async def get_schedule_by_day(client_ID: int) -> tuple[list[dict], float, int, list[int], str]:
     """Returns structured schedule data and metadata for the UI paginator."""
     return await _get_parsed_schedule_days(client_ID)
