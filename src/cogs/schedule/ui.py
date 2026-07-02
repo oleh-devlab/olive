@@ -40,7 +40,7 @@ async def update_schedule_message(bot, channel_id):
     if error_msg:
         pages = [error_msg]
     elif not schedule_days:
-        pages = ["У вас ще немає завдань. Скористайтеся `/task add`, щоб додати перше завдання."]
+        pages = ["You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items."]
     else:
         for day in schedule_days:
             header = f"=== {day['date_str']} ({day['weekday']}) ===\n"

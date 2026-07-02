@@ -10,9 +10,9 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
     provider = ScheduleProvider()
     tasks = provider.list_tasks(client_ID)
     time_blocks = provider.list_time_blocks(client_ID)
-    # Note: routines could also be added here if ScheduleProvider supports them in the future.
+    routines = provider.list_routines(client_ID)
 
-    if not tasks:
+    if not tasks and not routines:
         return []
 
     scheduler = Scheduler(max_horizon_days=14, priority_threshold=10)
@@ -20,6 +20,8 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
         scheduler.add_task(t)
     for b in time_blocks:
         scheduler.add_time_block(b)
+    for r in routines:
+        scheduler.add_routine(r)
 
     # Pass the timezone-aware start time so that it matches the timezone-aware deadlines
     now_tz = datetime.datetime.now(tz).replace(second=0, microsecond=0)
@@ -52,7 +54,7 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                                 dt_end=break_end,
                                 session_index="",
                                 total_sessions=0,
-                                algo_notes="Перерва",
+                                algo_notes="Break",
                             )
                         )
             else:
@@ -77,9 +79,36 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                             dt_end=break_end,
                             session_index="",
                             total_sessions=0,
-                            algo_notes="Перерва",
+                            algo_notes="Break",
                         )
                     )
+
+        for sr in result.scheduled_routines:
+            r_note = "Fixed" if getattr(sr, "routine_type", "") == "fixed" else "Flexible"
+            items.append(
+                ScheduleItem(
+                    is_task=True,
+                    task_name=f"[Routine] {sr.task.name}",
+                    dt_start=sr.start_time,
+                    dt_end=sr.end_time,
+                    session_index="1",
+                    total_sessions=1,
+                    algo_notes=r_note,
+                )
+            )
+            break_end = sr.end_time + sr.task.break_duration
+            if break_end > sr.end_time:
+                items.append(
+                    ScheduleItem(
+                        is_task=False,
+                        task_name="",
+                        dt_start=sr.end_time,
+                        dt_end=break_end,
+                        session_index="",
+                        total_sessions=0,
+                        algo_notes="Break",
+                    )
+                )
 
     # Sort the items sequentially so they appear in order
     items.sort(key=lambda x: x.dt_start)

@@ -77,7 +77,7 @@ async def get_schedule(client_ID: int) -> str:
     """Returns a full formatted schedule string for the agent."""
     days = await _get_parsed_schedule_days(client_ID)
     if not days:
-        return "У вас ще немає завдань. Скористайтеся `/task add`, щоб додати перше завдання.\n"
+        return "You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items.\n"
 
     flat_lines = []
     for day in days:

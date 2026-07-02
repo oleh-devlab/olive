@@ -45,6 +45,21 @@ def _deserialize_datetime(dt_str: Optional[str]) -> Optional[datetime.datetime]:
     return datetime.datetime.fromisoformat(dt_str)
 
 
+def _serialize_time(t: Optional[datetime.time]) -> Optional[str]:
+    if t is None:
+        return None
+    return t.strftime("%H:%M")
+
+
+def _deserialize_time(t_str: Optional[str]) -> Optional[datetime.time]:
+    if not t_str:
+        return None
+    try:
+        return datetime.datetime.strptime(t_str, "%H:%M").time()
+    except ValueError:
+        return None
+
+
 def _task_to_dict(task: Task) -> dict:
     return {
         "id": task.id,
@@ -94,6 +109,49 @@ def _dict_to_timeblock(d: dict) -> TimeBlock:
         start=start,
         end=end,
         daily=d.get("daily", True),
+    )
+
+
+def _routine_to_dict(routine: Routine) -> dict:
+    return {
+        "name": routine.name,
+        "type": routine.type,
+        "repeat": routine.repeat,
+        "duration": _serialize_timedelta(routine.duration),
+        "time": _serialize_time(routine.time) if isinstance(routine.time, datetime.time) else _serialize_datetime(routine.time),
+        "deadline_time": _serialize_time(routine.deadline_time) if isinstance(routine.deadline_time, datetime.time) else _serialize_datetime(routine.deadline_time),
+        "weekdays": routine.weekdays,
+        "priority": routine.priority,
+        "break_duration": _serialize_timedelta(routine.break_duration),
+    }
+
+
+def _dict_to_routine(d: dict) -> Routine:
+    # Handle time/datetime parsing for time and deadline_time
+    r_time = d.get("time")
+    if isinstance(r_time, str):
+        if "T" in r_time:
+            r_time = _deserialize_datetime(r_time)
+        else:
+            r_time = _deserialize_time(r_time)
+
+    r_deadline = d.get("deadline_time")
+    if isinstance(r_deadline, str):
+        if "T" in r_deadline:
+            r_deadline = _deserialize_datetime(r_deadline)
+        else:
+            r_deadline = _deserialize_time(r_deadline)
+
+    return Routine(
+        name=d.get("name", ""),
+        type=d.get("type", "fixed"),
+        repeat=d.get("repeat", "daily"),
+        duration=_deserialize_timedelta(d.get("duration", 0)) or datetime.timedelta(minutes=0),
+        time=r_time,
+        deadline_time=r_deadline,
+        weekdays=d.get("weekdays"),
+        priority=d.get("priority", 0),
+        break_duration=_deserialize_timedelta(d.get("break_duration", 0)) or datetime.timedelta(minutes=0),
     )
 
 
@@ -253,5 +311,24 @@ class ScheduleProvider:
             return False
 
         blocks.pop(index)
+        self._save_data(user_id, data)
+        return True
+
+    def add_routine(self, user_id: int, routine: Routine):
+        data = self._load_data(user_id)
+        data.setdefault("routines", []).append(_routine_to_dict(routine))
+        self._save_data(user_id, data)
+
+    def list_routines(self, user_id: int) -> List[Routine]:
+        data = self._load_data(user_id)
+        return [_dict_to_routine(r) for r in data.get("routines", [])]
+
+    def remove_routine(self, user_id: int, index: int) -> bool:
+        data = self._load_data(user_id)
+        routines = data.get("routines", [])
+        if index < 0 or index >= len(routines):
+            return False
+
+        routines.pop(index)
         self._save_data(user_id, data)
         return True

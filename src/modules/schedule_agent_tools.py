@@ -3,6 +3,14 @@ import settings
 import inspect
 import functools
 
+from core.time_utils import tz
+from modules.schedule_models import Task
+from modules.schedule_provider import ScheduleProvider
+import modules.schedule_formatter as auto_timetable
+from modules.schedule_exceptions import ScheduleValidationError
+from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data
+
+
 def log_tool(modifies_schedule=False):
     def decorator(func):
         is_async = inspect.iscoroutinefunction(func)
@@ -39,14 +47,6 @@ def log_tool(modifies_schedule=False):
             return sync_wrapper
 
     return decorator
-
-
-from core.time_utils import tz
-from modules.schedule_models import Task
-from modules.schedule_provider import ScheduleProvider
-import modules.schedule_formatter as auto_timetable
-from modules.schedule_exceptions import ScheduleValidationError
-from modules.schedule_validators import validate_task_creation_data, validate_task_update_data
 
 
 class ScheduleAgentTools:
@@ -143,6 +143,42 @@ class ScheduleAgentTools:
             except Exception:
                 pass
         return "\n".join(lines) if lines else "No valid time blocks."
+
+    @log_tool(modifies_schedule=True)
+    def add_time_block(
+        self,
+        start_time_str: str,
+        end_time_str: str,
+        daily: bool = False
+    ) -> str:
+        """
+        Adds a strict time block (busy time) during which NO tasks can be scheduled.
+        Args:
+            start_time_str: "HH:MM" e.g., "12:00"
+            end_time_str: "HH:MM" e.g., "13:00"
+            daily: True if this block happens every day, False if it's a one-time block for today.
+        """
+        try:
+            from modules.schedule_validators import validate_timeblock_creation_data
+            block = validate_timeblock_creation_data(start_time_str, end_time_str, daily)
+        except ScheduleValidationError as e:
+            raise ValueError(str(e))
+            
+        self.provider.add_time_block(self.user_id, block)
+        return f"Time block added: {start_time_str} - {end_time_str} (Daily: {daily})."
+
+    @log_tool(modifies_schedule=True)
+    def remove_time_block(self, index: int) -> str:
+        """
+        Removes a time block by its index (1-based, use list_time_blocks first).
+        Args:
+            index: The 1-based index of the time block to remove.
+        """
+        removed = self.provider.remove_time_block(self.user_id, index - 1)
+        if removed:
+            return f"Time block {index} removed successfully."
+        else:
+            raise ValueError(f"Time block {index} not found.")
 
     @log_tool(modifies_schedule=True)
     def add_task(
@@ -261,3 +297,85 @@ class ScheduleAgentTools:
             return f"Subtracted {minutes} min. Task fully completed and moved to history!"
         else:
             return f"Subtracted {minutes} min. Remaining duration: {remaining} min."
+
+    @log_tool(modifies_schedule=True)
+    def add_routine(
+        self,
+        name: str,
+        routine_type: str,
+        repeat: str,
+        duration_min: int,
+        time_str: str | None = None,
+        deadline_time_str: str | None = None,
+        weekdays: list[int] | None = None,
+        priority: int = getattr(settings, "schedule_default_priority", 1),
+        break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
+    ) -> str:
+        """
+        Adds a new routine.
+        Args:
+            name: Routine name.
+            routine_type: 'fixed' (starts at exact time) or 'flexible' (can be scheduled any time before deadline).
+            repeat: 'daily' or 'weekly'.
+            duration_min: Total duration of the routine in minutes.
+            time_str: Required if routine_type='fixed'. 'HH:MM'.
+            deadline_time_str: Required if routine_type='flexible'. 'HH:MM'.
+            weekdays: Required if repeat='weekly'. List of integers (0=Mon, 6=Sun).
+            priority: Priority.
+            break_duration_min: Break duration after the routine.
+        """
+        try:
+            new_routine = validate_routine_creation_data(
+                name=name,
+                routine_type=routine_type,
+                repeat=repeat,
+                duration_min=duration_min,
+                time_str=time_str,
+                deadline_time_str=deadline_time_str,
+                weekdays=weekdays,
+                priority=priority,
+                break_duration_min=break_duration_min,
+            )
+        except ScheduleValidationError as e:
+            raise ValueError(str(e))
+            
+        self.provider.add_routine(self.user_id, new_routine)
+        return f"Routine '{name}' added successfully."
+
+    @log_tool(modifies_schedule=False)
+    def list_routines(self) -> str:
+        """
+        Lists all routines.
+        """
+        routines = self.provider.list_routines(self.user_id)
+        if not routines:
+            return "No routines found."
+
+        lines = []
+        for i, r in enumerate(routines):
+            t_str = ""
+            if r.type == 'fixed' and r.time:
+                t_str = f" @ {r.time.strftime('%H:%M')}"
+            elif r.type == 'flexible' and r.deadline_time:
+                t_str = f" by {r.deadline_time.strftime('%H:%M')}"
+                
+            dur = int(r.duration.total_seconds() // 60)
+            rep = r.repeat
+            if rep == 'weekly' and r.weekdays:
+                rep = f"weekly on {r.weekdays}"
+            
+            lines.append(f"[{i + 1}] {r.name} ({r.type}, {rep}, {dur}m){t_str}")
+        return "\n".join(lines)
+
+    @log_tool(modifies_schedule=True)
+    def remove_routine(self, index: int) -> str:
+        """
+        Removes a routine by its index (1-based as listed in list_routines).
+        Args:
+            index: The 1-based index of the routine.
+        """
+        removed = self.provider.remove_routine(self.user_id, index - 1)
+        if removed:
+            return f"Routine {index} removed successfully."
+        else:
+            raise ValueError(f"Routine {index} not found.")

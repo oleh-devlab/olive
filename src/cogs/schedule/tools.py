@@ -10,29 +10,11 @@ from core.time_utils import tz
 from modules.schedule_models import Task, TimeBlock
 from modules.schedule_provider import ScheduleProvider
 from modules.schedule_exceptions import ScheduleValidationError
-from modules.schedule_validators import validate_task_creation_data, validate_task_update_data
+from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_timeblock_creation_data
 
 # We can instantiate the provider here.
 provider = ScheduleProvider()
 
-
-def hhmm_to_datetime(start_hhmm: str, end_hhmm: str):
-    now = datetime.datetime.now(tz)
-    try:
-        sh, sm = map(int, start_hhmm.split(":"))
-        eh, em = map(int, end_hhmm.split(":"))
-        if not (0 <= sh <= 23 and 0 <= sm <= 59 and 0 <= eh <= 23 and 0 <= em <= 59):
-            raise ValueError()
-    except Exception:
-        raise ValueError("Invalid time format. Use HH:MM, e.g. 09:00 or 14:30")
-
-    start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
-    end_dt = now.replace(hour=eh, minute=em, second=0, microsecond=0)
-
-    if end_dt <= start_dt:
-        end_dt += datetime.timedelta(days=1)
-
-    return start_dt, end_dt
 
 
 class AutoSchedule(commands.Cog):
@@ -212,12 +194,7 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            start_dt, end_dt = hhmm_to_datetime(start_time, end_time)
-            block = TimeBlock(
-                start=start_dt,
-                end=end_dt,
-                daily=daily,
-            )
+            block = validate_timeblock_creation_data(start_time, end_time, daily)
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
         except Exception as e:
@@ -258,13 +235,99 @@ class AutoSchedule(commands.Cog):
     async def routine(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
-    @routine.sub_command(name="add", description="Add a routine")
-    async def routine_add(self, inter: disnake.ApplicationCommandInteraction):
+    @routine.sub_command(name="add_fixed", description="Add a routine that runs at a specific time")
+    async def routine_add_fixed(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str,
+        time: str,
+        duration_min: int,
+        weekdays: str = None,
+    ):
         await inter.response.defer(ephemeral=True)
         try:
-            provider.add_routine(inter.author.id, {"dummy": "data"})
+            wd_list = None
+            repeat = "daily"
+            if weekdays:
+                repeat = "weekly"
+                wd_list = [int(x.strip()) for x in weekdays.split(",") if x.strip().isdigit()]
+                
+            r = validate_routine_creation_data(
+                name=name,
+                routine_type="fixed",
+                repeat=repeat,
+                duration_min=duration_min,
+                time_str=time,
+                weekdays=wd_list,
+            )
+            provider.add_routine(inter.author.id, r)
+            await inter.edit_original_response(f"Fixed routine '{name}' added successfully.")
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
+
+    @routine.sub_command(name="add_flexible", description="Add a routine with a flexible time until a deadline")
+    async def routine_add_flexible(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str,
+        deadline_time: str,
+        duration_min: int,
+        weekdays: str = None,
+    ):
+        await inter.response.defer(ephemeral=True)
+        try:
+            wd_list = None
+            repeat = "daily"
+            if weekdays:
+                repeat = "weekly"
+                wd_list = [int(x.strip()) for x in weekdays.split(",") if x.strip().isdigit()]
+                
+            r = validate_routine_creation_data(
+                name=name,
+                routine_type="flexible",
+                repeat=repeat,
+                duration_min=duration_min,
+                deadline_time_str=deadline_time,
+                weekdays=wd_list,
+            )
+            provider.add_routine(inter.author.id, r)
+            await inter.edit_original_response(f"Flexible routine '{name}' added successfully.")
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
+
+    @routine.sub_command(name="list", description="List all routines")
+    async def routine_list(self, inter: disnake.ApplicationCommandInteraction):
+        await inter.response.defer(ephemeral=True)
+        routines = provider.list_routines(inter.author.id)
+        if not routines:
+            return await inter.edit_original_response("No routines found.")
+            
+        lines = ["**Your Routines:**"]
+        for i, r in enumerate(routines):
+            t_str = ""
+            if r.type == 'fixed' and r.time:
+                t_str = f" @ {r.time.strftime('%H:%M')}"
+            elif r.type == 'flexible' and r.deadline_time:
+                t_str = f" by {r.deadline_time.strftime('%H:%M')}"
+                
+            dur = int(r.duration.total_seconds() // 60)
+            rep = r.repeat
+            if rep == 'weekly' and r.weekdays:
+                rep = f"weekly on {r.weekdays}"
+            
+            lines.append(f"`[{i + 1}]` **{r.name}** ({r.type}, {rep}, {dur}m){t_str}")
+            
+        await utils.send_long_message(inter.channel, "\n".join(lines))
+        await inter.edit_original_response("Routines listed above.")
+
+    @routine.sub_command(name="remove", description="Remove a routine by index")
+    async def routine_remove(self, inter: disnake.ApplicationCommandInteraction, index: int):
+        await inter.response.defer(ephemeral=True)
+        removed = provider.remove_routine(inter.author.id, index - 1)
+        if removed:
+            await inter.edit_original_response(f"Routine {index} removed successfully.")
+        else:
+            await inter.edit_original_response(f"Routine {index} not found.")
 
     @commands.slash_command(
         name="schedule_channel", description="Manage personal schedule channels", test_guilds=settings.guilds
