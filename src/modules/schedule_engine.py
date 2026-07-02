@@ -1,10 +1,12 @@
 import asyncio
 import datetime
 import time
+
 from core.time_utils import tz
 from modules.schedule_models import ScheduleItem
 from modules.schedule_provider import ScheduleProvider
 from modules.automatic_timetable_py.src.scheduler import Scheduler
+import settings
 
 
 def _solve_sync(client_ID: int) -> list[ScheduleItem]:
@@ -18,6 +20,7 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
 
     planning_days = provider.get_planning_days(client_ID)
     priority_threshold = provider.get_priority_threshold(client_ID)
+    compute_timeout = provider.get_compute_timeout(client_ID)
     scheduler = Scheduler(max_horizon_days=planning_days, priority_threshold=priority_threshold)
     for t in tasks:
         scheduler.add_task(t)
@@ -28,10 +31,15 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
 
     # Pass the timezone-aware start time so that it matches the timezone-aware deadlines
     now_tz = datetime.datetime.now(tz).replace(second=0, microsecond=0)
+
+    workers = getattr(settings, "schedule_compute_workers", 1)
     
     start_perf = time.perf_counter()
-    result = scheduler.solve(start_time=now_tz)
+    result = scheduler.solve(start_time=now_tz, timeout_seconds=compute_timeout, num_search_workers=workers)
     solve_time = time.perf_counter() - start_perf
+
+    if result.status == "UNKNOWN":
+        raise TimeoutError(f"CP-SAT solver timed out after {solve_time:.2f}s. Perhaps the planning horizon ({planning_days} days) is too long, or you've set a deadline that's too far in the future.")
 
     items = []
     skipped_ids = []

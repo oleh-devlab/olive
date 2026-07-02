@@ -468,26 +468,32 @@ class AutoSchedule(commands.Cog):
         self, 
         inter: disnake.ApplicationCommandInteraction, 
         planning_days: int = None,
-        priority_threshold: int = None
+        priority_threshold: int = None,
+        compute_timeout: float = None
     ):
         await inter.response.defer(ephemeral=True)
         
-        if planning_days is not None and (planning_days < 1 or planning_days > 365):
-            return await inter.edit_original_response("Please choose a number of days between 1 and 365.")
+        if planning_days is not None and (planning_days < 1 or planning_days > 60):
+            return await inter.edit_original_response("Please choose a number of days between 1 and 60 (large horizons may cause calculation timeouts).")
             
         if priority_threshold is not None and (priority_threshold < 0 or priority_threshold > 10):
             return await inter.edit_original_response("Priority threshold must be between 0 and 10.")
+            
+        if compute_timeout is not None and (compute_timeout <= 0 or compute_timeout > 15.0):
+            return await inter.edit_original_response("Compute timeout must be greater than 0 and up to 15.0 seconds.")
         
-        if planning_days is None and priority_threshold is None:
+        if planning_days is None and priority_threshold is None and compute_timeout is None:
             return await inter.edit_original_response("Please provide at least one setting to update.")
         
-        success = provider.update_schedule_settings(inter.author.id, planning_days=planning_days, priority_threshold=priority_threshold)
+        success = provider.update_schedule_settings(inter.author.id, planning_days=planning_days, priority_threshold=priority_threshold, compute_timeout=compute_timeout)
         if success:
             msg = "Schedule settings updated:\n"
             if planning_days is not None:
                 msg += f"- Planning horizon: {planning_days} days\n"
             if priority_threshold is not None:
                 msg += f"- Priority threshold: {priority_threshold}\n"
+            if compute_timeout is not None:
+                msg += f"- Compute timeout: {compute_timeout}s\n"
             await inter.edit_original_response(msg)
             self.bot.dispatch("schedule_update", inter.channel.id)
         else:

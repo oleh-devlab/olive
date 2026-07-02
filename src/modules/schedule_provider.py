@@ -194,7 +194,11 @@ class ScheduleProvider:
         data = self.load_channels()
         return data.get(str(user_id), {}).get("priority_threshold", 5)
 
-    def update_schedule_settings(self, user_id: int, planning_days: int | None = None, priority_threshold: int | None = None) -> bool:
+    def get_compute_timeout(self, user_id: int) -> float:
+        data = self.load_channels()
+        return data.get(str(user_id), {}).get("compute_timeout", 0.5)
+
+    def update_schedule_settings(self, user_id: int, planning_days: int | None = None, priority_threshold: int | None = None, compute_timeout: float | None = None) -> bool:
         data = self.load_channels()
         user_id_str = str(user_id)
         if user_id_str not in data:
@@ -203,6 +207,8 @@ class ScheduleProvider:
             data[user_id_str]["planning_days"] = planning_days
         if priority_threshold is not None:
             data[user_id_str]["priority_threshold"] = priority_threshold
+        if compute_timeout is not None:
+            data[user_id_str]["compute_timeout"] = compute_timeout
         self.save_channels(data)
         return True
 

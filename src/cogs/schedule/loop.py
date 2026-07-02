@@ -1,6 +1,7 @@
 import asyncio
 from disnake.ext import commands, tasks
 import traceback
+import settings
 
 from core.task_handler import ResilientTaskHandler
 import core.cache as cache
@@ -18,7 +19,7 @@ class ScheduleMessageLoop(commands.Cog):
     def cog_unload(self):
         self.main_loop.cancel()
 
-    @tasks.loop(seconds=600)
+    @tasks.loop(seconds=getattr(settings, "schedule_loop_update_seconds", 600))
     async def main_loop(self):
         data = provider.load_channels()
         for user_id_str, info in data.items():

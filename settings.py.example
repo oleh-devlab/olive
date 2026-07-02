@@ -61,3 +61,5 @@ safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notif
 schedule_default_priority = 1
 schedule_default_max_chunk_min = 45
 schedule_default_break_min = 15
+schedule_compute_workers = 1
+schedule_loop_update_seconds = 600
