@@ -5,7 +5,7 @@ import functools
 from modules.schedule_provider import ScheduleProvider
 import modules.schedule_formatter as auto_timetable
 from modules.schedule_exceptions import ScheduleValidationError
-from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data
+from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_routine_update_data
 
 MAX_SCHEDULE_LINES = 60
 
@@ -366,6 +366,38 @@ class ScheduleAgentTools:
             lines.append(f"[{i + 1}] {r.name} ({r.type}, {rep}, {dur}m){t_str}")
         return "\n".join(lines)
 
+    @log_tool(modifies_schedule=False)
+    def get_routine_info(self, index: int) -> str:
+        """
+        Returns detailed information about a specific routine, including its exact time or deadline, repeat type, duration, and priority.
+        Args:
+            index: The 1-based index of the routine (use list_routines first to find it).
+        """
+        routines = self.provider.list_routines(self.user_id)
+        if index < 1 or index > len(routines):
+            return f"Routine {index} not found."
+            
+        r = routines[index - 1]
+        lines = [
+            f"Index: {index}",
+            f"Name: {r.name}",
+            f"Type: {r.type}",
+            f"Repeat: {r.repeat}",
+        ]
+        if r.repeat == 'weekly' and r.weekdays:
+            lines.append(f"Weekdays: {r.weekdays} (0=Mon, 6=Sun)")
+            
+        if r.type == 'fixed' and r.time:
+            lines.append(f"Time: {r.time.strftime('%H:%M')}")
+        elif r.type == 'flexible' and r.deadline_time:
+            lines.append(f"Deadline: {r.deadline_time.strftime('%H:%M')}")
+            
+        lines.append(f"Duration: {int(r.duration.total_seconds() // 60)} min")
+        lines.append(f"Break Duration: {int(r.break_duration.total_seconds() // 60)} min")
+        lines.append(f"Priority: {r.priority}")
+        
+        return "\n".join(lines)
+
     @log_tool(modifies_schedule=True)
     def remove_routine(self, index: int) -> str:
         """
@@ -378,3 +410,54 @@ class ScheduleAgentTools:
             return f"Routine {index} removed successfully."
         else:
             raise ValueError(f"Routine {index} not found.")
+
+    @log_tool(modifies_schedule=True)
+    def edit_routine(
+        self,
+        index: int,
+        name: str | None = None,
+        routine_type: str | None = None,
+        repeat: str | None = None,
+        duration_min: int | None = None,
+        time_str: str | None = None,
+        deadline_time_str: str | None = None,
+        weekdays: list[int] | None = None,
+        priority: int | None = None,
+        break_duration_min: int | None = None,
+    ) -> str:
+        """
+        Edits specific fields of an existing routine.
+        Only provide the fields you want to change; omit any parameter you want to keep unchanged.
+        Args:
+            index: The 1-based index of the routine.
+            name: New name.
+            routine_type: 'fixed' or 'flexible'.
+            repeat: 'daily' or 'weekly'.
+            duration_min: New duration in minutes.
+            time_str: New time 'HH:MM'.
+            deadline_time_str: New deadline time 'HH:MM'.
+            weekdays: New list of weekdays (0=Mon, 6=Sun).
+            priority: New priority.
+            break_duration_min: New break duration.
+        """
+        try:
+            updates = validate_routine_update_data(
+                name=name,
+                routine_type=routine_type,
+                repeat=repeat,
+                duration_min=duration_min,
+                time_str=time_str,
+                deadline_time_str=deadline_time_str,
+                weekdays=weekdays,
+                priority=priority,
+                break_duration_min=break_duration_min,
+            )
+        except ScheduleValidationError as e:
+            raise ValueError(str(e))
+
+        success = self.provider.edit_routine(self.user_id, index - 1, **updates)
+        if success:
+            return f"Routine {index} updated successfully."
+        else:
+            raise ValueError(f"Routine {index} not found.")
+

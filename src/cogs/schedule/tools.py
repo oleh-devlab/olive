@@ -6,7 +6,7 @@ import core.utils as utils
 import core.cache as cache
 from modules.schedule_provider import ScheduleProvider
 from modules.schedule_exceptions import ScheduleValidationError
-from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_timeblock_creation_data
+from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_timeblock_creation_data, validate_routine_update_data
 
 # We can instantiate the provider here.
 provider = ScheduleProvider()
@@ -238,6 +238,7 @@ class AutoSchedule(commands.Cog):
         name: str,
         time: str,
         duration_min: int,
+        priority: int = getattr(settings, "schedule_default_priority", 1),
         weekdays: str = None,
     ):
         await inter.response.defer(ephemeral=True)
@@ -255,6 +256,7 @@ class AutoSchedule(commands.Cog):
                 duration_min=duration_min,
                 time_str=time,
                 weekdays=wd_list,
+                priority=priority,
             )
             provider.add_routine(inter.author.id, r)
             await inter.edit_original_response(f"Fixed routine '{name}' added successfully.")
@@ -268,6 +270,7 @@ class AutoSchedule(commands.Cog):
         name: str,
         deadline_time: str,
         duration_min: int,
+        priority: int = getattr(settings, "schedule_default_priority", 1),
         weekdays: str = None,
     ):
         await inter.response.defer(ephemeral=True)
@@ -285,6 +288,7 @@ class AutoSchedule(commands.Cog):
                 duration_min=duration_min,
                 deadline_time_str=deadline_time,
                 weekdays=wd_list,
+                priority=priority,
             )
             provider.add_routine(inter.author.id, r)
             await inter.edit_original_response(f"Flexible routine '{name}' added successfully.")
@@ -324,6 +328,47 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response(f"Routine {index} removed successfully.")
         else:
             await inter.edit_original_response(f"Routine {index} not found.")
+
+    @routine.sub_command(name="edit", description="Edit specific fields of an existing routine")
+    async def routine_edit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        index: int,
+        name: str = None,
+        routine_type: str = commands.Param(default=None, choices=["fixed", "flexible"]),
+        repeat: str = commands.Param(default=None, choices=["daily", "weekly"]),
+        duration_min: int = None,
+        time: str = None,
+        deadline_time: str = None,
+        weekdays: str = None,
+        priority: int = None,
+    ):
+        await inter.response.defer(ephemeral=True)
+        try:
+            wd_list = None
+            if weekdays:
+                wd_list = [int(x.strip()) for x in weekdays.split(",") if x.strip().isdigit()]
+
+            updates = validate_routine_update_data(
+                name=name,
+                routine_type=routine_type,
+                repeat=repeat,
+                duration_min=duration_min,
+                time_str=time,
+                deadline_time_str=deadline_time,
+                weekdays=wd_list,
+                priority=priority,
+            )
+
+            success = provider.edit_routine(inter.author.id, index - 1, **updates)
+            if success:
+                await inter.edit_original_response(f"Routine {index} updated successfully.")
+            else:
+                await inter.edit_original_response(f"Routine {index} not found.")
+        except ScheduleValidationError as e:
+            await inter.edit_original_response(str(e))
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
 
     @commands.slash_command(
         name="schedule_channel", description="Manage personal schedule channels", test_guilds=settings.guilds

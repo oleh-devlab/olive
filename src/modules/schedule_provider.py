@@ -331,3 +331,20 @@ class ScheduleProvider:
         routines.pop(index)
         self._save_data(user_id, data)
         return True
+
+    def edit_routine(self, user_id: int, index: int, **kwargs) -> bool:
+        data = self._load_data(user_id)
+        routines = data.get("routines", [])
+        if index < 0 or index >= len(routines):
+            return False
+
+        routine = _dict_to_routine(routines[index])
+        
+        for k, v in kwargs.items():
+            if hasattr(routine, k):
+                setattr(routine, k, v)
+
+        routines[index] = _routine_to_dict(routine)
+        self._save_data(user_id, data)
+        return True
+

@@ -199,3 +199,55 @@ def validate_routine_creation_data(
         priority=priority,
         break_duration=datetime.timedelta(minutes=break_duration_min)
     )
+
+def validate_routine_update_data(
+    name: str | None = None,
+    routine_type: str | None = None,
+    repeat: str | None = None,
+    duration_min: int | None = None,
+    time_str: str | None = None,
+    deadline_time_str: str | None = None,
+    weekdays: list[int] | None = None,
+    priority: int | None = None,
+    break_duration_min: int | None = None,
+) -> dict:
+    updates = {}
+
+    if name:
+        updates["name"] = clean_text(name)
+        
+    if routine_type:
+        if routine_type not in ("fixed", "flexible"):
+            raise ScheduleValidationError("Routine type must be 'fixed' or 'flexible'.")
+        updates["type"] = routine_type
+        
+    if repeat:
+        if repeat not in ("daily", "weekly"):
+            raise ScheduleValidationError("Repeat must be 'daily' or 'weekly'.")
+        updates["repeat"] = repeat
+
+    if duration_min is not None and duration_min > 0:
+        updates["duration"] = datetime.timedelta(minutes=duration_min)
+        
+    if time_str is not None:
+        updates["time"] = parse_time(time_str)
+        
+    if deadline_time_str is not None:
+        updates["deadline_time"] = parse_time(deadline_time_str)
+
+    if weekdays is not None:
+        if repeat == "weekly" or updates.get("repeat") == "weekly":
+            if not isinstance(weekdays, list) or len(weekdays) == 0:
+                raise ScheduleValidationError("Weekly routines require a list of weekdays (0-6).")
+            for wd in weekdays:
+                if not isinstance(wd, int) or wd < 0 or wd > 6:
+                    raise ScheduleValidationError("Weekdays must be integers from 0 (Monday) to 6 (Sunday).")
+        updates["weekdays"] = weekdays
+
+    if priority is not None and priority > 0:
+        updates["priority"] = priority
+        
+    if break_duration_min is not None and break_duration_min >= 0:
+        updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
+
+    return updates
