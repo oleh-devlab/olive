@@ -1,13 +1,9 @@
 import disnake
 from disnake.ext import commands
-import datetime
 
 import settings
 import core.utils as utils
 import core.cache as cache
-from core.time_utils import tz
-
-from modules.schedule_models import Task, TimeBlock
 from modules.schedule_provider import ScheduleProvider
 from modules.schedule_exceptions import ScheduleValidationError
 from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_timeblock_creation_data

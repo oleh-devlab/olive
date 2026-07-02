@@ -98,9 +98,9 @@ async def update_schedule_message(bot, channel_id):
     next_disabled = current_page >= len(pages) - 1
 
     for child in view.children:
-        if getattr(child, "custom_id", None) == "schedule_prev_page":
+        if getattr(child, "custom_id", None) in ("schedule_prev_page", "schedule_first_page"):
             child.disabled = prev_disabled
-        elif getattr(child, "custom_id", None) == "schedule_next_page":
+        elif getattr(child, "custom_id", None) in ("schedule_next_page", "schedule_last_page"):
             child.disabled = next_disabled
 
     view_state = (prev_disabled, next_disabled)
@@ -118,7 +118,7 @@ class SchedulePaginationView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    async def change_page(self, interaction: disnake.MessageInteraction, delta: int):
+    async def change_page(self, interaction: disnake.MessageInteraction, delta: int = None, to_page: int = None):
         channel_id = interaction.channel_id
         phrases = get_phrases(interaction.guild.id if interaction.guild else None).get("schedule", {})
 
@@ -135,20 +135,35 @@ class SchedulePaginationView(disnake.ui.View):
         except Exception:
             pass
 
-        state["current_page"] += delta
+        if to_page is not None:
+            if to_page == -1:
+                state["current_page"] = max(0, state.get("max_pages", 1) - 1)
+            else:
+                state["current_page"] = to_page
+        elif delta is not None:
+            state["current_page"] += delta
+
         await update_schedule_message(interaction.bot, channel_id)
+
+    @disnake.ui.button(label="⏮", style=disnake.ButtonStyle.primary, custom_id="schedule_first_page")
+    async def first_page(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        await self.change_page(interaction, to_page=0)
 
     @disnake.ui.button(label="◀", style=disnake.ButtonStyle.primary, custom_id="schedule_prev_page")
     async def prev_page(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
-        await self.change_page(interaction, -1)
+        await self.change_page(interaction, delta=-1)
 
     @disnake.ui.button(label="Refresh", style=disnake.ButtonStyle.secondary, custom_id="schedule_refresh_page")
     async def refresh_page(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
-        await self.change_page(interaction, 0)
+        await self.change_page(interaction, delta=0)
 
     @disnake.ui.button(label="▶", style=disnake.ButtonStyle.primary, custom_id="schedule_next_page")
     async def next_page(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
-        await self.change_page(interaction, 1)
+        await self.change_page(interaction, delta=1)
+
+    @disnake.ui.button(label="⏭", style=disnake.ButtonStyle.primary, custom_id="schedule_last_page")
+    async def last_page(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
+        await self.change_page(interaction, to_page=-1)
 
 
 class ScheduleUI(commands.Cog):

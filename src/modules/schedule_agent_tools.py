@@ -1,10 +1,7 @@
-import datetime
 import settings
 import inspect
 import functools
 
-from core.time_utils import tz
-from modules.schedule_models import Task
 from modules.schedule_provider import ScheduleProvider
 import modules.schedule_formatter as auto_timetable
 from modules.schedule_exceptions import ScheduleValidationError

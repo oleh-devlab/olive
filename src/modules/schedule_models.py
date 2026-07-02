@@ -1,8 +1,7 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import datetime
 from typing import Optional
 
-from core.time_utils import tz
 from modules.automatic_timetable_py.src.data_structs import Task as BaseTask, TimeBlock as BaseTimeBlock, Routine as BaseRoutine
 
 
