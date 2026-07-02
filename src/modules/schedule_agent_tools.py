@@ -7,6 +7,7 @@ import modules.schedule_formatter as auto_timetable
 from modules.schedule_exceptions import ScheduleValidationError
 from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data
 
+MAX_SCHEDULE_LINES = 60
 
 def log_tool(modifies_schedule=False):
     def decorator(func):
@@ -56,15 +57,16 @@ class ScheduleAgentTools:
     @log_tool(modifies_schedule=False)
     async def get_current_schedule(self) -> str:
         """
-        Fetches the current automatically generated schedule for the user (the placed timetable).
-        Use this if the user explicitly asks to see their schedule or what they should do next.
+        Retrieves the user's current automatically generated schedule (the assigned timetable).
+        Use this if the user explicitly asks to see their schedule or what they should do next. Or use it if you want to check something.
+        This method returns only the first few dozen lines of the schedule, not the entire schedule.
+        The user can view the entire schedule separately from your tools without your help, if they wish.
         """
         try:
             full_schedule = await auto_timetable.get_schedule(self.user_id)
             lines = full_schedule.strip().split("\n")
 
             # Truncate to prevent context bloat if the schedule is massive
-            MAX_SCHEDULE_LINES = 60
             if len(lines) > MAX_SCHEDULE_LINES:
                 return (
                     "\n".join(lines[:MAX_SCHEDULE_LINES])
