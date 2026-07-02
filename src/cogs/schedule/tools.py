@@ -473,14 +473,17 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         
-        if planning_days is not None and (planning_days < 1 or planning_days > 60):
-            return await inter.edit_original_response("Please choose a number of days between 1 and 60 (large horizons may cause calculation timeouts).")
+        max_days = getattr(settings, "schedule_max_planning_days", 60)
+        max_timeout = getattr(settings, "schedule_max_compute_timeout", 15.0)
+        
+        if planning_days is not None and (planning_days < 1 or planning_days > max_days):
+            return await inter.edit_original_response(f"Please choose a number of days between 1 and {max_days} (large horizons may cause calculation timeouts).")
             
         if priority_threshold is not None and (priority_threshold < 0 or priority_threshold > 10):
             return await inter.edit_original_response("Priority threshold must be between 0 and 10.")
             
-        if compute_timeout is not None and (compute_timeout <= 0 or compute_timeout > 15.0):
-            return await inter.edit_original_response("Compute timeout must be greater than 0 and up to 15.0 seconds.")
+        if compute_timeout is not None and (compute_timeout <= 0 or compute_timeout > max_timeout):
+            return await inter.edit_original_response(f"Compute timeout must be greater than 0 and up to {max_timeout} seconds.")
         
         if planning_days is None and priority_threshold is None and compute_timeout is None:
             return await inter.edit_original_response("Please provide at least one setting to update.")

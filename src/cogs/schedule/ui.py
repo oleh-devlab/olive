@@ -8,7 +8,7 @@ from core.time_utils import tz
 import modules.schedule_formatter as auto_timetable
 
 
-async def update_schedule_message(bot, channel_id):
+async def update_schedule_message(bot, channel_id, recalculate: bool = True):
     state = cache.schedule_states.get(channel_id)
     if not state:
         return
@@ -27,56 +27,67 @@ async def update_schedule_message(bot, channel_id):
 
     phrases = get_phrases().get("schedule", {})
 
-    try:
-        schedule_days, perf_time, planning_days, skipped_ids = await auto_timetable.get_schedule_by_day(user_id)
-        error_msg = None
-    except Exception as e:
-        print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
-        schedule_days = []
-        perf_time = 0.0
-        planning_days = 0
-        skipped_ids = []
-        error_msg = f"Error fetching schedule: {e}"
+    if recalculate or not state.get("pages"):
+        try:
+            schedule_days, perf_time, planning_days, skipped_ids = await auto_timetable.get_schedule_by_day(user_id)
+            error_msg = None
+        except Exception as e:
+            print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
+            schedule_days = []
+            perf_time = 0.0
+            planning_days = 0
+            skipped_ids = []
+            error_msg = f"Error fetching schedule: {e}"
 
-    pages = []
+        pages = []
 
-    if error_msg:
-        pages = [error_msg]
-    elif not schedule_days:
-        pages = ["You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items."]
-    else:
-        for day in schedule_days:
-            header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
-            blocks = day["blocks"]
+        if error_msg:
+            pages = [error_msg]
+        elif not schedule_days:
+            pages = ["You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items."]
+        else:
+            for day in schedule_days:
+                header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
+                blocks = day["blocks"]
 
-            # UX: We want the tasks inside the day reversed (bottom to top chronological)
-            blocks_reversed = list(reversed(blocks))
+                # UX: We want the tasks inside the day reversed (bottom to top chronological)
+                blocks_reversed = list(reversed(blocks))
 
-            day_pages = []
-            current_page_blocks = []
-            current_len = len(header)
+                day_pages = []
+                current_page_blocks = []
+                current_len = len(header)
 
-            for block in blocks_reversed:
-                block_len = len(block)
-                if current_len + block_len + (1 if current_len > len(header) else 0) > 1500 and current_page_blocks:
+                for block in blocks_reversed:
+                    block_len = len(block)
+                    if current_len + block_len + (1 if current_len > len(header) else 0) > 1500 and current_page_blocks:
+                        day_pages.append(header + "\n".join(current_page_blocks))
+                        current_page_blocks = [block]
+                        current_len = len(header) + block_len
+                    else:
+                        current_page_blocks.append(block)
+                        current_len += block_len + (1 if current_len > len(header) else 0)
+
+                if current_page_blocks:
                     day_pages.append(header + "\n".join(current_page_blocks))
-                    current_page_blocks = [block]
-                    current_len = len(header) + block_len
+
+                # If multiple pages for a day, append "(Part X)" to the headers
+                if len(day_pages) > 1:
+                    for i, p in enumerate(day_pages):
+                        part_header = f"=== {day['date_str']} ({day['weekday']}) (Part {i+1}) ===\n"
+                        p = p.replace(header, part_header, 1)
+                        pages.append(p)
                 else:
-                    current_page_blocks.append(block)
-                    current_len += block_len + (1 if current_len > len(header) else 0)
-
-            if current_page_blocks:
-                day_pages.append(header + "\n".join(current_page_blocks))
-
-            # If multiple pages for a day, append "(Part X)" to the headers
-            if len(day_pages) > 1:
-                for i, p in enumerate(day_pages):
-                    part_header = f"=== {day['date_str']} ({day['weekday']}) (Part {i+1}) ===\n"
-                    p = p.replace(header, part_header, 1)
-                    pages.append(p)
-            else:
-                pages.extend(day_pages)
+                    pages.extend(day_pages)
+        
+        state["pages"] = pages
+        state["perf_time"] = perf_time
+        state["planning_days"] = planning_days
+        state["skipped_ids"] = skipped_ids
+    else:
+        pages = state.get("pages", ["No data."])
+        perf_time = state.get("perf_time", 0.0)
+        planning_days = state.get("planning_days", 0)
+        skipped_ids = state.get("skipped_ids", [])
 
     state["max_pages"] = len(pages)
     if current_page >= len(pages):
@@ -155,7 +166,9 @@ class SchedulePaginationView(disnake.ui.View):
         elif delta is not None:
             state["current_page"] += delta
 
-        await update_schedule_message(interaction.bot, channel_id)
+        # Only recalculate if it's a refresh (delta == 0)
+        should_recalc = (delta == 0)
+        await update_schedule_message(interaction.bot, channel_id, recalculate=should_recalc)
 
     @disnake.ui.button(label="⏮", style=disnake.ButtonStyle.primary, custom_id="schedule_first_page")
     async def first_page(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
@@ -187,7 +200,7 @@ class ScheduleUI(commands.Cog):
 
     @commands.Cog.listener("on_schedule_update")
     async def handle_schedule_update(self, channel_id: int):
-        await update_schedule_message(self.bot, channel_id)
+        await update_schedule_message(self.bot, channel_id, recalculate=True)
 
     @commands.Cog.listener("on_schedule_init")
     async def handle_schedule_init(self, channel: disnake.TextChannel, user_id: int):
@@ -205,9 +218,13 @@ class ScheduleUI(commands.Cog):
             "max_pages": 1,
             "last_content": "",
             "last_view_state": None,
+            "pages": [],
+            "perf_time": 0.0,
+            "planning_days": 0,
+            "skipped_ids": []
         }
 
-        await update_schedule_message(self.bot, channel.id)
+        await update_schedule_message(self.bot, channel.id, recalculate=True)
 
 
 def setup(bot):

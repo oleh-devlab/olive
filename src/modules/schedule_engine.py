@@ -60,19 +60,6 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                             algo_notes="",
                         )
                     )
-                    break_end = chunk.end_time + st.task.break_duration
-                    if break_end > chunk.end_time:
-                        items.append(
-                            ScheduleItem(
-                                is_task=False,
-                                task_name="",
-                                dt_start=chunk.end_time,
-                                dt_end=break_end,
-                                session_index="",
-                                total_sessions=0,
-                                algo_notes="Break",
-                            )
-                        )
             else:
                 items.append(
                     ScheduleItem(
@@ -85,19 +72,6 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                         algo_notes="",
                     )
                 )
-                break_end = st.end_time + st.task.break_duration
-                if break_end > st.end_time:
-                    items.append(
-                        ScheduleItem(
-                            is_task=False,
-                            task_name="",
-                            dt_start=st.end_time,
-                            dt_end=break_end,
-                            session_index="",
-                            total_sessions=0,
-                            algo_notes="Break",
-                        )
-                    )
 
         for sr in result.scheduled_routines:
             r_note = "Fixed" if getattr(sr, "routine_type", "") == "fixed" else "Flexible"
