@@ -48,6 +48,11 @@ TimeBlocks are strict periods of "busy time" when the user is unavailable (e.g.,
 - They can be one-time (today only) or daily recurring.
 - Use `add_time_block`, `list_time_blocks`, and `remove_time_block` tools to manage them.
 
+### 4. Priorities
+- Tasks and routines have a priority from 0 to 10 (default 1).
+- Priority 0 is special: it "floats" and the solver will schedule it anywhere it fits best, without trying to push it early.
+- Priorities 1 to 10 will try to be scheduled as close to the beginning of the schedule as possible, essentially "sorting" themselves chronologically based on importance.
+
 ### General Rules
 - If the user asks "what should I do now?" or "show me my schedule", use `get_current_schedule()`.
 - Before deleting or editing, always review the list of tasks/routines/time blocks to make sure you've specified the correct ID/index.

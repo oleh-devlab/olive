@@ -24,15 +24,18 @@ async def update_schedule_message(bot, channel_id):
     if not channel:
         cache.schedule_states.pop(channel_id, None)
         return
-    guild_id = channel.guild.id
-    phrases = get_phrases(guild_id).get("schedule", {})
+
+    phrases = get_phrases().get("schedule", {})
 
     try:
-        schedule_days = await auto_timetable.get_schedule_by_day(user_id)
+        schedule_days, perf_time, planning_days, skipped_ids = await auto_timetable.get_schedule_by_day(user_id)
         error_msg = None
     except Exception as e:
         print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
         schedule_days = []
+        perf_time = 0.0
+        planning_days = 0
+        skipped_ids = []
         error_msg = f"Error fetching schedule: {e}"
 
     pages = []
@@ -66,10 +69,10 @@ async def update_schedule_message(bot, channel_id):
             if current_page_blocks:
                 day_pages.append(header + "\n".join(current_page_blocks))
 
-            # If multiple pages for a day, append "(Частина X)" to the headers
+            # If multiple pages for a day, append "(Part X)" to the headers
             if len(day_pages) > 1:
                 for i, p in enumerate(day_pages):
-                    part_header = f"=== {day['date_str']} ({day['weekday']}) (Частина {i+1}) ===\n"
+                    part_header = f"=== {day['date_str']} ({day['weekday']}) (Part {i+1}) ===\n"
                     p = p.replace(header, part_header, 1)
                     pages.append(p)
             else:
@@ -87,11 +90,20 @@ async def update_schedule_message(bot, channel_id):
 
     schedule_format = phrases.get(
         "schedule_page_format",
-        "`{formatted_time} UTC+2`\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
+        "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n`The minimum planning horizon is {planning_days} days.`\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
     )
+    # Provide defaults if missing, but typically we have valid perf_time and planning_days
     schedule_content = schedule_format.format(
-        formatted_time=formatted_time, current_page=current_page + 1, max_pages=len(pages), page_content=page_content
+        formatted_time=formatted_time, 
+        current_page=current_page + 1, 
+        max_pages=len(pages), 
+        page_content=page_content,
+        planning_days=planning_days,
+        perf_time=perf_time
     )
+
+    if skipped_ids:
+        schedule_content += f"\n\n*Tasks that didn't fit (IDs): {', '.join(map(str, skipped_ids))}*"
 
     view = SchedulePaginationView()
     prev_disabled = current_page <= 0

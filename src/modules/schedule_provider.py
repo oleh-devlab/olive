@@ -186,6 +186,26 @@ class ScheduleProvider:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
+    def get_planning_days(self, user_id: int) -> int:
+        data = self.load_channels()
+        return data.get(str(user_id), {}).get("planning_days", 14)
+
+    def get_priority_threshold(self, user_id: int) -> int:
+        data = self.load_channels()
+        return data.get(str(user_id), {}).get("priority_threshold", 5)
+
+    def update_schedule_settings(self, user_id: int, planning_days: int | None = None, priority_threshold: int | None = None) -> bool:
+        data = self.load_channels()
+        user_id_str = str(user_id)
+        if user_id_str not in data:
+            return False
+        if planning_days is not None:
+            data[user_id_str]["planning_days"] = planning_days
+        if priority_threshold is not None:
+            data[user_id_str]["priority_threshold"] = priority_threshold
+        self.save_channels(data)
+        return True
+
     def create_backup(self, user_id: int) -> dict:
         return self._load_data(user_id)
 

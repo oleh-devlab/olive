@@ -197,7 +197,7 @@ class ScheduleAgentTools:
             name: The name of the task.
             duration_min: The total duration of the task in minutes. Must be > 0.
             description: Optional detailed description.
-            priority: Priority of the task (>= 1).
+            priority: Priority of the task (0 to 10). 0 means floating (scheduled anywhere), 1-10 sorts by importance (scheduled earlier).
             max_chunk_duration_min: Length of a single work session in minutes. Default 45.
             break_duration_min: Length of the break after a session in minutes. Default 15.
             min_chunk_duration_min: Minimum allowed shortened session in minutes. Set to 0 if not allowed.
@@ -254,7 +254,7 @@ class ScheduleAgentTools:
             name: New name.
             duration_min: New total duration.
             description: New description.
-            priority: New priority.
+            priority: New priority (0 to 10). 0 means floating, 1-10 sorts by importance.
             max_chunk_duration_min: New session duration.
             break_duration_min: New break duration.
             min_chunk_duration_min: New min session duration (0 to remove).
@@ -320,7 +320,7 @@ class ScheduleAgentTools:
             time_str: Required if routine_type='fixed'. 'HH:MM'.
             deadline_time_str: Required if routine_type='flexible'. 'HH:MM'.
             weekdays: Required if repeat='weekly'. List of integers (0=Mon, 6=Sun).
-            priority: Priority.
+            priority: Priority (0 to 10). 0 means floating, 1-10 sorts by importance.
             break_duration_min: Break duration after the routine.
         """
         try:
@@ -437,7 +437,7 @@ class ScheduleAgentTools:
             time_str: New time 'HH:MM'.
             deadline_time_str: New deadline time 'HH:MM'.
             weekdays: New list of weekdays (0=Mon, 6=Sun).
-            priority: New priority.
+            priority: New priority (0 to 10). 0 means floating, 1-10 sorts by importance.
             break_duration_min: New break duration.
         """
         try:

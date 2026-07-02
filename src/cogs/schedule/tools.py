@@ -463,6 +463,37 @@ class AutoSchedule(commands.Cog):
                 phrases.get("creation_error", "An error occurred while creating the channel.")
             )
 
+    @schedule_channel.sub_command(name="settings", description="Set personal schedule configuration")
+    async def schedule_channel_settings(
+        self, 
+        inter: disnake.ApplicationCommandInteraction, 
+        planning_days: int = None,
+        priority_threshold: int = None
+    ):
+        await inter.response.defer(ephemeral=True)
+        
+        if planning_days is not None and (planning_days < 1 or planning_days > 365):
+            return await inter.edit_original_response("Please choose a number of days between 1 and 365.")
+            
+        if priority_threshold is not None and (priority_threshold < 0 or priority_threshold > 10):
+            return await inter.edit_original_response("Priority threshold must be between 0 and 10.")
+        
+        if planning_days is None and priority_threshold is None:
+            return await inter.edit_original_response("Please provide at least one setting to update.")
+        
+        success = provider.update_schedule_settings(inter.author.id, planning_days=planning_days, priority_threshold=priority_threshold)
+        if success:
+            msg = "Schedule settings updated:\n"
+            if planning_days is not None:
+                msg += f"- Planning horizon: {planning_days} days\n"
+            if priority_threshold is not None:
+                msg += f"- Priority threshold: {priority_threshold}\n"
+            await inter.edit_original_response(msg)
+            self.bot.dispatch("schedule_update", inter.channel.id)
+        else:
+            await inter.edit_original_response("You don't have a schedule channel yet. Please use `/schedule_channel create` first.")
+
+
 
 def setup(bot):
     bot.add_cog(AutoSchedule(bot))

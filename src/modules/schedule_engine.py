@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import time
 from core.time_utils import tz
 from modules.schedule_models import ScheduleItem
 from modules.schedule_provider import ScheduleProvider
@@ -15,7 +16,9 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
     if not tasks and not routines:
         return []
 
-    scheduler = Scheduler(max_horizon_days=14, priority_threshold=10)
+    planning_days = provider.get_planning_days(client_ID)
+    priority_threshold = provider.get_priority_threshold(client_ID)
+    scheduler = Scheduler(max_horizon_days=planning_days, priority_threshold=priority_threshold)
     for t in tasks:
         scheduler.add_task(t)
     for b in time_blocks:
@@ -25,10 +28,15 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
 
     # Pass the timezone-aware start time so that it matches the timezone-aware deadlines
     now_tz = datetime.datetime.now(tz).replace(second=0, microsecond=0)
+    
+    start_perf = time.perf_counter()
     result = scheduler.solve(start_time=now_tz)
+    solve_time = time.perf_counter() - start_perf
 
     items = []
+    skipped_ids = []
     if result.is_successful:
+        skipped_ids = [st.task.id for st in getattr(result, "skipped_tasks", [])]
         # We can map routines here in the future if we need them as ScheduleItems
         for st in result.scheduled_tasks:
             if st.chunks:
@@ -113,13 +121,14 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
     # Sort the items sequentially so they appear in order
     items.sort(key=lambda x: x.dt_start)
 
-    return items
+    return items, solve_time, planning_days, skipped_ids
 
 
-async def get_raw_schedule_items(client_ID: int) -> list[ScheduleItem]:
+async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int]]:
     """
     Main entry point for the schedule engine.
     Fetches the schedule using the current active algorithm.
     Runs the CPU-intensive solve operation in a background thread.
+    Returns: (items, solve_time_seconds, planning_days, skipped_ids)
     """
     return await asyncio.to_thread(_solve_sync, client_ID)

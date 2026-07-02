@@ -57,6 +57,8 @@ def validate_task_creation_data(
 ) -> Task:
     if duration_min <= 0:
         raise ScheduleValidationError("Task duration must be greater than 0.")
+    if priority < 0 or priority > 10:
+        raise ScheduleValidationError("Priority must be between 0 and 10.")
     deadline_dt = parse_deadline(deadline)
 
     max_chunk, min_chunk = calculate_chunk_durations(
@@ -115,7 +117,9 @@ def validate_task_update_data(
     if description is not None and description.strip():
         updates["description"] = clean_text(description)
         
-    if priority is not None and priority > 0:
+    if priority is not None:
+        if priority < 0 or priority > 10:
+            raise ScheduleValidationError("Priority must be between 0 and 10.")
         updates["priority"] = priority
         
     if max_chunk_duration_min is not None and max_chunk_duration_min > 0:
@@ -162,6 +166,9 @@ def validate_routine_creation_data(
 ) -> Routine:
     if duration_min <= 0:
         raise ScheduleValidationError("Routine duration must be greater than 0.")
+        
+    if priority < 0 or priority > 10:
+        raise ScheduleValidationError("Priority must be between 0 and 10.")
         
     if routine_type not in ("fixed", "flexible"):
         raise ScheduleValidationError("Routine type must be 'fixed' or 'flexible'.")
@@ -244,7 +251,9 @@ def validate_routine_update_data(
                     raise ScheduleValidationError("Weekdays must be integers from 0 (Monday) to 6 (Sunday).")
         updates["weekdays"] = weekdays
 
-    if priority is not None and priority > 0:
+    if priority is not None:
+        if priority < 0 or priority > 10:
+            raise ScheduleValidationError("Priority must be between 0 and 10.")
         updates["priority"] = priority
         
     if break_duration_min is not None and break_duration_min >= 0:
