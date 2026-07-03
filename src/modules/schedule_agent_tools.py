@@ -5,6 +5,7 @@ import functools
 from modules.schedule_provider import ScheduleProvider
 import modules.schedule_formatter as auto_timetable
 from modules.schedule_exceptions import ScheduleValidationError
+import modules.schd_item_formatters as schd_item_formatters
 from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_routine_update_data
 
 MAX_SCHEDULE_LINES = 60
@@ -86,11 +87,7 @@ class ScheduleAgentTools:
         if not tasks:
             return "No tasks found."
 
-        lines = []
-        for t in tasks:
-            dur_mins = int(t.duration.total_seconds() // 60)
-            lines.append(f"[ID: {t.id}] {t.name} - {dur_mins} min (Priority: {t.priority})")
-        return "\n".join(lines)
+        return schd_item_formatters.format_task_list(tasks, use_markdown=False)
 
     @log_tool(modifies_schedule=False)
     def get_task_info(self, task_id: int) -> str:
@@ -102,26 +99,7 @@ class ScheduleAgentTools:
         if not task:
             return f"Task {task_id} not found."
 
-        lines = [
-            f"ID: {task.id}",
-            f"Name: {task.name}",
-            f"Description: {task.description if task.description.strip() else '(none)'}",
-            f"Priority: {task.priority}",
-            f"Total Duration: {int(task.duration.total_seconds() // 60)} min",
-            f"Session: {int(task.max_chunk_duration.total_seconds() // 60) if task.max_chunk_duration else 'N/A'} min",
-            f"Break: {int(task.break_duration.total_seconds() // 60)} min",
-        ]
-
-        if task.deadline:
-            dl_str = task.deadline.strftime("%d.%m.%Y %H:%M")
-            lines.append(f"Deadline: {dl_str}")
-        else:
-            lines.append("Deadline: none")
-
-        if task.min_chunk_duration:
-            lines.append(f"Min session shortening allowed: {int(task.min_chunk_duration.total_seconds() // 60)} min")
-
-        return "\n".join(lines)
+        return schd_item_formatters.format_task_info(task, use_markdown=False)
 
     @log_tool(modifies_schedule=False)
     def list_time_blocks(self) -> str:
@@ -132,16 +110,7 @@ class ScheduleAgentTools:
         if not blocks:
             return "No time blocks found."
 
-        lines = []
-        for i, b in enumerate(blocks):
-            try:
-                st = b.start.strftime("%H:%M") if hasattr(b.start, "strftime") else "???"
-                et = b.end.strftime("%H:%M") if hasattr(b.end, "strftime") else "???"
-                rep = "Daily" if getattr(b, "daily", False) else "One-time"
-                lines.append(f"[{i + 1}] {st} - {et} ({rep})")
-            except Exception:
-                pass
-        return "\n".join(lines) if lines else "No valid time blocks."
+        return schd_item_formatters.format_timeblock_list(blocks, use_markdown=False)
 
     @log_tool(modifies_schedule=True)
     def add_time_block(
@@ -363,21 +332,7 @@ class ScheduleAgentTools:
         if not routines:
             return "No routines found."
 
-        lines = []
-        for i, r in enumerate(routines):
-            t_str = ""
-            if r.type == 'fixed' and r.time:
-                t_str = f" @ {r.time.strftime('%H:%M')}"
-            elif r.type == 'flexible' and r.deadline_time:
-                t_str = f" by {r.deadline_time.strftime('%H:%M')}"
-                
-            dur = int(r.duration.total_seconds() // 60)
-            rep = r.repeat
-            if rep == 'weekly' and r.weekdays:
-                rep = f"weekly on {r.weekdays}"
-            
-            lines.append(f"[{i + 1}] {r.name} ({r.type}, {rep}, {dur}m){t_str}")
-        return "\n".join(lines)
+        return schd_item_formatters.format_routine_list(routines, use_markdown=False)
 
     @log_tool(modifies_schedule=False)
     def get_routine_info(self, routine_id: int) -> str:
@@ -393,25 +348,7 @@ class ScheduleAgentTools:
         if not r:
             return f"Routine {routine_id} not found."
             
-        lines = [
-            f"ID: {r.id}",
-            f"Name: {r.name}",
-            f"Type: {r.type}",
-            f"Repeat: {r.repeat}",
-        ]
-        if r.repeat == 'weekly' and r.weekdays:
-            lines.append(f"Weekdays: {r.weekdays} (0=Mon, 6=Sun)")
-            
-        if r.type == 'fixed' and r.time:
-            lines.append(f"Time: {r.time.strftime('%H:%M')}")
-        elif r.type == 'flexible' and r.deadline_time:
-            lines.append(f"Deadline: {r.deadline_time.strftime('%H:%M')}")
-            
-        lines.append(f"Duration: {int(r.duration.total_seconds() // 60)} min")
-        lines.append(f"Break Duration: {int(r.break_duration.total_seconds() // 60)} min")
-        lines.append(f"Priority: {r.priority}")
-        
-        return "\n".join(lines)
+        return schd_item_formatters.format_routine_info(r, use_markdown=False)
 
     @log_tool(modifies_schedule=True)
     def remove_routine(self, routine_id: int) -> str:

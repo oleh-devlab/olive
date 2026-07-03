@@ -6,6 +6,7 @@ import core.utils as utils
 import core.cache as cache
 from modules.schedule_provider import ScheduleProvider
 from modules.schedule_exceptions import ScheduleValidationError
+import modules.schd_item_formatters as schd_item_formatters
 from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_timeblock_creation_data, validate_routine_update_data
 
 # We can instantiate the provider here.
@@ -74,13 +75,8 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response("No tasks found.")
             return
 
-        lines = ["**Your Tasks:**"]
-        for t in tasks:
-            dur_mins = int(t.duration.total_seconds() // 60)
-            deps = f" (Depends on: {', '.join(map(str, t.depends_on))})" if getattr(t, 'depends_on', None) else ""
-            lines.append(f"`[ID: {t.id}]` **{t.name}** - {dur_mins} min (Priority: {t.priority}){deps}")
-
-        await utils.send_long_message(inter.channel, "\n".join(lines))
+        formatted = schd_item_formatters.format_task_list(tasks, use_markdown=True)
+        await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Tasks listed above.")
 
     @task.sub_command(name="spend", description="Mark time spent on a task")
@@ -148,25 +144,8 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response(f"Task {task_id} not found.")
             return
 
-        lines = [
-            f"**Task Details (ID: {task.id})**",
-            f"**Name:** {task.name}",
-            f"**Description:** {task.description if task.description.strip() else '(none)'}",
-            f"**Priority:** {task.priority}",
-            f"**Total Duration:** {int(task.duration.total_seconds() // 60)} min",
-            f"**Session:** {int(task.max_chunk_duration.total_seconds() // 60) if task.max_chunk_duration else 'N/A'} min  |  **Break:** {int(task.break_duration.total_seconds() // 60)} min",
-        ]
-
-        if task.deadline:
-            dl_str = task.deadline.strftime("%d.%m.%Y %H:%M")
-            lines.insert(3, f"**Deadline:** {dl_str}")
-        else:
-            lines.insert(3, "**Deadline:** none")
-
-        if task.min_chunk_duration:
-            lines.append(f"**Min session shortening allowed:** {int(task.min_chunk_duration.total_seconds() // 60)} min")
-
-        await inter.edit_original_response("\n".join(lines))
+        formatted = schd_item_formatters.format_task_info(task, use_markdown=True)
+        await inter.edit_original_response(formatted)
 
     @task.sub_command(name="history", description="List completed tasks")
     async def task_history(self, inter: disnake.ApplicationCommandInteraction):
@@ -176,11 +155,8 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response("No completed tasks found in history.")
             return
 
-        lines = ["**Completed Tasks:**"]
-        for t in tasks:
-            lines.append(f"`[ID: {t.id}]` **{t.name}** (Priority: {t.priority})")
-
-        await utils.send_long_message(inter.channel, "\n".join(lines))
+        formatted = schd_item_formatters.format_completed_task_list(tasks, use_markdown=True)
+        await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("History listed above.")
 
     @commands.slash_command(test_guilds=settings.guilds)
@@ -221,17 +197,8 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response("No time blocks found.")
             return
 
-        lines = ["**Your Time Blocks:**"]
-        for i, b in enumerate(blocks):
-            try:
-                st = b.start.strftime("%H:%M") if hasattr(b.start, "strftime") else "???"
-                et = b.end.strftime("%H:%M") if hasattr(b.end, "strftime") else "???"
-                rep = "Daily" if getattr(b, "daily", False) else "One-time"
-                lines.append(f"`[{i + 1}]` {st} - {et} ({rep})")
-            except Exception:
-                lines.append(f"`[{i + 1}]` Invalid Block Data")
-
-        await utils.send_long_message(inter.channel, "\n".join(lines))
+        formatted = schd_item_formatters.format_timeblock_list(blocks, use_markdown=True)
+        await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Time blocks listed above.")
 
     @commands.slash_command(test_guilds=settings.guilds)
@@ -316,24 +283,8 @@ class AutoSchedule(commands.Cog):
         if not routines:
             return await inter.edit_original_response("No routines found.")
             
-        lines = ["**Your Routines:**"]
-        for i, r in enumerate(routines):
-            t_str = ""
-            if r.type == 'fixed' and r.time:
-                t_str = f" @ {r.time.strftime('%H:%M')}"
-            elif r.type == 'flexible' and r.deadline_time:
-                t_str = f" by {r.deadline_time.strftime('%H:%M')}"
-                
-            dur = int(r.duration.total_seconds() // 60)
-            rep = r.repeat
-            if rep == 'weekly' and r.weekdays:
-                rep = f"weekly on {r.weekdays}"
-                
-            deps = f" (Depends on: {', '.join(map(str, r.depends_on))})" if getattr(r, 'depends_on', None) else ""
-            
-            lines.append(f"`[ID: {r.id}]` **{r.name}** ({r.type}, {rep}, {dur}m){t_str}{deps}")
-            
-        await utils.send_long_message(inter.channel, "\n".join(lines))
+        formatted = schd_item_formatters.format_routine_list(routines, use_markdown=True)
+        await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Routines listed above.")
 
     @routine.sub_command(name="remove", description="Remove a routine by ID")

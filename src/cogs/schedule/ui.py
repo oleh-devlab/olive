@@ -33,14 +33,14 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
             
         state["is_calculating"] = True
         try:
-            schedule_days, perf_time, planning_days, skipped_ids, skipped_routines, status_text = await auto_timetable.get_schedule_by_day(user_id)
+            schedule_days, perf_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await auto_timetable.get_schedule_by_day(user_id)
             error_msg = None
         except Exception as e:
             print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
             schedule_days = []
             perf_time = 0.0
             planning_days = 0
-            skipped_ids = []
+            skipped_tasks_ids = []
             skipped_routines = []
             status_text = "ERROR"
             error_msg = f"Error fetching schedule: {e}"
@@ -90,13 +90,15 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
         state["pages"] = pages
         state["perf_time"] = perf_time
         state["planning_days"] = planning_days
-        state["skipped_ids"] = skipped_ids
+        state["skipped_tasks_ids"] = skipped_tasks_ids
+        state["skipped_routines"] = skipped_routines
         state["status_text"] = status_text
     else:
         pages = state.get("pages", ["No data."])
         perf_time = state.get("perf_time", 0.0)
         planning_days = state.get("planning_days", 0)
-        skipped_ids = state.get("skipped_ids", [])
+        skipped_tasks_ids = state.get("skipped_tasks_ids", [])
+        skipped_routines = state.get("skipped_routines", [])
         status_text = state.get("status_text", "UNKNOWN")
 
     state["max_pages"] = len(pages)
@@ -124,11 +126,11 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
         status_text=status_text
     )
 
-    if skipped_ids:
-        schedule_content += f"\n\n*Tasks that didn't fit (IDs): {', '.join(map(str, skipped_ids))}*"
+    if skipped_tasks_ids:
+        schedule_content += f"\n\n*Tasks that didn't fit (IDs): {', '.join(map(str, skipped_tasks_ids))}*"
         
     if skipped_routines:
-        prefix = "\n" if not skipped_ids else "\n"
+        prefix = "\n" if not skipped_tasks_ids else "\n"
         schedule_content += f"{prefix}*Skipped routines:*\n" + "\n".join(f"- {r}" for r in skipped_routines)
 
     view = SchedulePaginationView()
@@ -244,7 +246,7 @@ class ScheduleUI(commands.Cog):
             "pages": [],
             "perf_time": 0.0,
             "planning_days": 0,
-            "skipped_ids": [],
+            "skipped_tasks_ids": [],
             "skipped_routines": [],
             "status_text": "INIT",
             "is_calculating": False
