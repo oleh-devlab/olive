@@ -97,8 +97,9 @@ def format_routine_list(routines, use_markdown: bool = False) -> str:
 
         rep = f"weekly on {r.weekdays}" if r.repeat == "weekly" and getattr(r, "weekdays", None) else r.repeat
         deps = f" (Depends on: {', '.join(map(str, r.depends_on))})" if getattr(r, "depends_on", None) else ""
+        skip = f" [Resumes after {r.resume_after.strftime('%d.%m.%Y')}]" if getattr(r, "resume_after", None) else ""
 
-        lines.append(f"{c}[ID: {r.id}]{c} {b}{r.name}{b} ({r.type}, {rep}, {_mins(r.duration)}m){t_str}{deps}")
+        lines.append(f"{c}[ID: {r.id}]{c} {b}{r.name}{b} ({r.type}, {rep}, {_mins(r.duration)}m){t_str}{deps}{skip}")
 
     return "\n".join(lines)
 
@@ -126,5 +127,9 @@ def format_routine_info(routine, use_markdown: bool = False) -> str:
     lines.append(f"{b}Duration:{b} {_mins(routine.duration)} min")
     lines.append(f"{b}Break Duration:{b} {_mins(getattr(routine, 'break_duration', None))} min")
     lines.append(f"{b}Priority:{b} {routine.priority}")
+    if getattr(routine, "depends_on", None):
+        lines.append(f"{b}Depends On:{b} {', '.join(map(str, routine.depends_on))}")
+    if getattr(routine, "resume_after", None):
+        lines.append(f"{b}Resumes after:{b} {routine.resume_after.strftime('%d.%m.%Y')}")
 
     return "\n".join(lines)

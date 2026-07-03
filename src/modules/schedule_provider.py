@@ -59,6 +59,21 @@ def _deserialize_time(t_str: Optional[str]) -> Optional[datetime.time]:
         return None
 
 
+def _serialize_date(d: Optional[datetime.date]) -> Optional[str]:
+    if not d:
+        return None
+    return d.strftime("%d.%m.%Y")
+
+
+def _deserialize_date(d_str: Optional[str]) -> Optional[datetime.date]:
+    if not d_str:
+        return None
+    try:
+        return datetime.datetime.strptime(d_str, "%d.%m.%Y").date()
+    except ValueError:
+        return None
+
+
 def _task_to_dict(task: Task) -> dict:
     return {
         "id": task.id,
@@ -126,6 +141,7 @@ def _routine_to_dict(routine: Routine) -> dict:
         "weekdays": routine.weekdays,
         "priority": routine.priority,
         "break_duration": _serialize_timedelta(routine.break_duration),
+        "resume_after": _serialize_date(routine.resume_after),
     }
 
 
@@ -157,6 +173,7 @@ def _dict_to_routine(d: dict) -> Routine:
         weekdays=d.get("weekdays"),
         priority=d.get("priority", 0),
         break_duration=_deserialize_timedelta(d.get("break_duration", 0)) or datetime.timedelta(minutes=0),
+        resume_after=_deserialize_date(d.get("resume_after")),
     )
 
 
@@ -404,3 +421,12 @@ class ScheduleProvider:
                 
         self._save_data(user_id, data)
         return True
+
+    def skip_routine(self, user_id: int, routine_id: int, resume_after_date: datetime.date) -> bool:
+        data = self._load_data(user_id)
+        for r_dict in data["routines"]:
+            if r_dict.get("id") == routine_id:
+                r_dict["resume_after"] = _serialize_date(resume_after_date)
+                self._save_data(user_id, data)
+                return True
+        return False

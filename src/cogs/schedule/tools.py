@@ -7,7 +7,14 @@ import core.cache as cache
 from modules.schedule_provider import ScheduleProvider
 from modules.schedule_exceptions import ScheduleValidationError
 import modules.schd_item_formatters as schd_item_formatters
-from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_timeblock_creation_data, validate_routine_update_data
+from modules.schedule_validators import (
+    validate_task_creation_data,
+    validate_task_update_data,
+    validate_routine_creation_data,
+    validate_timeblock_creation_data,
+    validate_routine_update_data,
+    validate_skip_routine_data,
+)
 
 # We can instantiate the provider here.
 provider = ScheduleProvider()
@@ -238,6 +245,27 @@ class AutoSchedule(commands.Cog):
             )
             provider.add_routine(inter.author.id, r)
             await inter.edit_original_response(f"Fixed routine '{name}' added successfully.")
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
+
+    @routine.sub_command(name="skip", description="Skip a routine for today, X days, or until a specific date")
+    async def routine_skip(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        routine_id: int,
+        days: int = None,
+        resume_after: str = None,
+    ):
+        await inter.response.defer(ephemeral=True)
+        try:
+            resume_date = validate_skip_routine_data(days=days, resume_after=resume_after)
+            success = provider.skip_routine(inter.author.id, routine_id, resume_date)
+            if success:
+                await inter.edit_original_response(f"Routine {routine_id} skipped. resume_after date set to {resume_date.strftime('%d.%m.%Y')}.")
+            else:
+                await inter.edit_original_response(f"Routine {routine_id} not found.")
+        except ScheduleValidationError as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 

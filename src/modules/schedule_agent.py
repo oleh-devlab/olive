@@ -53,8 +53,17 @@ TimeBlocks are strict periods of "busy time" when the user is unavailable (e.g.,
 - Priority 0 is special: it "floats" and the solver will schedule it anywhere it fits best, without trying to push it early.
 - Priorities 1 to 10 will try to be scheduled as close to the beginning of the schedule as possible, essentially "sorting" themselves chronologically based on importance.
 
+### 5. Dependencies
+- You can use the `depends_on` parameter to create scheduling dependencies.
+- **Important**: Tasks and Routines have separate ID spaces. Therefore, a task can ONLY depend on other tasks, and a routine can ONLY depend on other routines. They cannot be interdependent.
+- Pass a comma-separated list of IDs (e.g., '1, 3') if a task/routine must be scheduled strictly *after* the items it depends on.
+
+### 6. Skipping Routines
+- The `skip_routine` tool is used to mark a routine as completed or as skipped for today or future days.
+- The `resume_after` field means the routine is skipped up to and including that date, and will resume the day after.
+- You can skip it for a certain number of `days` (default 1 day = skip today), or `resume_after` ().
+
 ### General Rules
-- If the user asks "what should I do now?" or "show me my schedule", use `get_current_schedule()`.
 - Before deleting or editing, always review the list of tasks/routines/time blocks to make sure you've specified the correct ID/index.
 - After adding/editing, don't list everything back to the user unless they ask.
 - If a tool returns an error, inform the user about the error and ask how they'd like to proceed, or fix your parameters and try again.
@@ -165,6 +174,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         tools_instance.get_routine_info,
         tools_instance.edit_routine,
         tools_instance.remove_routine,
+        tools_instance.skip_routine,
     ]
 
     reply_config = types.GenerateContentConfig(
@@ -269,7 +279,11 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                             res = func_to_call(**args)
 
                         result = {"result": res}
-                        if func_name in ["add_task", "remove_task", "edit_task", "spend_task_time"]:
+                        if func_name in [
+                            "add_task", "remove_task", "edit_task", "spend_task_time",
+                            "add_routine", "remove_routine", "edit_routine", "skip_routine",
+                            "add_time_block", "remove_time_block"
+                        ]:
                             schedule_modified = True
 
                     except Exception as e:

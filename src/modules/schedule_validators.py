@@ -13,6 +13,14 @@ def clean_text(text: str | None) -> str:
     return text.replace("\t", " ").replace("\n", " ").strip()
 
 
+def parse_date(date_str: str | None) -> datetime.date | None:
+    if not date_str or str(date_str).lower() == "none":
+        return None
+    try:
+        return datetime.datetime.strptime(date_str, "%d.%m.%Y").date()
+    except ValueError:
+        raise ScheduleValidationError("Invalid date format. Use 'DD.MM.YYYY'.")
+
 def parse_deadline(deadline_str: str | None) -> datetime.datetime | None:
     if not deadline_str or str(deadline_str).lower() == "none":
         return None
@@ -23,7 +31,7 @@ def parse_deadline(deadline_str: str | None) -> datetime.datetime | None:
         raise ScheduleValidationError("Invalid deadline format. Use 'DD.MM.YYYY HH:MM' or 'none'.")
 
 
-def parse_depends_on(depends_on_str: str | None, user_id: int | None = None, self_id: int | None = None) -> list[int]:
+def parse_depends_on(depends_on_str: str | None, user_id: int | None = None, self_id: int | None = None, item_type: str = 'task') -> list[int]:
     if not depends_on_str:
         return []
     try:
@@ -36,9 +44,12 @@ def parse_depends_on(depends_on_str: str | None, user_id: int | None = None, sel
 
     if user_id is not None:
         provider = ScheduleProvider()
-        tasks = provider.list_tasks(user_id)
-        routines = provider.list_routines(user_id)
-        valid_ids = {t.id for t in tasks if getattr(t, 'id', None) is not None} | {r.id for r in routines if getattr(r, 'id', None) is not None}
+        if item_type == 'task':
+            items = provider.list_tasks(user_id)
+        else:
+            items = provider.list_routines(user_id)
+            
+        valid_ids = {t.id for t in items if getattr(t, 'id', None) is not None}
         
         invalid_ids = [str(d) for d in parsed_ids if d not in valid_ids]
         if invalid_ids:
@@ -97,7 +108,7 @@ def validate_task_creation_data(
         name=clean_text(name),
         duration=datetime.timedelta(minutes=duration_min),
         description=clean_text(description),
-        depends_on=parse_depends_on(depends_on, user_id=user_id),
+        depends_on=parse_depends_on(depends_on, user_id=user_id, item_type='task'),
         deadline=deadline_dt,
         priority=priority,
         max_chunk_duration=max_chunk,
@@ -172,7 +183,7 @@ def validate_task_update_data(
         updates["deadline"] = parse_deadline(deadline)
 
     if depends_on is not None:
-        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id)
+        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id, item_type='task')
 
     return updates
 
@@ -241,7 +252,7 @@ def validate_routine_creation_data(
         weekdays=weekdays,
         priority=priority,
         break_duration=datetime.timedelta(minutes=break_duration_min),
-        depends_on=parse_depends_on(depends_on, user_id=user_id)
+        depends_on=parse_depends_on(depends_on, user_id=user_id, item_type='routine')
     )
 
 def validate_routine_update_data(
@@ -300,6 +311,37 @@ def validate_routine_update_data(
         updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
         
     if depends_on is not None:
-        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id)
+        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id, item_type='routine')
 
     return updates
+
+def validate_skip_routine_data(
+    days: int | None = None,
+    resume_after: str | None = None
+) -> datetime.date:
+    """
+    Validates skip parameters and returns the resume_after date.
+    The routine will NOT be scheduled up to and including the resume_after date.
+    """
+    if days is not None and resume_after is not None:
+        raise ScheduleValidationError("You cannot provide both 'days' and 'resume_after'. Choose one.")
+        
+    today = datetime.date.today()
+    
+    if resume_after is not None:
+        parsed_date = parse_date(resume_after)
+        if parsed_date < today:
+            raise ScheduleValidationError("Cannot set resume_after to a past date.")
+        # We just return the exact date provided by the user.
+        return parsed_date
+        
+    if days is None:
+        # Default to skipping just today
+        days = 1
+        
+    if days <= 0:
+        raise ScheduleValidationError("Days must be greater than 0.")
+        
+    # skip 1 day (today) -> resume_after = today
+    # skip X days -> resume_after = today + (X - 1) days
+    return today + datetime.timedelta(days=days - 1)

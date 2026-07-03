@@ -364,6 +364,27 @@ class ScheduleAgentTools:
             raise ValueError(f"Routine {routine_id} not found.")
 
     @log_tool(modifies_schedule=True)
+    def skip_routine(self, routine_id: int, days: int | None = None, resume_after: str | None = None) -> str:
+        """
+        Skips a routine for today, for X days, or until a specific date.
+        Args:
+            routine_id: The ID of the routine.
+            days: Optional. The number of days to skip (e.g., 1 to skip just today).
+            resume_after: Optional. The date to skip until in 'DD.MM.YYYY' format. For example, resume_after = "05.07.2026" means that the routine will be skipped through and including 05.07.2026 and will resume only after 05.07.2026.
+        """
+        try:
+            from modules.schedule_validators import validate_skip_routine_data
+            resume_date = validate_skip_routine_data(days=days, resume_after=resume_after)
+        except ScheduleValidationError as e:
+            raise ValueError(str(e))
+            
+        success = self.provider.skip_routine(self.user_id, routine_id, resume_date)
+        if success:
+            return f"Routine {routine_id} will be skipped and will resume on {resume_date.strftime('%d.%m.%Y')}."
+        else:
+            raise ValueError(f"Routine {routine_id} not found.")
+
+    @log_tool(modifies_schedule=True)
     def edit_routine(
         self,
         routine_id: int,
