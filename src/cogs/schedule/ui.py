@@ -28,6 +28,10 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
     phrases = get_phrases().get("schedule", {})
 
     if recalculate or not state.get("pages"):
+        if state.get("is_calculating", False):
+            return
+            
+        state["is_calculating"] = True
         try:
             schedule_days, perf_time, planning_days, skipped_ids, status_text = await auto_timetable.get_schedule_by_day(user_id)
             error_msg = None
@@ -39,6 +43,8 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
             skipped_ids = []
             status_text = "ERROR"
             error_msg = f"Error fetching schedule: {e}"
+        finally:
+            state["is_calculating"] = False
 
         pages = []
 
@@ -172,6 +178,14 @@ class SchedulePaginationView(disnake.ui.View):
 
         # Only recalculate if it's a refresh (delta == 0)
         should_recalc = (delta == 0)
+        
+        if should_recalc and state.get("is_calculating", False):
+            try:
+                await interaction.followup.send("Please wait, the schedule is currently calculating.", ephemeral=True)
+            except Exception:
+                pass
+            return
+            
         await update_schedule_message(interaction.bot, channel_id, recalculate=should_recalc)
 
     @disnake.ui.button(label="⏮", style=disnake.ButtonStyle.primary, custom_id="schedule_first_page")
@@ -226,7 +240,8 @@ class ScheduleUI(commands.Cog):
             "perf_time": 0.0,
             "planning_days": 0,
             "skipped_ids": [],
-            "status_text": "INIT"
+            "status_text": "INIT",
+            "is_calculating": False
         }
 
         await update_schedule_message(self.bot, channel.id, recalculate=True)

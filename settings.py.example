@@ -65,3 +65,4 @@ schedule_compute_workers = 1
 schedule_loop_update_seconds = 600
 schedule_max_planning_days = 60
 schedule_max_compute_timeout = 15.0
+schedule_allowed_step_minutes = [1, 5, 15]

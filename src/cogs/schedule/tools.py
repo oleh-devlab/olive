@@ -469,12 +469,14 @@ class AutoSchedule(commands.Cog):
         inter: disnake.ApplicationCommandInteraction, 
         planning_days: int = None,
         priority_threshold: int = None,
-        compute_timeout: float = None
+        compute_timeout: float = None,
+        step_minutes: int = commands.Param(default=None, description="Time step in minutes (higher values increase probability of errors/inaccuracy)", choices=getattr(settings, "schedule_allowed_step_minutes", [1, 5, 15]))
     ):
         await inter.response.defer(ephemeral=True)
         
         max_days = getattr(settings, "schedule_max_planning_days", 60)
         max_timeout = getattr(settings, "schedule_max_compute_timeout", 15.0)
+        allowed_steps = getattr(settings, "schedule_allowed_step_minutes", [1, 5, 15])
         
         if planning_days is not None and (planning_days < 1 or planning_days > max_days):
             return await inter.edit_original_response(f"Please choose a number of days between 1 and {max_days} (large horizons may cause calculation timeouts).")
@@ -484,11 +486,14 @@ class AutoSchedule(commands.Cog):
             
         if compute_timeout is not None and (compute_timeout <= 0 or compute_timeout > max_timeout):
             return await inter.edit_original_response(f"Compute timeout must be greater than 0 and up to {max_timeout} seconds.")
+            
+        if step_minutes is not None and step_minutes not in allowed_steps:
+            return await inter.edit_original_response(f"Step minutes must be one of {allowed_steps}.")
         
-        if planning_days is None and priority_threshold is None and compute_timeout is None:
+        if planning_days is None and priority_threshold is None and compute_timeout is None and step_minutes is None:
             return await inter.edit_original_response("Please provide at least one setting to update.")
         
-        success = provider.update_schedule_settings(inter.author.id, planning_days=planning_days, priority_threshold=priority_threshold, compute_timeout=compute_timeout)
+        success = provider.update_schedule_settings(inter.author.id, planning_days=planning_days, priority_threshold=priority_threshold, compute_timeout=compute_timeout, step_minutes=step_minutes)
         if success:
             msg = "Schedule settings updated:\n"
             if planning_days is not None:
@@ -497,6 +502,8 @@ class AutoSchedule(commands.Cog):
                 msg += f"- Priority threshold: {priority_threshold}\n"
             if compute_timeout is not None:
                 msg += f"- Compute timeout: {compute_timeout}s\n"
+            if step_minutes is not None:
+                msg += f"- Time step: {step_minutes} min\n"
             await inter.edit_original_response(msg)
             self.bot.dispatch("schedule_update", inter.channel.id)
         else:
