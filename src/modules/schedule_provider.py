@@ -62,6 +62,7 @@ def _deserialize_time(t_str: Optional[str]) -> Optional[datetime.time]:
 def _task_to_dict(task: Task) -> dict:
     return {
         "id": task.id,
+        "depends_on": task.depends_on,
         "name": task.name,
         "description": task.description,
         "duration": _serialize_timedelta(task.duration),
@@ -77,6 +78,7 @@ def _dict_to_task(d: dict) -> Task:
     return Task(
         id=d.get("id"),
         name=d.get("name", ""),
+        depends_on=d.get("depends_on", []),
         description=d.get("description", ""),
         duration=_deserialize_timedelta(d.get("duration", 0)) or datetime.timedelta(minutes=0),
         deadline=_deserialize_datetime(d.get("deadline")),
@@ -113,6 +115,8 @@ def _dict_to_timeblock(d: dict) -> TimeBlock:
 
 def _routine_to_dict(routine: Routine) -> dict:
     return {
+        "id": routine.id,
+        "depends_on": routine.depends_on,
         "name": routine.name,
         "type": routine.type,
         "repeat": routine.repeat,
@@ -142,7 +146,9 @@ def _dict_to_routine(d: dict) -> Routine:
             r_deadline = _deserialize_time(r_deadline)
 
     return Routine(
+        id=d.get("id"),
         name=d.get("name", ""),
+        depends_on=d.get("depends_on", []),
         type=d.get("type", "fixed"),
         repeat=d.get("repeat", "daily"),
         duration=_deserialize_timedelta(d.get("duration", 0)) or datetime.timedelta(minutes=0),
@@ -347,36 +353,54 @@ class ScheduleProvider:
 
     def add_routine(self, user_id: int, routine: Routine):
         data = self._load_data(user_id)
-        data.setdefault("routines", []).append(_routine_to_dict(routine))
+        
+        new_id = 1
+        if data.get("routines"):
+            new_id = max(r.get("id", 0) for r in data["routines"]) + 1
+        
+        routine_dict = _routine_to_dict(routine)
+        routine_dict["id"] = new_id
+        
+        data.setdefault("routines", []).append(routine_dict)
         self._save_data(user_id, data)
 
     def list_routines(self, user_id: int) -> List[Routine]:
         data = self._load_data(user_id)
         return [_dict_to_routine(r) for r in data.get("routines", [])]
 
-    def remove_routine(self, user_id: int, index: int) -> bool:
+    def remove_routine(self, user_id: int, routine_id: int) -> bool:
         data = self._load_data(user_id)
         routines = data.get("routines", [])
-        if index < 0 or index >= len(routines):
-            return False
-
-        routines.pop(index)
-        self._save_data(user_id, data)
-        return True
-
-    def edit_routine(self, user_id: int, index: int, **kwargs) -> bool:
-        data = self._load_data(user_id)
-        routines = data.get("routines", [])
-        if index < 0 or index >= len(routines):
-            return False
-
-        routine = _dict_to_routine(routines[index])
         
+        for i, r in enumerate(routines):
+            if r.get("id") == routine_id:
+                routines.pop(i)
+                self._save_data(user_id, data)
+                return True
+                
+        return False
+
+    def get_routine(self, user_id: int, routine_id: int) -> Optional[Routine]:
+        data = self._load_data(user_id)
+        for r in data.get("routines", []):
+            if r.get("id") == routine_id:
+                return _dict_to_routine(r)
+        return None
+
+    def edit_routine(self, user_id: int, routine_id: int, **kwargs) -> bool:
+        routine = self.get_routine(user_id, routine_id)
+        if not routine:
+            return False
+
         for k, v in kwargs.items():
             if hasattr(routine, k):
                 setattr(routine, k, v)
 
-        routines[index] = _routine_to_dict(routine)
+        data = self._load_data(user_id)
+        for i, r in enumerate(data.get("routines", [])):
+            if r.get("id") == routine_id:
+                data["routines"][i] = _routine_to_dict(routine)
+                break
+                
         self._save_data(user_id, data)
         return True
-

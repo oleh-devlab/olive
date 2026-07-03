@@ -15,10 +15,9 @@ class Task(BaseTask):
     description: str = ""
 
 
-# Alias TimeBlock and Routine to be used within the Olive domain
+# Alias
 TimeBlock = BaseTimeBlock
 Routine = BaseRoutine
-
 
 @dataclass
 class ScheduleItem:

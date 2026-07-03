@@ -33,7 +33,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
             
         state["is_calculating"] = True
         try:
-            schedule_days, perf_time, planning_days, skipped_ids, status_text = await auto_timetable.get_schedule_by_day(user_id)
+            schedule_days, perf_time, planning_days, skipped_ids, skipped_routines, status_text = await auto_timetable.get_schedule_by_day(user_id)
             error_msg = None
         except Exception as e:
             print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
@@ -41,6 +41,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
             perf_time = 0.0
             planning_days = 0
             skipped_ids = []
+            skipped_routines = []
             status_text = "ERROR"
             error_msg = f"Error fetching schedule: {e}"
         finally:
@@ -125,6 +126,10 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
 
     if skipped_ids:
         schedule_content += f"\n\n*Tasks that didn't fit (IDs): {', '.join(map(str, skipped_ids))}*"
+        
+    if skipped_routines:
+        prefix = "\n" if not skipped_ids else "\n"
+        schedule_content += f"{prefix}*Skipped routines:*\n" + "\n".join(f"- {r}" for r in skipped_routines)
 
     view = SchedulePaginationView()
     prev_disabled = current_page <= 0
@@ -240,6 +245,7 @@ class ScheduleUI(commands.Cog):
             "perf_time": 0.0,
             "planning_days": 0,
             "skipped_ids": [],
+            "skipped_routines": [],
             "status_text": "INIT",
             "is_calculating": False
         }

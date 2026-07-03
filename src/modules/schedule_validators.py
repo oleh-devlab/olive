@@ -4,6 +4,7 @@ import settings
 from core.time_utils import tz
 from modules.schedule_models import Task, Routine, TimeBlock
 from modules.schedule_exceptions import ScheduleValidationError
+from modules.schedule_provider import ScheduleProvider
 
 
 def clean_text(text: str | None) -> str:
@@ -20,6 +21,30 @@ def parse_deadline(deadline_str: str | None) -> datetime.datetime | None:
         return dt.replace(tzinfo=tz)
     except ValueError:
         raise ScheduleValidationError("Invalid deadline format. Use 'DD.MM.YYYY HH:MM' or 'none'.")
+
+
+def parse_depends_on(depends_on_str: str | None, user_id: int | None = None, self_id: int | None = None) -> list[int]:
+    if not depends_on_str:
+        return []
+    try:
+        parsed_ids = [int(x.strip()) for x in depends_on_str.split(",") if x.strip().isdigit()]
+    except ValueError:
+        raise ScheduleValidationError("Invalid depends_on format. Use a comma-separated list of IDs (e.g. '1, 2, 5').")
+
+    if self_id is not None and self_id in parsed_ids:
+        raise ScheduleValidationError(f"An item cannot depend on itself (ID {self_id}).")
+
+    if user_id is not None:
+        provider = ScheduleProvider()
+        tasks = provider.list_tasks(user_id)
+        routines = provider.list_routines(user_id)
+        valid_ids = {t.id for t in tasks if getattr(t, 'id', None) is not None} | {r.id for r in routines if getattr(r, 'id', None) is not None}
+        
+        invalid_ids = [str(d) for d in parsed_ids if d not in valid_ids]
+        if invalid_ids:
+            raise ScheduleValidationError(f"The following dependency IDs do not exist: {', '.join(invalid_ids)}")
+
+    return parsed_ids
 
 
 def calculate_chunk_durations(
@@ -54,6 +79,8 @@ def validate_task_creation_data(
     break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
     min_chunk_duration_min: int | None = None,
     deadline: str | None = None,
+    depends_on: str | None = None,
+    user_id: int | None = None,
 ) -> Task:
     if duration_min <= 0:
         raise ScheduleValidationError("Task duration must be greater than 0.")
@@ -70,6 +97,7 @@ def validate_task_creation_data(
         name=clean_text(name),
         duration=datetime.timedelta(minutes=duration_min),
         description=clean_text(description),
+        depends_on=parse_depends_on(depends_on, user_id=user_id),
         deadline=deadline_dt,
         priority=priority,
         max_chunk_duration=max_chunk,
@@ -105,6 +133,9 @@ def validate_task_update_data(
     break_duration_min: int | None = None,
     min_chunk_duration_min: int | None = None,
     deadline: str | None = None,
+    depends_on: str | None = None,
+    user_id: int | None = None,
+    self_id: int | None = None,
 ) -> dict:
     updates = {}
 
@@ -140,6 +171,9 @@ def validate_task_update_data(
     if deadline is not None and str(deadline).strip() != "":
         updates["deadline"] = parse_deadline(deadline)
 
+    if depends_on is not None:
+        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id)
+
     return updates
 
 
@@ -163,6 +197,8 @@ def validate_routine_creation_data(
     weekdays: list[int] | None = None,
     priority: int = getattr(settings, "schedule_default_priority", 1),
     break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
+    depends_on: str | None = None,
+    user_id: int | None = None,
 ) -> Routine:
     if duration_min <= 0:
         raise ScheduleValidationError("Routine duration must be greater than 0.")
@@ -204,7 +240,8 @@ def validate_routine_creation_data(
         deadline_time=parsed_deadline,
         weekdays=weekdays,
         priority=priority,
-        break_duration=datetime.timedelta(minutes=break_duration_min)
+        break_duration=datetime.timedelta(minutes=break_duration_min),
+        depends_on=parse_depends_on(depends_on, user_id=user_id)
     )
 
 def validate_routine_update_data(
@@ -217,6 +254,9 @@ def validate_routine_update_data(
     weekdays: list[int] | None = None,
     priority: int | None = None,
     break_duration_min: int | None = None,
+    depends_on: str | None = None,
+    user_id: int | None = None,
+    self_id: int | None = None,
 ) -> dict:
     updates = {}
 
@@ -258,5 +298,8 @@ def validate_routine_update_data(
         
     if break_duration_min is not None and break_duration_min >= 0:
         updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
+        
+    if depends_on is not None:
+        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id)
 
     return updates

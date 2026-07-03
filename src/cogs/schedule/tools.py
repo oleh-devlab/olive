@@ -34,6 +34,7 @@ class AutoSchedule(commands.Cog):
         break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
         min_chunk_duration_min: int = None,
         deadline: str = None,
+        depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -46,6 +47,8 @@ class AutoSchedule(commands.Cog):
                 break_duration_min=break_duration_min,
                 min_chunk_duration_min=min_chunk_duration_min,
                 deadline=deadline,
+                depends_on=depends_on,
+                user_id=inter.author.id,
             )
             new_id = provider.add_task(inter.author.id, new_task)
             await inter.edit_original_response(f"Task '{name}' added successfully with ID {new_id}.")
@@ -74,7 +77,8 @@ class AutoSchedule(commands.Cog):
         lines = ["**Your Tasks:**"]
         for t in tasks:
             dur_mins = int(t.duration.total_seconds() // 60)
-            lines.append(f"`[ID: {t.id}]` **{t.name}** - {dur_mins} min (Priority: {t.priority})")
+            deps = f" (Depends on: {', '.join(map(str, t.depends_on))})" if getattr(t, 'depends_on', None) else ""
+            lines.append(f"`[ID: {t.id}]` **{t.name}** - {dur_mins} min (Priority: {t.priority}){deps}")
 
         await utils.send_long_message(inter.channel, "\n".join(lines))
         await inter.edit_original_response("Tasks listed above.")
@@ -108,6 +112,7 @@ class AutoSchedule(commands.Cog):
         break_duration_min: int = None,
         min_chunk_duration_min: int = None,
         deadline: str = None,
+        depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -120,6 +125,9 @@ class AutoSchedule(commands.Cog):
                 break_duration_min=break_duration_min,
                 min_chunk_duration_min=min_chunk_duration_min,
                 deadline=deadline,
+                depends_on=depends_on,
+                user_id=inter.author.id,
+                self_id=task_id,
             )
 
             success = provider.edit_task(inter.author.id, task_id, **updates)
@@ -240,6 +248,7 @@ class AutoSchedule(commands.Cog):
         duration_min: int,
         priority: int = getattr(settings, "schedule_default_priority", 1),
         weekdays: str = None,
+        depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -257,6 +266,8 @@ class AutoSchedule(commands.Cog):
                 time_str=time,
                 weekdays=wd_list,
                 priority=priority,
+                depends_on=depends_on,
+                user_id=inter.author.id,
             )
             provider.add_routine(inter.author.id, r)
             await inter.edit_original_response(f"Fixed routine '{name}' added successfully.")
@@ -272,6 +283,7 @@ class AutoSchedule(commands.Cog):
         duration_min: int,
         priority: int = getattr(settings, "schedule_default_priority", 1),
         weekdays: str = None,
+        depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -289,6 +301,8 @@ class AutoSchedule(commands.Cog):
                 deadline_time_str=deadline_time,
                 weekdays=wd_list,
                 priority=priority,
+                depends_on=depends_on,
+                user_id=inter.author.id,
             )
             provider.add_routine(inter.author.id, r)
             await inter.edit_original_response(f"Flexible routine '{name}' added successfully.")
@@ -314,26 +328,28 @@ class AutoSchedule(commands.Cog):
             rep = r.repeat
             if rep == 'weekly' and r.weekdays:
                 rep = f"weekly on {r.weekdays}"
+                
+            deps = f" (Depends on: {', '.join(map(str, r.depends_on))})" if getattr(r, 'depends_on', None) else ""
             
-            lines.append(f"`[{i + 1}]` **{r.name}** ({r.type}, {rep}, {dur}m){t_str}")
+            lines.append(f"`[ID: {r.id}]` **{r.name}** ({r.type}, {rep}, {dur}m){t_str}{deps}")
             
         await utils.send_long_message(inter.channel, "\n".join(lines))
         await inter.edit_original_response("Routines listed above.")
 
-    @routine.sub_command(name="remove", description="Remove a routine by index")
-    async def routine_remove(self, inter: disnake.ApplicationCommandInteraction, index: int):
+    @routine.sub_command(name="remove", description="Remove a routine by ID")
+    async def routine_remove(self, inter: disnake.ApplicationCommandInteraction, routine_id: int):
         await inter.response.defer(ephemeral=True)
-        removed = provider.remove_routine(inter.author.id, index - 1)
+        removed = provider.remove_routine(inter.author.id, routine_id)
         if removed:
-            await inter.edit_original_response(f"Routine {index} removed successfully.")
+            await inter.edit_original_response(f"Routine {routine_id} removed successfully.")
         else:
-            await inter.edit_original_response(f"Routine {index} not found.")
+            await inter.edit_original_response(f"Routine {routine_id} not found.")
 
     @routine.sub_command(name="edit", description="Edit specific fields of an existing routine")
     async def routine_edit(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        index: int,
+        routine_id: int,
         name: str = None,
         routine_type: str = commands.Param(default=None, choices=["fixed", "flexible"]),
         repeat: str = commands.Param(default=None, choices=["daily", "weekly"]),
@@ -342,6 +358,7 @@ class AutoSchedule(commands.Cog):
         deadline_time: str = None,
         weekdays: str = None,
         priority: int = None,
+        depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -358,13 +375,16 @@ class AutoSchedule(commands.Cog):
                 deadline_time_str=deadline_time,
                 weekdays=wd_list,
                 priority=priority,
+                depends_on=depends_on,
+                user_id=inter.author.id,
+                self_id=routine_id,
             )
 
-            success = provider.edit_routine(inter.author.id, index - 1, **updates)
+            success = provider.edit_routine(inter.author.id, routine_id, **updates)
             if success:
-                await inter.edit_original_response(f"Routine {index} updated successfully.")
+                await inter.edit_original_response(f"Routine {routine_id} updated successfully.")
             else:
-                await inter.edit_original_response(f"Routine {index} not found.")
+                await inter.edit_original_response(f"Routine {routine_id} not found.")
         except ScheduleValidationError as e:
             await inter.edit_original_response(str(e))
         except Exception as e:

@@ -190,6 +190,7 @@ class ScheduleAgentTools:
         break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
         min_chunk_duration_min: int | None = None,
         deadline: str | None = None,
+        depends_on: str | None = None,
     ) -> str:
         """
         Adds a new task to the user's schedule.
@@ -202,6 +203,7 @@ class ScheduleAgentTools:
             break_duration_min: Length of the break after a session in minutes. Default 15.
             min_chunk_duration_min: Minimum allowed shortened session in minutes. Set to 0 if not allowed.
             deadline: Deadline string in format 'DD.MM.YYYY HH:MM'. Empty string if no deadline.
+            depends_on: Optional. Comma-separated list of IDs of tasks or routines this task depends on (e.g., '1, 3').
         """
         try:
             new_task = validate_task_creation_data(
@@ -213,6 +215,8 @@ class ScheduleAgentTools:
                 break_duration_min=break_duration_min,
                 min_chunk_duration_min=min_chunk_duration_min,
                 deadline=deadline,
+                depends_on=depends_on,
+                user_id=self.user_id,
             )
         except ScheduleValidationError as e:
             raise ValueError(str(e))
@@ -245,6 +249,7 @@ class ScheduleAgentTools:
         break_duration_min: int | None = None,
         min_chunk_duration_min: int | None = None,
         deadline: str | None = None,
+        depends_on: str | None = None,
     ) -> str:
         """
         Edits specific fields of an existing task.
@@ -259,6 +264,7 @@ class ScheduleAgentTools:
             break_duration_min: New break duration.
             min_chunk_duration_min: New min session duration (0 to remove).
             deadline: New deadline 'DD.MM.YYYY HH:MM' ('none' to remove).
+            depends_on: New dependencies (comma-separated list of IDs, or 'none' to remove).
         """
         try:
             updates = validate_task_update_data(
@@ -270,6 +276,9 @@ class ScheduleAgentTools:
                 break_duration_min=break_duration_min,
                 min_chunk_duration_min=min_chunk_duration_min,
                 deadline=deadline,
+                depends_on=depends_on,
+                user_id=self.user_id,
+                self_id=task_id,
             )
         except ScheduleValidationError as e:
             raise ValueError(str(e))
@@ -309,6 +318,7 @@ class ScheduleAgentTools:
         weekdays: list[int] | None = None,
         priority: int = getattr(settings, "schedule_default_priority", 1),
         break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
+        depends_on: str | None = None,
     ) -> str:
         """
         Adds a new routine.
@@ -322,6 +332,7 @@ class ScheduleAgentTools:
             weekdays: Required if repeat='weekly'. List of integers (0=Mon, 6=Sun).
             priority: Priority (0 to 10). 0 means floating, 1-10 sorts by importance.
             break_duration_min: Break duration after the routine.
+            depends_on: Optional. Comma-separated list of IDs of tasks or routines this routine depends on (e.g., '1, 3').
         """
         try:
             new_routine = validate_routine_creation_data(
@@ -334,6 +345,8 @@ class ScheduleAgentTools:
                 weekdays=weekdays,
                 priority=priority,
                 break_duration_min=break_duration_min,
+                depends_on=depends_on,
+                user_id=self.user_id,
             )
         except ScheduleValidationError as e:
             raise ValueError(str(e))
@@ -367,19 +380,21 @@ class ScheduleAgentTools:
         return "\n".join(lines)
 
     @log_tool(modifies_schedule=False)
-    def get_routine_info(self, index: int) -> str:
+    def get_routine_info(self, routine_id: int) -> str:
         """
         Returns detailed information about a specific routine, including its exact time or deadline, repeat type, duration, and priority.
         Args:
-            index: The 1-based index of the routine (use list_routines first to find it).
+            routine_id: The ID of the routine (use list_routines first to find it).
         """
         routines = self.provider.list_routines(self.user_id)
-        if index < 1 or index > len(routines):
-            return f"Routine {index} not found."
+        
+        # Find routine by ID
+        r = next((r for r in routines if r.id == routine_id), None)
+        if not r:
+            return f"Routine {routine_id} not found."
             
-        r = routines[index - 1]
         lines = [
-            f"Index: {index}",
+            f"ID: {r.id}",
             f"Name: {r.name}",
             f"Type: {r.type}",
             f"Repeat: {r.repeat}",
@@ -399,22 +414,22 @@ class ScheduleAgentTools:
         return "\n".join(lines)
 
     @log_tool(modifies_schedule=True)
-    def remove_routine(self, index: int) -> str:
+    def remove_routine(self, routine_id: int) -> str:
         """
-        Removes a routine by its index (1-based as listed in list_routines).
+        Removes a routine by its ID.
         Args:
-            index: The 1-based index of the routine.
+            routine_id: The ID of the routine.
         """
-        removed = self.provider.remove_routine(self.user_id, index - 1)
+        removed = self.provider.remove_routine(self.user_id, routine_id)
         if removed:
-            return f"Routine {index} removed successfully."
+            return f"Routine {routine_id} removed successfully."
         else:
-            raise ValueError(f"Routine {index} not found.")
+            raise ValueError(f"Routine {routine_id} not found.")
 
     @log_tool(modifies_schedule=True)
     def edit_routine(
         self,
-        index: int,
+        routine_id: int,
         name: str | None = None,
         routine_type: str | None = None,
         repeat: str | None = None,
@@ -424,12 +439,13 @@ class ScheduleAgentTools:
         weekdays: list[int] | None = None,
         priority: int | None = None,
         break_duration_min: int | None = None,
+        depends_on: str | None = None,
     ) -> str:
         """
         Edits specific fields of an existing routine.
         Only provide the fields you want to change; omit any parameter you want to keep unchanged.
         Args:
-            index: The 1-based index of the routine.
+            routine_id: The ID of the routine.
             name: New name.
             routine_type: 'fixed' or 'flexible'.
             repeat: 'daily' or 'weekly'.
@@ -439,6 +455,7 @@ class ScheduleAgentTools:
             weekdays: New list of weekdays (0=Mon, 6=Sun).
             priority: New priority (0 to 10). 0 means floating, 1-10 sorts by importance.
             break_duration_min: New break duration.
+            depends_on: New dependencies (comma-separated list of IDs, or 'none' to remove).
         """
         try:
             updates = validate_routine_update_data(
@@ -451,13 +468,16 @@ class ScheduleAgentTools:
                 weekdays=weekdays,
                 priority=priority,
                 break_duration_min=break_duration_min,
+                depends_on=depends_on,
+                user_id=self.user_id,
+                self_id=routine_id,
             )
         except ScheduleValidationError as e:
             raise ValueError(str(e))
-
-        success = self.provider.edit_routine(self.user_id, index - 1, **updates)
+        
+        success = self.provider.edit_routine(self.user_id, routine_id, **updates)
         if success:
-            return f"Routine {index} updated successfully."
+            return f"Routine {routine_id} updated successfully."
         else:
-            raise ValueError(f"Routine {index} not found.")
+            raise ValueError(f"Routine {routine_id} not found.")
 

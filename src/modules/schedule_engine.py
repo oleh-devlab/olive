@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import datetime
 import time
 
@@ -44,8 +45,28 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
 
     items = []
     skipped_ids = []
+    skipped_routines = []
     if result.is_successful:
         skipped_ids = [st.task.id for st in getattr(result, "skipped_tasks", [])]
+        # Group skipped routines by original ID or name
+        grouped_routines = collections.defaultdict(list)
+        for sr in getattr(result, "skipped_routines", []):
+            t = sr.task
+            # Extract routine ID from `t.id` if it starts with 'r_', else fallback to stripping date from name
+            r_id = str(t.id).split('_')[1] if t.id and str(t.id).startswith('r_') else t.name.rsplit(' (', 1)[0]
+            
+            if t.deadline:
+                grouped_routines[r_id].append(t.deadline.strftime('%d.%m %H:%M'))
+            else:
+                grouped_routines[r_id].append("no deadline")
+                
+        threshold = getattr(settings, "schedule_skipped_routine_collapse_threshold", 3)
+        for r_id, deadlines in grouped_routines.items():
+            if len(deadlines) > threshold:
+                skipped_routines.append(f"{r_id} (missed {len(deadlines)} times)")
+            else:
+                skipped_routines.append(f"{r_id}: {', '.join(deadlines)}")
+                
         # We can map routines here in the future if we need them as ScheduleItems
         for st in result.scheduled_tasks:
             if st.chunks:
@@ -89,14 +110,14 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
             )    # Sort the items sequentially so they appear in order
     items.sort(key=lambda x: x.dt_start)
 
-    return items, solve_time, planning_days, skipped_ids, result.status
+    return items, solve_time, planning_days, skipped_ids, skipped_routines, result.status
 
 
-async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], str]:
+async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], list[str], str]:
     """
     Main entry point for the schedule engine.
     Fetches the schedule using the current active algorithm.
     Runs the CPU-intensive solve operation in a background thread.
-    Returns: (items, solve_time_seconds, planning_days, skipped_ids)
+    Returns: (items, solve_time_seconds, planning_days, skipped_ids, skipped_routines, status_text)
     """
     return await asyncio.to_thread(_solve_sync, client_ID)
