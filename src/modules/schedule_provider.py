@@ -250,12 +250,10 @@ class ScheduleProvider:
     def _validate_task(self, task: Task):
         if task.duration <= datetime.timedelta(minutes=0):
             raise ValueError("duration must be > 0.")
-        if task.max_chunk_duration is not None and task.max_chunk_duration > task.duration:
-            raise ValueError("max_chunk_duration must be <= duration.")
         if task.break_duration < datetime.timedelta(minutes=0):
             raise ValueError("break_duration must be >= 0.")
-        if task.priority < 1:
-            raise ValueError("priority must be >= 1.")
+        if task.priority < 0:
+            raise ValueError("priority must be >= 0.")
 
         if task.min_chunk_duration is not None and task.max_chunk_duration is not None:
             if task.min_chunk_duration <= datetime.timedelta(minutes=0) or task.min_chunk_duration > task.max_chunk_duration:

@@ -304,6 +304,17 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
+    @routine.sub_command(name="info", description="View detailed information about a routine")
+    async def routine_info(self, inter: disnake.ApplicationCommandInteraction, routine_id: int):
+        await inter.response.defer(ephemeral=True)
+        routine = provider.get_routine(inter.author.id, routine_id)
+        if not routine:
+            await inter.edit_original_response(f"Routine {routine_id} not found.")
+            return
+
+        formatted = schd_item_formatters.format_routine_info(routine, use_markdown=True)
+        await inter.edit_original_response(formatted)
+
     @routine.sub_command(name="list", description="List all routines")
     async def routine_list(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
