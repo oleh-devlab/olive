@@ -26,6 +26,14 @@ class ScheduleItem:
     @property
     def is_task(self) -> bool:
         return self.item_type in ("task", "fixed_routine", "flexible_routine")
+
+    @property
+    def tag(self) -> str:
+        if self.item_type == "fixed_routine":
+            return "[Fxd Rt.] "
+        elif self.item_type == "flexible_routine":
+            return "[Flb Rt.] "
+        return ""
         
     task_name: str
     dt_start: datetime.datetime
