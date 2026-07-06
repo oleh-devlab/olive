@@ -73,7 +73,7 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                 for i, chunk in enumerate(st.chunks):
                     items.append(
                         ScheduleItem(
-                            is_task=True,
+                            item_type="task",
                             task_name=st.task.name,
                             dt_start=chunk.start_time,
                             dt_end=chunk.end_time,
@@ -85,7 +85,7 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
             else:
                 items.append(
                     ScheduleItem(
-                        is_task=True,
+                        item_type="task",
                         task_name=st.task.name,
                         dt_start=st.start_time,
                         dt_end=st.end_time,
@@ -96,16 +96,16 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                 )
 
         for sr in result.scheduled_routines:
-            r_note = "Fixed" if getattr(sr, "routine_type", "") == "fixed" else "Flexible"
+            itype = "fixed_routine" if getattr(sr, "routine_type", "") == "fixed" else "flexible_routine"
             items.append(
                 ScheduleItem(
-                    is_task=True,
-                    task_name=f"[Routine] {sr.task.name}",
+                    item_type=itype,
+                    task_name=sr.task.name,
                     dt_start=sr.start_time,
                     dt_end=sr.end_time,
                     session_index="1",
                     total_sessions=1,
-                    algo_notes=r_note,
+                    algo_notes="",
                 )
             )    # Sort the items sequentially so they appear in order
     items.sort(key=lambda x: x.dt_start)

@@ -9,7 +9,13 @@ def _format_block(item: ScheduleItem) -> str:
     lines = []
 
     if item.is_task:
-        header = f"  > {item.task_name}"
+        tag = ""
+        if item.item_type == "fixed_routine":
+            tag = "[Fxd Rt.] "
+        elif item.item_type == "flexible_routine":
+            tag = "[Flb Rt.] "
+            
+        header = f"  > {tag}{item.task_name}"
         lines.append(header)
 
         time_str = (
@@ -18,6 +24,9 @@ def _format_block(item: ScheduleItem) -> str:
         if item.total_sessions > 1:
             time_str += f"  [s. {item.session_index}/{item.total_sessions}]"
         lines.append(time_str)
+        
+        if item.algo_notes:
+            lines.append(f"    !!! {item.algo_notes}")
     else:
         note = item.algo_notes if item.algo_notes else "Break"
         lines.append(f"  - {note}")
@@ -25,9 +34,6 @@ def _format_block(item: ScheduleItem) -> str:
             lines.append(
                 f"    {item.dt_start.strftime('%H:%M')} -> {item.dt_end.strftime('%H:%M')}  ({item.duration_min} min)"
             )
-
-    if item.algo_notes and item.is_task:
-        lines.append(f"    !!! {item.algo_notes}")
 
     return "\n".join(lines)
 

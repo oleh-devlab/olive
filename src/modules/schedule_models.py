@@ -21,7 +21,12 @@ Routine = BaseRoutine
 
 @dataclass
 class ScheduleItem:
-    is_task: bool
+    item_type: str  # "task", "fixed_routine", "flexible_routine"
+    
+    @property
+    def is_task(self) -> bool:
+        return self.item_type in ("task", "fixed_routine", "flexible_routine")
+        
     task_name: str
     dt_start: datetime.datetime
     dt_end: datetime.datetime
