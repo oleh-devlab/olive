@@ -181,12 +181,16 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         system_instruction=system_instruction,
         max_output_tokens=1500,
         tools=agent_tools,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
     )
 
     max_iterations = 7
     iteration = 0
 
     async with message.channel.typing():
+        # I knew even as I was writing it that this loop wasn't working;
+        # I just hadn't gotten around to rewriting it and passing the responsibility to the SDK yet.
+        # "If it's working, don't touch it."
         while iteration < max_iterations:
             iteration += 1
 
