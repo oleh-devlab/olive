@@ -4,7 +4,7 @@ import disnake
 from google.genai import types
 
 import core.cache as cache
-from core.utils import get_phrases
+from core.utils import get_phrases, send_long_message
 from modules.llm_context_manager import LLMContextManager
 from modules.schedule_agent_tools import ScheduleAgentTools
 from modules.schedule_provider import ScheduleProvider
@@ -179,7 +179,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
 
     reply_config = types.GenerateContentConfig(
         system_instruction=system_instruction,
-        max_output_tokens=1500,
+        max_output_tokens=2500,
         tools=agent_tools,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
     )
@@ -250,7 +250,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     post_run_data = provider.create_backup(user_id)
                     kwargs["view"] = UndoScheduleView(bot, user_id, backup_data, post_run_data)
 
-                await message.reply(text_response, **kwargs)
+                await send_long_message(message, text_response, **kwargs)
                 break
 
             # Model made function calls. We must append them as pure dicts to survive json.dump
