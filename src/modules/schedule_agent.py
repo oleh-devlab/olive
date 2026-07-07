@@ -250,7 +250,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     post_run_data = provider.create_backup(user_id)
                     kwargs["view"] = UndoScheduleView(bot, user_id, backup_data, post_run_data)
 
-                await send_long_message(message, text_response, **kwargs)
+                await send_long_message(message.channel, text_response, **kwargs)
                 break
 
             # Model made function calls. We must append them as pure dicts to survive json.dump
