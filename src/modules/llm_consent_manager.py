@@ -1,5 +1,4 @@
 import logging
-import os
 
 import core.database
 
@@ -24,7 +23,7 @@ class LLMConsentManager:
             rows = db.execute("SELECT discord_id, has_consented_llm FROM users")
             logger.info("LLM consent data loaded.")
         except Exception as e:
-            logger.error("Failed to load LLM consent data from")
+            logger.error(f"Failed to load LLM consent data: {e}")
             rows = []
         finally:
             for row in rows:

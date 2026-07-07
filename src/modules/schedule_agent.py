@@ -245,7 +245,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     iters_str = f" ({iteration} iteration{'s' if iteration != 1 else ''})"
                     text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(f"- {t}" for t in unique_tools)
 
-                kwargs = {"fail_if_not_exists": False, "mention_author": False}
+                kwargs = {}
                 if tools_instance.schedule_modified:
                     post_run_data = provider.create_backup(user_id)
                     kwargs["view"] = UndoScheduleView(bot, user_id, backup_data, post_run_data)
