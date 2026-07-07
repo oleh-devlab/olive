@@ -32,7 +32,7 @@ async def _handle_consent(interaction: disnake.MessageInteraction, consent: bool
         await interaction.response.send_message("Consent system is currently unavailable.", ephemeral=True)
         return
 
-    await cache.llm_consent.set_consent(interaction.author.id, consent)
+    cache.llm_consent.set_consent(interaction.author.id, consent)
     logger.info("User %s (%s) set LLM data consent to %s", interaction.author.name, interaction.author.id, consent)
 
     embed = _build_consent_embed(consent)
