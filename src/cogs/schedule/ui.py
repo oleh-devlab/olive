@@ -57,15 +57,11 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
             for day in schedule_days:
                 header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
                 blocks = day["blocks"]
-
-                # UX: We want the tasks inside the day reversed (bottom to top chronological)
-                blocks_reversed = list(reversed(blocks))
-
                 day_pages = []
                 current_page_blocks = []
                 current_len = len(header)
 
-                for block in blocks_reversed:
+                for block in blocks:
                     block_len = len(block)
                     if current_len + block_len + (1 if current_len > len(header) else 0) > 1500 and current_page_blocks:
                         day_pages.append(header + "\n".join(current_page_blocks))
