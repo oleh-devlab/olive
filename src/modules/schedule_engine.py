@@ -23,7 +23,7 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
     priority_threshold = provider.get_priority_threshold(client_ID)
     compute_timeout = provider.get_compute_timeout(client_ID)
     step_minutes = provider.get_step_minutes(client_ID)
-    scheduler = Scheduler(max_horizon_days=planning_days, priority_threshold=priority_threshold, step_minutes=step_minutes)
+    scheduler = Scheduler(min_horizon_days=planning_days, priority_threshold=priority_threshold, step_minutes=step_minutes)
     for t in tasks:
         scheduler.add_task(t)
     for b in time_blocks:
