@@ -7,7 +7,6 @@ import logging
 from modules.llm_client import LLMClient
 from modules.llm_rate_limiter import RateLimitExceeded
 from modules.llm_context_manager import LLMContextManager
-from modules.llm_consent_manager import LLMConsentManager
 from modules.llm_message_formatter import format_user_message
 from modules.llm_response_gate import want_respond
 from modules.schedule_agent import load_schedule_context, run_schedule_agent
@@ -36,9 +35,6 @@ class AIAssistantCog(commands.Cog):
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
             cache.llm_client = None
-
-        cache.llm_consent = LLMConsentManager()
-        await cache.llm_consent.load_from_file()
 
     def cog_unload(self):
         if cache.llm_client:

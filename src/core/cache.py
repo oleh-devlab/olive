@@ -1,3 +1,5 @@
+from modules.llm_consent_manager import LLMConsentManager
+
 embeds_to_send = {
     "server_load": None,
     "currency": None,
@@ -11,7 +13,7 @@ embeds_to_send = {
 configLock = None
 
 llm_client = None
-llm_consent = None
+llm_consent = LLMConsentManager()
 
 active_cogs_list = {}
 

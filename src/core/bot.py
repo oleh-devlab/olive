@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import core.cache
+import core.database
 import settings
 
 
@@ -51,3 +52,8 @@ class OliveBot(commands.Bot):
             channel = await self.fetch_channel(channel_id)
 
         return channel
+
+    async def close(self):
+        core.database.db.close()
+        
+        await super().close()

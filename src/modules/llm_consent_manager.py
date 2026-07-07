@@ -1,8 +1,10 @@
-import json
 import logging
 import os
 
+import core.database
+
 logger = logging.getLogger(__name__)
+db = core.database.db
 
 
 class LLMConsentManager:
@@ -16,43 +18,35 @@ class LLMConsentManager:
         self.file_name = file_name
         self._consents: dict[str, bool] = {}
 
-    async def load_from_file(self):
+        self.load_from_db()
+
+    def load_from_db(self):
         try:
-            with open(self.file_name, "r", encoding="utf-8") as f:
-                self._consents = json.load(f)
+            rows = db.execute("SELECT discord_id, has_consented FROM users")
             logger.info("LLM consent data loaded from %s", self.file_name)
-        except FileNotFoundError:
-            logger.info("Consent file not found. Starting with empty consents.")
-            self._consents = {}
-        except json.JSONDecodeError:
-            logger.error("Consent file is invalid JSON. Starting with empty consents.")
-            self._consents = {}
         except Exception as e:
-            logger.error("Error loading consent file: %s", e)
-            self._consents = {}
+            logger.error("Failed to load LLM consent data from %s: %s", self.file_name, e)
+            rows = []
+        finally:
+            for row in rows:
+                self._consents[str(row["discord_id"])] = bool(row["has_consented"])
 
-    async def _save_to_file(self):
-        dir_name = os.path.dirname(self.file_name)
-        if dir_name and not os.path.exists(dir_name):
-            os.makedirs(dir_name, exist_ok=True)
-
-        temp_path = self.file_name + ".tmp"
-        try:
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(self._consents, f, indent=2)
-            os.replace(temp_path, self.file_name)
-        except Exception as e:
-            logger.error("Error saving consent file: %s", e)
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
+    def _save_to_db(self):
+        db.executemany(
+            """
+        INSERT INTO users (discord_id, has_consented) 
+        VALUES (?, ?)
+        ON CONFLICT(discord_id) DO UPDATE SET 
+            has_consented = excluded.has_consented;
+        """,
+            [(user_id, consent) for user_id, consent in self._consents.items()],
+        )
 
     def has_consent(self, user_id: int) -> bool:
         """Check if a user has given consent. Missing users are treated as no consent."""
         return self._consents.get(str(user_id), False)
 
-    async def set_consent(self, user_id: int, consent: bool):
+    def set_consent(self, user_id: int, consent: bool):
         """Set consent status for a user and persist to disk."""
         self._consents[str(user_id)] = consent
-        await self._save_to_file()
+        self._save_to_db()
