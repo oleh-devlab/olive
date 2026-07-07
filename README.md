@@ -75,8 +75,14 @@ pip install -r requirements.txt
 8. *(Optional)* Fill in `phrases.json`.
     - Comprehensive documentation for `phrases.json` is currently unavailable, so you will need to check the source code to fill in the parts you want to change. However, you can review the multi-server format documentation: [English](/docs/EN/walkthroughs/multi-server-phrases.md) | [Ukrainian](/docs/UK/walkthroughs/multi-server-phrases.md).
 
-9. Run the bot (it is recommended to run this from the `src` directory, or the one containing `main.py`):
+9. Initialize the SQLite database. This creates the necessary tables for the bot to run:
 ```bash
 cd src
+python scripts/init_database.py
+```
+
+10. Run the bot:
+```bash
+# Assuming you are already in the `src` directory
 python main.py
 ```

@@ -1,9 +1,14 @@
-import core.database
+import sys
+from pathlib import Path
+import sqlite3
+import logging
+
+src_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(src_root))
+
+import core.database  # noqa: E402
 
 db = core.database.db
-import sqlite3
-
-import logging
 
 logger = logging.getLogger(__name__)
 

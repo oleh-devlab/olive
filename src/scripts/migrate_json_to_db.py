@@ -4,7 +4,12 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from src.core.database import db
+src_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(src_root))
+
+project_root = src_root.parent
+
+from core.database import db  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("migration")
