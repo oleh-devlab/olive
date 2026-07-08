@@ -279,6 +279,9 @@ class ScheduleProvider:
         data["tasks"] = [t for t in data["tasks"] if t.get("id") != task_id]
         
         if len(data["tasks"]) != initial_len:
+            for t in data["tasks"]:
+                if "depends_on" in t:
+                    t["depends_on"] = [dep for dep in t["depends_on"] if dep != task_id]
             self._save_data(user_id, data)
             return True
         return False
@@ -319,6 +322,10 @@ class ScheduleProvider:
             data["tasks"].pop(target_idx)
             is_completed = True
             remaining = 0
+            
+            for t in data["tasks"]:
+                if "depends_on" in t:
+                    t["depends_on"] = [dep for dep in t["depends_on"] if dep != task_id]
         else:
             task_dict["duration"] = new_dur_min
             is_completed = False
@@ -390,6 +397,9 @@ class ScheduleProvider:
         for i, r in enumerate(routines):
             if r.get("id") == routine_id:
                 routines.pop(i)
+                for other_r in routines:
+                    if "depends_on" in other_r:
+                        other_r["depends_on"] = [dep for dep in other_r["depends_on"] if dep != routine_id]
                 self._save_data(user_id, data)
                 return True
                 
