@@ -5,13 +5,15 @@ Operational Liaison for Intelligent Virtual Engagement
 
 ---
 
-OLIVE is a modular hub designed to integrate disparate microservices into a single, managed ecosystem, utilizing Discord as its primary control interface.
+OLIVE is a modular hub designed to integrate various modules and services into a single, managed ecosystem, utilizing Discord as its primary control interface.
 
-We didn't build the Discord bot from scratch; instead, we based it on the Flores project, which was previously used as a test and learning project. The source code for the Flores bot is not publicly available (it has been lost), but OLIVE is its successor.
+We didn't build the Discord bot from scratch; instead, we based it on the Flores project, which was previously used as a test and learning project. There is no history of the Flores bot's source code, but OLIVE is its successor.
+
+Beyond its practical features, OLIVE serves as a hands-on learning environment. It is actively used to explore, practice, and reinforce software development concepts such as Object-Oriented Programming (OOP), database management, and modern architectural patterns. As such, while we strive for functionality, some features might be experimental or implemented primarily for educational purposes.
 
 ---
 
-*Status:* We are currently refactoring the old version of the code. Product descriptions may not reflect reality.
+*Status:* We're fixing old features, writing new ones, and reworking the architecture.
 
 ---
 
@@ -50,6 +52,7 @@ We didn't build the Discord bot from scratch; instead, we based it on the Flores
 ```bash
 git clone https://github.com/oleh-devlab/olive.git
 cd olive
+git submodule update --init --recursive
 ```
 2. Create a Python virtual environment and activate it:
 ```bash

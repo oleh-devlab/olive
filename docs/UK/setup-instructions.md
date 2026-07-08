@@ -3,6 +3,7 @@
    ```bash
    git clone https://github.com/oleh-devlab/olive.git
    cd olive
+   git submodule update --init --recursive
    ```
 2. Створити віртуальне середовище Python та активувати його:
     ```bash
