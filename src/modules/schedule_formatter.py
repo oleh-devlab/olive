@@ -53,8 +53,11 @@ def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem]
 
     return blocks
 
+
 async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, int, list[int], list[str], str]:
-    items, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await get_raw_schedule_items(client_ID)
+    items, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await get_raw_schedule_items(
+        client_ID
+    )
     if not items:
         return [], solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text
 
@@ -78,12 +81,21 @@ async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, 
             "blocks": _format_day_blocks(data["items"], data["spillovers"]),
         }
 
-    return sorted(days_dict.values(), key=lambda x: x["date_obj"]), solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text
+    return (
+        sorted(days_dict.values(), key=lambda x: x["date_obj"]),
+        solve_time,
+        planning_days,
+        skipped_tasks_ids,
+        skipped_routines,
+        status_text,
+    )
 
 
 async def get_schedule(client_ID: int) -> str:
     """Returns a full formatted schedule string for the agent."""
-    days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await _get_parsed_schedule_days(client_ID)
+    days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await _get_parsed_schedule_days(
+        client_ID
+    )
     if not days:
         return "You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items.\n"
 
@@ -98,16 +110,16 @@ async def get_schedule(client_ID: int) -> str:
 
 def invert_schedule_blocks(blocks: list[str]) -> list[str]:
     """Inverts the chronological order of blocks and lines for a bottom-up view."""
-    return [
-        "\n".join(reversed(block.split("\n")))
-        for block in reversed(blocks)
-    ]
+    return ["\n".join(reversed(block.split("\n"))) for block in reversed(blocks)]
+
 
 async def get_schedule_by_day(client_ID: int) -> tuple[list[dict], float, int, list[int], list[str], str]:
     """Returns structured schedule data and metadata for the UI paginator (bottom-up view)."""
-    days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await _get_parsed_schedule_days(client_ID)
-    
+    days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await _get_parsed_schedule_days(
+        client_ID
+    )
+
     for day in days:
         day["blocks"] = invert_schedule_blocks(day["blocks"])
-        
+
     return days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text

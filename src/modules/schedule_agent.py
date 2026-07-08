@@ -181,7 +181,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         system_instruction=system_instruction,
         max_output_tokens=2500,
         tools=agent_tools,
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
     max_iterations = 7
@@ -241,7 +241,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     for t in tools_instance.used_tools:
                         if t not in unique_tools:
                             unique_tools.append(t)
-                    
+
                     iters_str = f" ({iteration} iteration{'s' if iteration != 1 else ''})"
                     text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(f"- {t}" for t in unique_tools)
 
@@ -284,9 +284,16 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
 
                         result = {"result": res}
                         if func_name in [
-                            "add_task", "remove_task", "edit_task", "spend_task_time",
-                            "add_routine", "remove_routine", "edit_routine", "skip_routine",
-                            "add_time_block", "remove_time_block"
+                            "add_task",
+                            "remove_task",
+                            "edit_task",
+                            "spend_task_time",
+                            "add_routine",
+                            "remove_routine",
+                            "edit_routine",
+                            "skip_routine",
+                            "add_time_block",
+                            "remove_time_block",
                         ]:
                             schedule_modified = True
 

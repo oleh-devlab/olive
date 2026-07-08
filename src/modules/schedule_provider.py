@@ -136,8 +136,16 @@ def _routine_to_dict(routine: Routine) -> dict:
         "type": routine.type,
         "repeat": routine.repeat,
         "duration": _serialize_timedelta(routine.duration),
-        "time": _serialize_time(routine.time) if isinstance(routine.time, datetime.time) else _serialize_datetime(routine.time),
-        "deadline_time": _serialize_time(routine.deadline_time) if isinstance(routine.deadline_time, datetime.time) else _serialize_datetime(routine.deadline_time),
+        "time": (
+            _serialize_time(routine.time)
+            if isinstance(routine.time, datetime.time)
+            else _serialize_datetime(routine.time)
+        ),
+        "deadline_time": (
+            _serialize_time(routine.deadline_time)
+            if isinstance(routine.deadline_time, datetime.time)
+            else _serialize_datetime(routine.deadline_time)
+        ),
         "weekdays": routine.weekdays,
         "priority": routine.priority,
         "break_duration": _serialize_timedelta(routine.break_duration),
@@ -225,7 +233,14 @@ class ScheduleProvider:
         data = self.load_channels()
         return data.get(str(user_id), {}).get("step_minutes", 1)
 
-    def update_schedule_settings(self, user_id: int, planning_days: int | None = None, priority_threshold: int | None = None, compute_timeout: float | None = None, step_minutes: int | None = None) -> bool:
+    def update_schedule_settings(
+        self,
+        user_id: int,
+        planning_days: int | None = None,
+        priority_threshold: int | None = None,
+        compute_timeout: float | None = None,
+        step_minutes: int | None = None,
+    ) -> bool:
         data = self.load_channels()
         user_id_str = str(user_id)
         if user_id_str not in data:
@@ -256,13 +271,16 @@ class ScheduleProvider:
             raise ValueError("priority must be >= 0.")
 
         if task.min_chunk_duration is not None and task.max_chunk_duration is not None:
-            if task.min_chunk_duration <= datetime.timedelta(minutes=0) or task.min_chunk_duration > task.max_chunk_duration:
+            if (
+                task.min_chunk_duration <= datetime.timedelta(minutes=0)
+                or task.min_chunk_duration > task.max_chunk_duration
+            ):
                 raise ValueError("min_chunk_duration must be > 0 and <= max_chunk_duration.")
 
     def add_task(self, user_id: int, task: Task) -> int:
         self._validate_task(task)
         data = self._load_data(user_id)
-        
+
         max_id = 0
         for t in data["tasks"] + data["completed_tasks"]:
             if t.get("id", 0) > max_id:
@@ -277,7 +295,7 @@ class ScheduleProvider:
         data = self._load_data(user_id)
         initial_len = len(data["tasks"])
         data["tasks"] = [t for t in data["tasks"] if t.get("id") != task_id]
-        
+
         if len(data["tasks"]) != initial_len:
             for t in data["tasks"]:
                 if "depends_on" in t:
@@ -322,7 +340,7 @@ class ScheduleProvider:
             data["tasks"].pop(target_idx)
             is_completed = True
             remaining = 0
-            
+
             for t in data["tasks"]:
                 if "depends_on" in t:
                     t["depends_on"] = [dep for dep in t["depends_on"] if dep != task_id]
@@ -375,14 +393,14 @@ class ScheduleProvider:
 
     def add_routine(self, user_id: int, routine: Routine):
         data = self._load_data(user_id)
-        
+
         new_id = 1
         if data.get("routines"):
             new_id = max(r.get("id", 0) for r in data["routines"]) + 1
-        
+
         routine_dict = _routine_to_dict(routine)
         routine_dict["id"] = new_id
-        
+
         data.setdefault("routines", []).append(routine_dict)
         self._save_data(user_id, data)
 
@@ -393,7 +411,7 @@ class ScheduleProvider:
     def remove_routine(self, user_id: int, routine_id: int) -> bool:
         data = self._load_data(user_id)
         routines = data.get("routines", [])
-        
+
         for i, r in enumerate(routines):
             if r.get("id") == routine_id:
                 routines.pop(i)
@@ -402,7 +420,7 @@ class ScheduleProvider:
                         other_r["depends_on"] = [dep for dep in other_r["depends_on"] if dep != routine_id]
                 self._save_data(user_id, data)
                 return True
-                
+
         return False
 
     def get_routine(self, user_id: int, routine_id: int) -> Optional[Routine]:
@@ -426,7 +444,7 @@ class ScheduleProvider:
             if r.get("id") == routine_id:
                 data["routines"][i] = _routine_to_dict(routine)
                 break
-                
+
         self._save_data(user_id, data)
         return True
 

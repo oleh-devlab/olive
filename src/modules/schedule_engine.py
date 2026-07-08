@@ -23,7 +23,9 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
     priority_threshold = provider.get_priority_threshold(client_ID)
     compute_timeout = provider.get_compute_timeout(client_ID)
     step_minutes = provider.get_step_minutes(client_ID)
-    scheduler = Scheduler(min_horizon_days=planning_days, priority_threshold=priority_threshold, step_minutes=step_minutes)
+    scheduler = Scheduler(
+        min_horizon_days=planning_days, priority_threshold=priority_threshold, step_minutes=step_minutes
+    )
     for t in tasks:
         scheduler.add_task(t)
     for b in time_blocks:
@@ -35,13 +37,15 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
     now_tz = datetime.datetime.now(tz).replace(second=0, microsecond=0)
 
     workers = getattr(settings, "schedule_compute_workers", 1)
-    
+
     start_perf = time.perf_counter()
     result = scheduler.solve(start_time=now_tz, timeout_seconds=compute_timeout, num_search_workers=workers)
     solve_time = time.perf_counter() - start_perf
 
     if result.status == "UNKNOWN":
-        raise TimeoutError(f"CP-SAT solver timed out after {solve_time:.2f}s. Perhaps the planning horizon ({planning_days} days) is too long, or you've set a deadline that's too far in the future.")
+        raise TimeoutError(
+            f"CP-SAT solver timed out after {solve_time:.2f}s. Perhaps the planning horizon ({planning_days} days) is too long, or you've set a deadline that's too far in the future."
+        )
 
     items = []
     skipped_ids = []
@@ -53,20 +57,20 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
         for sr in getattr(result, "skipped_routines", []):
             t = sr.task
             # Extract routine ID from `t.id` if it starts with 'r_', else fallback to stripping date from name
-            r_id = str(t.id).split('_')[1] if t.id and str(t.id).startswith('r_') else t.name.rsplit(' (', 1)[0]
-            
+            r_id = str(t.id).split("_")[1] if t.id and str(t.id).startswith("r_") else t.name.rsplit(" (", 1)[0]
+
             if t.deadline:
-                grouped_routines[r_id].append(t.deadline.strftime('%d.%m %H:%M'))
+                grouped_routines[r_id].append(t.deadline.strftime("%d.%m %H:%M"))
             else:
                 grouped_routines[r_id].append("no deadline")
-                
+
         threshold = getattr(settings, "schedule_skipped_routine_collapse_threshold", 3)
         for r_id, deadlines in grouped_routines.items():
             if len(deadlines) > threshold:
                 skipped_routines.append(f"{r_id} (missed {len(deadlines)} times)")
             else:
                 skipped_routines.append(f"{r_id}: {', '.join(deadlines)}")
-                
+
         # We can map routines here in the future if we need them as ScheduleItems
         for st in result.scheduled_tasks:
             if st.chunks:
@@ -107,7 +111,7 @@ def _solve_sync(client_ID: int) -> list[ScheduleItem]:
                     total_sessions=1,
                     algo_notes="",
                 )
-            )    # Sort the items sequentially so they appear in order
+            )  # Sort the items sequentially so they appear in order
     items.sort(key=lambda x: x.dt_start)
 
     return items, solve_time, planning_days, skipped_ids, skipped_routines, result.status

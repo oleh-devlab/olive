@@ -55,5 +55,5 @@ class OliveBot(commands.Bot):
 
     async def close(self):
         core.database.db.close()
-        
+
         await super().close()
