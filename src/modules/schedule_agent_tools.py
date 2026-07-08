@@ -6,43 +6,53 @@ from modules.schedule_provider import ScheduleProvider
 import modules.schedule_formatter as auto_timetable
 from modules.schedule_exceptions import ScheduleValidationError
 import modules.schd_item_formatters as schd_item_formatters
-from modules.schedule_validators import validate_task_creation_data, validate_task_update_data, validate_routine_creation_data, validate_routine_update_data
+from modules.schedule_validators import (
+    validate_task_creation_data,
+    validate_task_update_data,
+    validate_routine_creation_data,
+    validate_routine_update_data,
+)
 
 MAX_SCHEDULE_LINES = 60
+
 
 def log_tool(modifies_schedule=False):
     def decorator(func):
         is_async = inspect.iscoroutinefunction(func)
         sig = inspect.signature(func)
-        
+
         def _log_call(self_obj, args, kwargs):
             bound_args = sig.bind(self_obj, *args, **kwargs)
             bound_args.apply_defaults()
-            
+
             logged_kwargs = {}
             for k, v in bound_args.arguments.items():
                 if k == "self":
                     continue
                 if v != sig.parameters[k].default:
                     logged_kwargs[k] = v
-                    
+
             args_str = ", ".join(f"{k}={v!r}" for k, v in logged_kwargs.items())
             self_obj.used_tools.append(f"`{func.__name__}({args_str})`")
-            
+
             if modifies_schedule:
                 self_obj.schedule_modified = True
 
         if is_async:
+
             @functools.wraps(func)
             async def async_wrapper(self, *args, **kwargs):
                 _log_call(self, args, kwargs)
                 return await func(self, *args, **kwargs)
+
             return async_wrapper
         else:
+
             @functools.wraps(func)
             def sync_wrapper(self, *args, **kwargs):
                 _log_call(self, args, kwargs)
                 return func(self, *args, **kwargs)
+
             return sync_wrapper
 
     return decorator
@@ -113,12 +123,7 @@ class ScheduleAgentTools:
         return schd_item_formatters.format_timeblock_list(blocks, use_markdown=False)
 
     @log_tool(modifies_schedule=True)
-    def add_time_block(
-        self,
-        start_time_str: str,
-        end_time_str: str,
-        daily: bool = False
-    ) -> str:
+    def add_time_block(self, start_time_str: str, end_time_str: str, daily: bool = False) -> str:
         """
         Adds a strict time block (busy time) during which NO tasks can be scheduled.
         Args:
@@ -128,10 +133,11 @@ class ScheduleAgentTools:
         """
         try:
             from modules.schedule_validators import validate_timeblock_creation_data
+
             block = validate_timeblock_creation_data(start_time_str, end_time_str, daily)
         except ScheduleValidationError as e:
             raise ValueError(str(e))
-            
+
         self.provider.add_time_block(self.user_id, block)
         return f"Time block added: {start_time_str} - {end_time_str} (Daily: {daily})."
 
@@ -319,7 +325,7 @@ class ScheduleAgentTools:
             )
         except ScheduleValidationError as e:
             raise ValueError(str(e))
-            
+
         self.provider.add_routine(self.user_id, new_routine)
         return f"Routine '{name}' added successfully."
 
@@ -342,12 +348,12 @@ class ScheduleAgentTools:
             routine_id: The ID of the routine (use list_routines first to find it).
         """
         routines = self.provider.list_routines(self.user_id)
-        
+
         # Find routine by ID
         r = next((r for r in routines if r.id == routine_id), None)
         if not r:
             return f"Routine {routine_id} not found."
-            
+
         return schd_item_formatters.format_routine_info(r, use_markdown=False)
 
     @log_tool(modifies_schedule=True)
@@ -374,10 +380,11 @@ class ScheduleAgentTools:
         """
         try:
             from modules.schedule_validators import validate_skip_routine_data
+
             resume_date = validate_skip_routine_data(days=days, resume_after=resume_after)
         except ScheduleValidationError as e:
             raise ValueError(str(e))
-            
+
         success = self.provider.skip_routine(self.user_id, routine_id, resume_date)
         if success:
             return f"Routine {routine_id} will be skipped and will resume on {resume_date.strftime('%d.%m.%Y')}."
@@ -432,10 +439,9 @@ class ScheduleAgentTools:
             )
         except ScheduleValidationError as e:
             raise ValueError(str(e))
-        
+
         success = self.provider.edit_routine(self.user_id, routine_id, **updates)
         if success:
             return f"Routine {routine_id} updated successfully."
         else:
             raise ValueError(f"Routine {routine_id} not found.")
-

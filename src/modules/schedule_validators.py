@@ -21,6 +21,7 @@ def parse_date(date_str: str | None) -> datetime.date | None:
     except ValueError:
         raise ScheduleValidationError("Invalid date format. Use 'DD.MM.YYYY'.")
 
+
 def parse_deadline(deadline_str: str | None) -> datetime.datetime | None:
     if not deadline_str or str(deadline_str).lower() == "none":
         return None
@@ -31,7 +32,9 @@ def parse_deadline(deadline_str: str | None) -> datetime.datetime | None:
         raise ScheduleValidationError("Invalid deadline format. Use 'DD.MM.YYYY HH:MM' or 'none'.")
 
 
-def parse_depends_on(depends_on_str: str | None, user_id: int | None = None, self_id: int | None = None, item_type: str = 'task') -> list[int]:
+def parse_depends_on(
+    depends_on_str: str | None, user_id: int | None = None, self_id: int | None = None, item_type: str = "task"
+) -> list[int]:
     if not depends_on_str:
         return []
     try:
@@ -44,13 +47,13 @@ def parse_depends_on(depends_on_str: str | None, user_id: int | None = None, sel
 
     if user_id is not None:
         provider = ScheduleProvider()
-        if item_type == 'task':
+        if item_type == "task":
             items = provider.list_tasks(user_id)
         else:
             items = provider.list_routines(user_id)
-            
-        valid_ids = {t.id for t in items if getattr(t, 'id', None) is not None}
-        
+
+        valid_ids = {t.id for t in items if getattr(t, "id", None) is not None}
+
         invalid_ids = [str(d) for d in parsed_ids if d not in valid_ids]
         if invalid_ids:
             raise ScheduleValidationError(f"The following dependency IDs do not exist: {', '.join(invalid_ids)}")
@@ -59,9 +62,7 @@ def parse_depends_on(depends_on_str: str | None, user_id: int | None = None, sel
 
 
 def calculate_chunk_durations(
-    duration_min: int,
-    max_chunk_min: int | None,
-    min_chunk_min: int | None
+    duration_min: int, max_chunk_min: int | None, min_chunk_min: int | None
 ) -> tuple[datetime.timedelta | None, datetime.timedelta | None]:
     max_chunk = datetime.timedelta(minutes=max_chunk_min) if max_chunk_min and max_chunk_min > 0 else None
 
@@ -99,23 +100,20 @@ def validate_task_creation_data(
         raise ScheduleValidationError("Priority must be between 0 and 10.")
     deadline_dt = parse_deadline(deadline)
 
-    max_chunk, min_chunk = calculate_chunk_durations(
-        duration_min, max_chunk_duration_min, min_chunk_duration_min
-    )
+    max_chunk, min_chunk = calculate_chunk_durations(duration_min, max_chunk_duration_min, min_chunk_duration_min)
 
     return Task(
         id=0,
         name=clean_text(name),
         duration=datetime.timedelta(minutes=duration_min),
         description=clean_text(description),
-        depends_on=parse_depends_on(depends_on, user_id=user_id, item_type='task'),
+        depends_on=parse_depends_on(depends_on, user_id=user_id, item_type="task"),
         deadline=deadline_dt,
         priority=priority,
         max_chunk_duration=max_chunk,
         break_duration=datetime.timedelta(minutes=break_duration_min),
         min_chunk_duration=min_chunk,
     )
-
 
 
 def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, daily: bool) -> TimeBlock:
@@ -125,11 +123,11 @@ def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, dai
         eh, em = map(int, end_time_str.split(":"))
         start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
         end_dt = now.replace(hour=eh, minute=em, second=0, microsecond=0)
-        
+
         # If end is before or exactly equal to start, it crosses midnight
         if end_dt <= start_dt:
             end_dt += datetime.timedelta(days=1)
-            
+
         return TimeBlock(start=start_dt, end=end_dt, daily=daily)
     except Exception:
         raise ScheduleValidationError("Invalid time format. Use HH:MM (e.g. 10:30).")
@@ -152,21 +150,21 @@ def validate_task_update_data(
 
     if name:
         updates["name"] = clean_text(name)
-        
+
     if duration_min is not None and duration_min > 0:
         updates["duration"] = datetime.timedelta(minutes=duration_min)
-        
+
     if description is not None and description.strip():
         updates["description"] = clean_text(description)
-        
+
     if priority is not None:
         if priority < 0 or priority > 10:
             raise ScheduleValidationError("Priority must be between 0 and 10.")
         updates["priority"] = priority
-        
+
     if max_chunk_duration_min is not None and max_chunk_duration_min > 0:
         updates["max_chunk_duration"] = datetime.timedelta(minutes=max_chunk_duration_min)
-        
+
     if break_duration_min is not None and break_duration_min >= 0:
         updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
 
@@ -183,7 +181,7 @@ def validate_task_update_data(
         updates["deadline"] = parse_deadline(deadline)
 
     if depends_on is not None:
-        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id, item_type='task')
+        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id, item_type="task")
 
     return updates
 
@@ -213,35 +211,35 @@ def validate_routine_creation_data(
 ) -> Routine:
     if duration_min <= 0:
         raise ScheduleValidationError("Routine duration must be greater than 0.")
-        
+
     if priority < 0 or priority > 10:
         raise ScheduleValidationError("Priority must be between 0 and 10.")
-        
+
     if routine_type not in ("fixed", "flexible"):
         raise ScheduleValidationError("Routine type must be 'fixed' or 'flexible'.")
-        
+
     if repeat not in ("daily", "weekly"):
         raise ScheduleValidationError("Repeat must be 'daily' or 'weekly'.")
-        
+
     parsed_time = None
     if routine_type == "fixed":
         if not time_str:
             raise ScheduleValidationError("Fixed routines require a specific time.")
         parsed_time = parse_time(time_str)
-        
+
     parsed_deadline = None
     if routine_type == "flexible":
         if not deadline_time_str:
             raise ScheduleValidationError("Flexible routines require a deadline time.")
         parsed_deadline = parse_time(deadline_time_str)
-        
+
     if repeat == "weekly":
         if not weekdays or not isinstance(weekdays, list) or len(weekdays) == 0:
             raise ScheduleValidationError("Weekly routines require a list of weekdays (0-6).")
         for wd in weekdays:
             if not isinstance(wd, int) or wd < 0 or wd > 6:
                 raise ScheduleValidationError("Weekdays must be integers from 0 (Monday) to 6 (Sunday).")
-    
+
     return Routine(
         name=clean_text(name),
         type=routine_type,
@@ -252,8 +250,9 @@ def validate_routine_creation_data(
         weekdays=weekdays,
         priority=priority,
         break_duration=datetime.timedelta(minutes=break_duration_min),
-        depends_on=parse_depends_on(depends_on, user_id=user_id, item_type='routine')
+        depends_on=parse_depends_on(depends_on, user_id=user_id, item_type="routine"),
     )
+
 
 def validate_routine_update_data(
     name: str | None = None,
@@ -273,12 +272,12 @@ def validate_routine_update_data(
 
     if name:
         updates["name"] = clean_text(name)
-        
+
     if routine_type:
         if routine_type not in ("fixed", "flexible"):
             raise ScheduleValidationError("Routine type must be 'fixed' or 'flexible'.")
         updates["type"] = routine_type
-        
+
     if repeat:
         if repeat not in ("daily", "weekly"):
             raise ScheduleValidationError("Repeat must be 'daily' or 'weekly'.")
@@ -286,10 +285,10 @@ def validate_routine_update_data(
 
     if duration_min is not None and duration_min > 0:
         updates["duration"] = datetime.timedelta(minutes=duration_min)
-        
+
     if time_str is not None:
         updates["time"] = parse_time(time_str)
-        
+
     if deadline_time_str is not None:
         updates["deadline_time"] = parse_time(deadline_time_str)
 
@@ -306,42 +305,40 @@ def validate_routine_update_data(
         if priority < 0 or priority > 10:
             raise ScheduleValidationError("Priority must be between 0 and 10.")
         updates["priority"] = priority
-        
+
     if break_duration_min is not None and break_duration_min >= 0:
         updates["break_duration"] = datetime.timedelta(minutes=break_duration_min)
-        
+
     if depends_on is not None:
-        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id, item_type='routine')
+        updates["depends_on"] = parse_depends_on(depends_on, user_id=user_id, self_id=self_id, item_type="routine")
 
     return updates
 
-def validate_skip_routine_data(
-    days: int | None = None,
-    resume_after: str | None = None
-) -> datetime.date:
+
+def validate_skip_routine_data(days: int | None = None, resume_after: str | None = None) -> datetime.date:
     """
     Validates skip parameters and returns the resume_after date.
     The routine will NOT be scheduled up to and including the resume_after date.
     """
     if days is not None and resume_after is not None:
         raise ScheduleValidationError("You cannot provide both 'days' and 'resume_after'. Choose one.")
-        
+
     today = datetime.date.today()
-    
+
     if resume_after is not None:
         parsed_date = parse_date(resume_after)
         if parsed_date < today:
             raise ScheduleValidationError("Cannot set resume_after to a past date.")
         # We just return the exact date provided by the user.
         return parsed_date
-        
+
     if days is None:
         # Default to skipping just today
         days = 1
-        
+
     if days <= 0:
         raise ScheduleValidationError("Days must be greater than 0.")
-        
+
     # skip 1 day (today) -> resume_after = today
     # skip X days -> resume_after = today + (X - 1) days
     return today + datetime.timedelta(days=days - 1)
