@@ -9,8 +9,8 @@ db = core.database.db
 class LLMConsentManager:
     """
     Manages user consent for LLM data processing.
-    Stores consent as a JSON file mapping user IDs to their consent status.
-    If a user is not in the file, they are considered as not having given consent.
+    Persists consent in the SQLite `users` table (discord_id -> has_consented_llm).
+    Missing users are treated as not having given consent.
     """
 
     def __init__(self):
@@ -45,6 +45,6 @@ class LLMConsentManager:
         return self._consents.get(str(user_id), False)
 
     def set_consent(self, user_id: int, consent: bool):
-        """Set consent status for a user and persist to disk."""
+        """Set consent status for a user and persist it to the database."""
         self._consents[str(user_id)] = consent
         self._save_to_db()

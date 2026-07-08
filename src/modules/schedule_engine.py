@@ -10,15 +10,15 @@ from modules.automatic_timetable_py.src.scheduler import Scheduler
 import settings
 
 
-def _solve_sync(client_ID: int) -> list[ScheduleItem]:
+def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], list[str], str]:
     provider = ScheduleProvider()
     tasks = provider.list_tasks(client_ID)
     time_blocks = provider.list_time_blocks(client_ID)
     routines = provider.list_routines(client_ID)
 
     if not tasks and not routines:
-        return []
-
+        planning_days = provider.get_planning_days(client_ID)
+        return [], 0.0, planning_days, [], [], "NO_DATA"
     planning_days = provider.get_planning_days(client_ID)
     priority_threshold = provider.get_priority_threshold(client_ID)
     compute_timeout = provider.get_compute_timeout(client_ID)

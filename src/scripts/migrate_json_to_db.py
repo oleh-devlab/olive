@@ -28,7 +28,7 @@ def load_json(filepath: Path) -> dict:
 
 
 def migrate():
-    consent_file = Path("llm_consent.json")
+    consent_file = project_root / "llm_consent.json"
 
     consent_data = load_json(consent_file)
 
