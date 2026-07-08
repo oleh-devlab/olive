@@ -5,8 +5,10 @@
 # --- Paths and modules(cogs) ---
 paths = {
     "cogs": "cogs",
-    "token_file": ".ds_bot_token",
-    "config_ini": "config.ini"
+    "discord_token_file": ".ds_bot_token",
+    "genai_token_file": ".genai_token",
+    "config_ini": "config.ini",
+    "auto_schedule_executable": "app" # Regarding the "modules/automatic_timetable/build" folder
 }
 # The configurable path to the Google GenAI token and others has not yet been implemented.
 
@@ -17,17 +19,15 @@ channels = {
     "statistic": [123, 123], # The channel(s) where the bot can post and edit its own messages.
     "add_logs": 123 # For the error handler (CoolDown and others)
 }
-# For "statistic" channels: Ideally, there should be no other messages in the channel besides those from the bot
+
+schedule_categories = {
+    123456789: 987654321 # guild_id: category_id
+}
 
 guilds = [123, 456]
 main_guild_id = 123
 
 # --- Modules and embeds ---
-enable_battery_embed = 0
-enable_currency_embed = 1
-enable_hosting_embed = 1
-enable_uptime_embed = 1
-enable_active_cogs_embed = 1
 
 # <integer_server_id>: ["embed_name1", "embed_name2", ...].
 # You can retrieve `embed_name` from `core.cache.embeds_to_send`
@@ -36,8 +36,18 @@ embeds_blacklist = {
     456: ["battery", "currency"]
 }
 
+cogs_blacklist = ["olive", "embeds.battery"] # If you disable the models that use LLM, you won't need to enter the Google GenAI token or load their library
+
+uptime_update_seconds = 30
+llm_limits_update_seconds = 15
+llm_context_update_seconds = 30
+hosting_update_seconds = 10
+currency_update_seconds = 10
+active_cogs_update_seconds = 45
+
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery
+cost_kwh = 4.32 # Electricity cost per kWh
 min_safe_percent_charge = 35
 max_safe_percent_charge = 70
 battery_update_seconds = 180 # (Seconds) The number of seconds between each update of the battery status (charge, current, etc.)
@@ -45,5 +55,15 @@ battery_update_seconds = 180 # (Seconds) The number of seconds between each upda
 # --- Other ---
 is_processor_info = 1
 
-owner_id = 123 # Under question of necessity, since the bot itself knows its owner's ID through bot.something
 safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
+
+# --- Schedule Settings ---
+schedule_default_priority = 1
+schedule_default_max_chunk_min = 45
+schedule_default_break_min = 15
+schedule_compute_workers = 1
+schedule_loop_update_seconds = 600
+schedule_max_planning_days = 60
+schedule_max_compute_timeout = 15.0
+schedule_allowed_step_minutes = [1, 5, 15]
+schedule_skipped_routine_collapse_threshold = 3

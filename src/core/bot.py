@@ -4,12 +4,20 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import core.cache
+import core.database
+import settings
 
-class OliveBot (commands.Bot):
-    # TODO reload_cogs
-    
+
+class OliveBot(commands.Bot):
+    # TODO: using reload_cogs
+
     def load_extension(self, name):
         try:
+            clear_name = name.split(".", 1)[1]
+            if clear_name in settings.cogs_blacklist:
+                print(f'[COGS] Cog "{name}" in cogs blacklist.')
+                return
+
             super().load_extension(name)
 
             current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -39,8 +47,13 @@ class OliveBot (commands.Bot):
         # TODO: rate limit checking
 
         channel = self.get_channel(channel_id)
-        
+
         if not channel:
             channel = await self.fetch_channel(channel_id)
-                
+
         return channel
+
+    async def close(self):
+        core.database.db.close()
+
+        await super().close()

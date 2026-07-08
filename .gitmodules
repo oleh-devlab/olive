@@ -1,0 +1,6 @@
+[submodule "src/modules/automatic_timetable"]
+	path = src/modules/automatic_timetable
+	url = https://github.com/oleh-devlab/automatic_timetable.git
+[submodule "src/modules/automatic_timetable_py"]
+	path = src/modules/automatic_timetable_py
+	url = https://github.com/oleh-devlab/automatic_timetable_py.git

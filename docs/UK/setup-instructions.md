@@ -3,6 +3,7 @@
    ```bash
    git clone https://github.com/oleh-devlab/olive.git
    cd olive
+   git submodule update --init --recursive
    ```
 2. Створити віртуальне середовище Python та активувати його:
     ```bash
@@ -27,8 +28,13 @@
    - *Порада:* Ви можете швидко повернути файл до попереднього стану, виконавши команду `git checkout -- requirements.txt` або `git restore requirements.txt`.
 8. *(опційно)* Заповнити `phrases.json`.
     - Основна документація про phrases.json поки що відсутня, тому треба дивитися код та заповнювати те, що ви хочете змінити. Але ви можете переглянути документацію мультисерверного формату: [Англійською](/docs/EN/walkthroughs/multi-server-phrases.md) | [Українською](/docs/UK/walkthroughs/multi-server-phrases.md).
-9. Запустити бота (рекомендовано з каталогу `src`, або того, у якому `main.py`):
+9. Ініціалізувати базу даних SQLite. Це створить необхідні таблиці для роботи бота:
    ```bash
    cd src
+   python scripts/init_database.py
+   ```
+10. Запустити бота:
+   ```bash
+   # Переконайтеся, що ви знаходитесь у каталозі `src`
    python main.py
    ```

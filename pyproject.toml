@@ -1,0 +1,6 @@
+[tool.black]
+line-length = 120
+extend-exclude = 'src/modules/automatic_timetable_py'
+
+[tool.ruff]
+exclude = ["src/modules/automatic_timetable_py"]

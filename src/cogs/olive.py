@@ -1,132 +1,174 @@
+import asyncio
 import disnake
 from disnake.ext import commands
-import json
 from google.genai import types
+import logging
+
 from modules.llm_client import LLMClient
-
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
+from modules.llm_rate_limiter import RateLimitExceeded
+from modules.llm_context_manager import LLMContextManager
+from modules.llm_message_formatter import format_user_message
+from modules.llm_response_gate import want_respond
+from modules.schedule_agent import load_schedule_context, run_schedule_agent
 import core.cache as cache
 from core.utils import get_phrases
 
-days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+logger = logging.getLogger(__name__)
+
 
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.llm_context = {} # {"guild_id": [...]]}
+        self.context_manager = LLMContextManager()
+        self.response_tasks = {}
 
-        self.max_messages_in_context = 26
-        self.context_file_name = "llm_context.json"
-
-        self.olive_enabled = False
+        self.olive_enabled = True
 
     async def cog_load(self):
-        cache.llm_client = LLMClient()
-        print(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
+        try:
+            cache.llm_client = LLMClient()
+            logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
-        await self.load_context_from_file()
+            await self.context_manager.load_from_file()
+
+            await load_schedule_context()
+        except ValueError as e:
+            logger.error("Error initializing LLMClient: %s", e)
+            cache.llm_client = None
 
     def cog_unload(self):
         if cache.llm_client:
-            self.bot.loop.create_task(cache.llm_client.connection_close())
-            text = get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
-            print(text)
+            self.bot.loop.create_task(cache.llm_client.shutdown())
+            cache.llm_client = None
+
+            text = (
+                get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
+            )
+            logger.info(text)
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
-        if not self.olive_enabled or message.author.bot or not cache.llm_client or not message.content:
+        if (
+            not self.olive_enabled
+            or message.author.bot
+            or not cache.llm_client
+            or not message.content
+            or not message.guild
+            or not cache.llm_client.is_available
+        ):
             return
-        
-        if str(message.guild.id) not in self.llm_context:
-            self.llm_context[str(message.guild.id)] = []
 
-        dt_now = datetime.now(ZoneInfo("Europe/Kyiv"))
-        day_name = days_uk[dt_now.weekday()]
-        time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
+        guild_id = str(message.guild.id)
+        has_consent = cache.llm_consent.has_consent(message.author.id) if cache.llm_consent else False
 
-        self.llm_context[str(message.guild.id)].append({"role": "user", "parts": [{"text": f"[{time_now}][{message.author.display_name}][{message.author.name}]: \"{message.content}\""}]})
-        
-        system_instruction = get_phrases(message.guild.id).get("olive", {}).get("system_instruction", "You're the AI assistant on the Discord server.")
+        new_text = await format_user_message(message, has_consent=has_consent)
 
-        test_instruction_addition = get_phrases(message.guild.id).get("olive", {}).get("test_instruction_addition", None)
-        if test_instruction_addition:
-            test_system_instruction = f"{system_instruction}\n\n{test_instruction_addition}"
-
-            test_config = types.GenerateContentConfig(system_instruction=test_system_instruction, response_mime_type="application/json")
-            test_response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], test_config)
-
-            try:
-                data = json.loads(test_response.text)
-                i_should_answer = data["i_should_answer"]
-            except Exception as e:
-                print(f"Error parsing test response JSON: {e}")
-                i_should_answer = False
-
-            if not i_should_answer:
-                await self.context_restrictions()
-                await self.write_context_to_file()
+        if not has_consent:
+            # Deduplicate consecutive no-consent stubs from the same user
+            if self.context_manager.is_duplicate_no_consent(guild_id, message.author.name):
                 return
 
-        reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
+            self.context_manager.add_user_message(guild_id, new_text, no_consent=True)
+            return
 
-        model_name = get_phrases().get("olive", {}).get("model_name", "gemma-4-31b-it")
-        cache.llm_client.model_name = model_name
+        # Intercept schedule management in tasks_channel
+        if not hasattr(cache, "tasks_channels"):
+            cache.tasks_channels = {}
 
-        async with message.channel.typing():
-            response = await cache.llm_client.get_response(self.llm_context[str(message.guild.id)], reply_config)
+        if message.channel.id in cache.tasks_channels:
+            user_id = cache.tasks_channels[message.channel.id]
+            self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text))
+            return
 
-        self.llm_context[str(message.guild.id)].append({"role": "model", "parts": [{"text": response.text}]})
+        self.context_manager.add_user_message(guild_id, new_text)
 
-        await self.context_restrictions()
-        await self.write_context_to_file()
-        
-        await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
+        if guild_id in self.response_tasks:
+            self.response_tasks[guild_id].cancel()
 
-    async def context_restrictions(self):
-        """
-        For now, it's just a very simple restriction. It stops accepting new messages once the maximum limit is reached.
-        """
-        
-        for guild_id, messages in self.llm_context.items():
-            if len(messages) > self.max_messages_in_context:
-                sliced_messages = messages[-self.max_messages_in_context:]
-            
-                # Deleting first model message if it is at beginning of the context
-                # --- I'm not sure yet if the API actually prohibits this, so I'm just playing it safe.
-                while sliced_messages and sliced_messages[0].get("role") in ["assistant", "model"]:
-                    sliced_messages.pop(0)
-                    
-                self.llm_context[guild_id] = sliced_messages
+        self.response_tasks[guild_id] = self.bot.loop.create_task(self.delayed_generate_answer(message))
 
-    async def load_context_from_file(self):
+    async def delayed_generate_answer(self, message: disnake.Message):
         try:
-            with open(self.context_file_name, "r", encoding="utf-8") as f:
-                self.llm_context = json.load(f)
-            print("LLM context is loaded from file.")
+            await asyncio.sleep(3)
+            await self.generate_answer(message)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            guild_id = str(message.guild.id)
+            if self.response_tasks.get(guild_id) == asyncio.current_task():
+                del self.response_tasks[guild_id]
 
-        except FileNotFoundError:
-            print("Context file not found. Starting with an empty context.")
-            self.llm_context = {}
-        except json.JSONDecodeError:
-            print("Context file is invalid. Starting with an empty context.")
-            self.llm_context = {}
+    @staticmethod
+    def _resolve_system_instruction(guild_id) -> str:
+        """
+        Resolves the system instruction for a guild using a hierarchical approach:
+        - Server-specific system_instruction takes priority over the global one.
+        - system_instruction_addition is always appended (with two newlines) if present.
+        """
+        guild_olive = get_phrases(guild_id).get("olive", {})
+        global_olive = get_phrases().get("olive", {})
+
+        instruction = guild_olive.get("system_instruction") or global_olive.get(
+            "system_instruction", "You're the AI assistant on the Discord server."
+        )
+
+        addition = guild_olive.get("system_instruction_addition")
+        if addition:
+            instruction = f"{instruction}\n\n{addition}"
+
+        return instruction
+
+    async def generate_answer(self, message: disnake.Message):
+        guild_id = str(message.guild.id)
+        system_instruction = self._resolve_system_instruction(message.guild.id)
+        context = self.context_manager.get_context(guild_id)
+
+        try:
+            if not await want_respond(cache.llm_client, context, system_instruction, message.guild.id):
+                return
+
+            reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
+
+            async with message.channel.typing():
+                response = await cache.llm_client.get_response(context, reply_config)
+
+                candidate_tokens = 0
+                if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
+                    prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
+                    candidate_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
+                    if prompt_tokens > 0:
+                        self.context_manager.update_latest_user_message_tokens(guild_id, prompt_tokens)
+
+                if not response.text:
+                    logger.warning("Model returned empty response (possibly blocked by safety filters)")
+                    return
+
+                self.context_manager.add_model_message(guild_id, response.text, tokens=candidate_tokens)
+                await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
+
+        except RateLimitExceeded:
+            return
         except Exception as e:
-            print(f"Error loading LLM context from file: {e}")
-            self.llm_context = {}
-
-    async def write_context_to_file(self):
-        with open(self.context_file_name, "w", encoding="utf-8") as f:
-            json.dump(self.llm_context, f, ensure_ascii=False, indent=4)
+            logger.error("Unexpected error in generate_answer: %s", e)
+            return
+        finally:
+            limit = cache.llm_client.min_context_tokens if cache.llm_client else 128000
+            self.context_manager.apply_restrictions(max_tokens=limit)
+            await self.context_manager.write_to_file()
 
     @commands.slash_command(name="turn_olive", description="Enable or disable OLIVE AI")
     @commands.is_owner()
     async def turn_olive(self, ctx: disnake.ApplicationCommandInteraction):
         self.olive_enabled = not self.olive_enabled
         status = "enabled" if self.olive_enabled else "disabled"
-        text = get_phrases(ctx.guild.id).get("olive", {}).get("olive_status", "Olive is now {status}.").format(status=status)
+        text = (
+            get_phrases(ctx.guild.id)
+            .get("olive", {})
+            .get("olive_status", "Olive is now {status}.")
+            .format(status=status)
+        )
         await ctx.send(text, ephemeral=True)
+
 
 def setup(bot: commands.Bot):
     bot.add_cog(AIAssistantCog(bot))

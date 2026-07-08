@@ -1,17 +1,19 @@
 # O.L.I.V.E.
 Operational Liaison for Intelligent Virtual Engagement
 
-![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white) [![Disnake](https://img.shields.io/badge/Disnake-Docs-5865F2?logo=discord&logoColor=white)](https://docs.disnake.dev/)
+![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white) [![Disnake](https://img.shields.io/badge/Disnake-Docs-5865F2?logo=discord&logoColor=white)](https://docs.disnake.dev/)
 
 ---
 
-OLIVE is a modular hub designed to integrate disparate microservices into a single, managed ecosystem, utilizing Discord as its primary control interface.
+OLIVE is a modular hub designed to integrate various modules and services into a single, managed ecosystem, utilizing Discord as its primary control interface.
 
-The Discord bot was created based on the Flores project, which was previously used as a test and training project. The source code is not publicly available.
+We didn't build the Discord bot from scratch; instead, we based it on the Flores project, which was previously used as a test and learning project. There is no history of the Flores bot's source code, but OLIVE is its successor.
+
+Beyond its practical features, OLIVE serves as a hands-on learning environment. It is actively used to explore, practice, and reinforce software development concepts such as Object-Oriented Programming (OOP), database management, and modern architectural patterns. As such, while we strive for functionality, some features might be experimental or implemented primarily for educational purposes.
 
 ---
 
-*Status:* We are currently refactoring the old version of the code. Product descriptions may not reflect reality.
+*Status:* We're fixing old features, writing new ones, and reworking the architecture.
 
 ---
 
@@ -50,6 +52,7 @@ The Discord bot was created based on the Flores project, which was previously us
 ```bash
 git clone https://github.com/oleh-devlab/olive.git
 cd olive
+git submodule update --init --recursive
 ```
 2. Create a Python virtual environment and activate it:
 ```bash
@@ -75,8 +78,14 @@ pip install -r requirements.txt
 8. *(Optional)* Fill in `phrases.json`.
     - Comprehensive documentation for `phrases.json` is currently unavailable, so you will need to check the source code to fill in the parts you want to change. However, you can review the multi-server format documentation: [English](/docs/EN/walkthroughs/multi-server-phrases.md) | [Ukrainian](/docs/UK/walkthroughs/multi-server-phrases.md).
 
-9. Run the bot (it is recommended to run this from the `src` directory, or the one containing `main.py`):
+9. Initialize the SQLite database. This creates the necessary tables for the bot to run:
 ```bash
 cd src
+python scripts/init_database.py
+```
+
+10. Run the bot:
+```bash
+# Assuming you are already in the `src` directory
 python main.py
 ```
