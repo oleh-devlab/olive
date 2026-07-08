@@ -178,7 +178,7 @@ class ScheduleAgentTools:
             break_duration_min: Length of the break after a session in minutes. Default 15.
             min_chunk_duration_min: Minimum allowed shortened session in minutes. Set to 0 if not allowed.
             deadline: Deadline string in format 'DD.MM.YYYY HH:MM'. Empty string if no deadline.
-            depends_on: Optional. Comma-separated list of IDs of tasks or routines this task depends on (e.g., '1, 3').
+            depends_on: Optional. Comma-separated list of IDs of tasks this task depends on (e.g., '1, 3').
         """
         try:
             new_task = validate_task_creation_data(
@@ -307,7 +307,7 @@ class ScheduleAgentTools:
             weekdays: Required if repeat='weekly'. List of integers (0=Mon, 6=Sun).
             priority: Priority (0 to 10). 0 means floating, 1-10 sorts by importance.
             break_duration_min: Break duration after the routine.
-            depends_on: Optional. Comma-separated list of IDs of tasks or routines this routine depends on (e.g., '1, 3').
+            depends_on: Optional. Comma-separated list of IDs of routines this routine depends on (e.g., '1, 3').
         """
         try:
             new_routine = validate_routine_creation_data(
