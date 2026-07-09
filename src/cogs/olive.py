@@ -12,6 +12,9 @@ from modules.llm_response_gate import want_respond
 from modules.schedule_agent import load_schedule_context, run_schedule_agent
 import core.cache as cache
 from core.utils import get_phrases
+from modules.openai_client import OpenAIClient
+from modules.openai_context_manager import OpenAIContextManager
+import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +23,10 @@ class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.context_manager = LLMContextManager()
+        self.openai_context_manager = OpenAIContextManager()
+        cache.openai_context_manager = self.openai_context_manager
         self.response_tasks = {}
+        self.openai_client = None
 
         self.olive_enabled = True
 
@@ -29,7 +35,10 @@ class AIAssistantCog(commands.Cog):
             cache.llm_client = LLMClient()
             logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
+            self.openai_client = OpenAIClient()
+
             await self.context_manager.load_from_file()
+            await self.openai_context_manager.load_from_file()
 
             await load_schedule_context()
         except ValueError as e:
@@ -45,6 +54,10 @@ class AIAssistantCog(commands.Cog):
                 get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
             )
             logger.info(text)
+            
+        if self.openai_client:
+            self.bot.loop.create_task(self.openai_client.shutdown())
+            self.openai_client = None
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
@@ -58,10 +71,31 @@ class AIAssistantCog(commands.Cog):
         ):
             return
 
+        openai_test_channel = getattr(settings, "openai_test_channel_id", 0)
+        is_openai_test = message.channel.id == openai_test_channel
+
+        if is_openai_test:
+            if not self.openai_client:
+                return
+        else:
+            if not cache.llm_client or not cache.llm_client.is_available:
+                return
+
         guild_id = str(message.guild.id)
-        has_consent = cache.llm_consent.has_consent(message.author.id) if cache.llm_consent else False
+        has_consent = cache.llm_consent.has_consent(message.author.id) if getattr(cache, "llm_consent", None) else False
 
         new_text = await format_user_message(message, has_consent=has_consent)
+
+        if is_openai_test:
+            if not has_consent:
+                if self.openai_context_manager.is_duplicate_no_consent(guild_id, message.author.name):
+                    return
+                self.openai_context_manager.add_user_message(guild_id, new_text, no_consent=True)
+                return
+
+            self.openai_context_manager.add_user_message(guild_id, new_text)
+            self.bot.loop.create_task(self.generate_openai_answer(message))
+            return
 
         if not has_consent:
             # Deduplicate consecutive no-consent stubs from the same user
@@ -86,6 +120,32 @@ class AIAssistantCog(commands.Cog):
             self.response_tasks[guild_id].cancel()
 
         self.response_tasks[guild_id] = self.bot.loop.create_task(self.delayed_generate_answer(message))
+
+    async def generate_openai_answer(self, message: disnake.Message):
+        guild_id = str(message.guild.id)
+        system_instruction = self._resolve_system_instruction(message.guild.id)
+        context = self.openai_context_manager.get_context(guild_id)
+        
+        guild_config = self.openai_context_manager.get_guild_config(guild_id)
+        model_override = guild_config.get("model_name")
+
+        try:
+            async with message.channel.typing():
+                response_text = await self.openai_client.get_response(context, system_instruction, model_override=model_override)
+                
+                if not response_text:
+                    logger.warning("OpenAI Model returned empty response")
+                    return
+
+                self.openai_context_manager.add_model_message(guild_id, response_text)
+                await message.reply(response_text, fail_if_not_exists=False, mention_author=False)
+
+        except Exception as e:
+            logger.error("Unexpected error in generate_openai_answer: %s", e)
+            return
+        finally:
+            self.openai_context_manager.apply_restrictions(guild_id=guild_id)
+            await self.openai_context_manager.write_to_file()
 
     async def delayed_generate_answer(self, message: disnake.Message):
         try:

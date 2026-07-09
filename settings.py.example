@@ -7,6 +7,7 @@ paths = {
     "cogs": "cogs",
     "discord_token_file": ".ds_bot_token",
     "genai_token_file": ".genai_token",
+    "openai_token_file": ".openai_token",
     "config_ini": "config.ini",
     "auto_schedule_executable": "app" # Regarding the "modules/automatic_timetable/build" folder
 }
@@ -56,6 +57,12 @@ battery_update_seconds = 180 # (Seconds) The number of seconds between each upda
 is_processor_info = 1
 
 safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
+
+# --- OpenAI Compatible Test Settings ---
+openai_test_channel_id = 0
+openai_api_base = ""
+openai_model_name = ""
+openai_default_max_messages = 26
 
 # --- Schedule Settings ---
 schedule_default_priority = 1

@@ -14,6 +14,7 @@ configLock = None
 
 llm_client = None
 llm_consent = LLMConsentManager()
+openai_context_manager = None
 
 active_cogs_list = {}
 
