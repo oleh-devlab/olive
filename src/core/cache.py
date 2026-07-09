@@ -13,6 +13,7 @@ configLock = None
 
 llm_pool = None  # LLMClientPool instance
 llm_consent_manager = None
+openai_context_manager = None
 
 active_cogs_list = {}
 

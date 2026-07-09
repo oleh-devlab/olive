@@ -57,6 +57,11 @@ is_processor_info = 1
 safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
 
 olive_bot_whitelist = [] # List of bot user IDs that the LLM is allowed to respond to
+# --- OpenAI Compatible Test Settings ---
+openai_test_channel_id = 0
+openai_api_base = ""
+openai_model_name = ""
+openai_default_max_messages = 26
 
 # --- Schedule Settings ---
 schedule_default_priority = 1
