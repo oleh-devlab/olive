@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 from datetime import datetime
 from disnake.ext import commands, tasks
@@ -55,7 +59,7 @@ class MessageLoop(commands.Cog):
             try:
                 new_embeds_dicts[channel_id] = [e.to_dict() for e in embeds]
             except Exception:
-                print(f"Error converting new embeds to dicts for {content} in channel {channel_id}.")
+                logger.error(f"Error converting new embeds to dicts for {content} in channel {channel_id}.")
                 new_embeds_dicts[channel_id] = []
 
         for channel_id, em in self.eternal_messages.items():
@@ -93,7 +97,7 @@ class MessageLoop(commands.Cog):
                     self.channels_valid_embeds[channel.id] = []
                     self.eternal_messages[channel.id] = EternalMessage(self.bot, channel.id, "statistic")
                 except Exception as e:
-                    print(f"[before_main_loop WARNING] Not found channel {channel_id}: {e}")
+                    logger.warning(f"Not found channel {channel_id}: {e}")
 
             # 2. Cleaning channels and initializing messages
             for channel in self.channels:
@@ -109,15 +113,15 @@ class MessageLoop(commands.Cog):
                     em = self.eternal_messages[channel.id]
                     success = await em.init_message({"content": text}, purge_on_recreate=True)
                     if success:
-                        print(f"Eternal message initialized in channel {channel.id}")
+                        logger.info(f"Eternal message initialized in channel {channel.id}")
                     else:
-                        print(f"Failed to initialize eternal message in channel {channel.id}. Removing from loop.")
+                        logger.error(f"Failed to initialize eternal message in channel {channel.id}. Removing from loop.")
                         self.eternal_messages.pop(channel.id, None)
                 except Exception as e:
-                    print(f"[ERROR before_main_loop] Error processing channel {channel.id}: {e}")
+                    logger.error(f"Error processing channel {channel.id}: {e}")
 
         except Exception as e:
-            print(f"[ERROR in before_main_loop]: {e}")
+            logger.error(f"Error in before_main_loop: {e}")
             traceback.print_exc()
 
     @main_loop.error

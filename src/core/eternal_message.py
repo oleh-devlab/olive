@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import disnake
 from core.webhook_manager import webhook_manager
 
@@ -41,20 +45,20 @@ class EternalMessage:
             except disnake.NotFound:
                 pass
             except Exception as e:
-                print(f"[EternalMessage] Error fetching {self.message_type} in {self.channel_id}: {e}")
+                logger.error(f"Error fetching {self.message_type} in {self.channel_id}: {e}")
 
         if not msg_exists:
             if purge_on_recreate:
                 try:
                     await channel.purge()
                 except Exception as e:
-                    print(f"[EternalMessage] Error purging channel {self.channel_id}: {e}")
+                    logger.error(f"Error purging channel {self.channel_id}: {e}")
             try:
                 msg = await self.webhook.send(wait=True, **default_kwargs)
                 self.message_id = msg.id
                 webhook_manager.save_message_id(self.channel_id, self.message_type, self.message_id)
             except Exception as e:
-                print(f"[EternalMessage] Error creating {self.message_type} in {self.channel_id}: {e}")
+                logger.error(f"Error creating {self.message_type} in {self.channel_id}: {e}")
                 return False
 
         return True
@@ -71,7 +75,7 @@ class EternalMessage:
         try:
             await self.webhook.edit_message(self.message_id, **kwargs)
         except disnake.NotFound:
-            print(f"[EternalMessage] {self.message_type} in {self.channel_id} was deleted. Recreating...")
+            logger.info(f"{self.message_type} in {self.channel_id} was deleted. Recreating...")
             if fallback_kwargs is None:
                 fallback_kwargs = kwargs
             try:
@@ -83,6 +87,6 @@ class EternalMessage:
                 if fallback_kwargs != kwargs:
                     await self.webhook.edit_message(self.message_id, **kwargs)
             except Exception as e:
-                print(f"[EternalMessage] Error recreating {self.message_type} in {self.channel_id}: {e}")
+                logger.error(f"Error recreating {self.message_type} in {self.channel_id}: {e}")
         except Exception as e:
-            print(f"[EternalMessage] Error updating {self.message_type} in {self.channel_id}: {e}")
+            logger.error(f"Error updating {self.message_type} in {self.channel_id}: {e}")

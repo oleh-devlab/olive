@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import disnake
 from disnake.ext import commands
 from datetime import datetime
@@ -41,7 +45,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
             )
             error_msg = None
         except Exception as e:
-            print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
+            logger.error(f"Error fetching schedule: {e}")
             schedule_days = []
             perf_time = 0.0
             planning_days = 0
@@ -159,7 +163,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
             state["last_content"] = schedule_content
             state["last_view_state"] = view_state
         except Exception as e:
-            print(f"[ERROR schedule_ui update_schedule_message] Error editing message: {e}")
+            logger.error(f"Error editing message: {e}")
 
 
 class SchedulePaginationView(disnake.ui.View):
@@ -245,7 +249,7 @@ class ScheduleUI(commands.Cog):
         em = EternalMessage(self.bot, channel.id, "schedule")
         success = await em.init_message({"content": text, "view": view}, purge_on_recreate=True)
         if not success:
-            print(f"[schedule_ui] Failed to initialize eternal message for channel {channel.id}")
+            logger.error(f"Failed to initialize eternal message for channel {channel.id}")
             return
 
         cache.schedule_states[channel.id] = {

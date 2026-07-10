@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import os
 import disnake
@@ -14,10 +18,10 @@ class WebhookManager:
                 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                print(f"[WebhookManager] Error decoding {CONFIG_PATH}. Using empty config.")
+                logger.error(f"Error decoding {CONFIG_PATH}. Using empty config.")
                 return {}
             except Exception as e:
-                print(f"[WebhookManager] Unexpected error loading config: {e}")
+                logger.error(f"Unexpected error loading config: {e}")
                 return {}
         return {}
 
@@ -28,7 +32,7 @@ class WebhookManager:
                 json.dump(self.config, f, indent=4)
             os.replace(temp_path, CONFIG_PATH)
         except Exception as e:
-            print(f"[WebhookManager] Error saving config: {e}")
+            logger.error(f"Error saving config: {e}")
             try:
                 os.remove(temp_path)
             except OSError:
@@ -51,13 +55,13 @@ class WebhookManager:
                 # Verify it still exists on Discord
                 webhook = await webhook.fetch()
             except (ValueError, disnake.NotFound):
-                print(f"[WebhookManager] Saved webhook for channel {channel.id} not found on Discord. Will recreate.")
+                logger.warning(f"Saved webhook for channel {channel.id} not found on Discord. Will recreate.")
                 webhook = None
             except disnake.Forbidden:
-                print(f"[WebhookManager] Missing access to fetch webhook for channel {channel.id}.")
+                logger.info(f"Missing access to fetch webhook for channel {channel.id}.")
                 webhook = None
             except Exception as e:
-                print(f"[WebhookManager] Error fetching webhook by ID: {e}")
+                logger.error(f"Error fetching webhook by ID: {e}")
                 webhook = None
 
         # 2. If no valid webhook from URL, try to find an existing bot webhook in the channel
@@ -69,19 +73,19 @@ class WebhookManager:
                         webhook = wh
                         break
             except disnake.Forbidden:
-                print(f"[WebhookManager] Forbidden to fetch webhooks in channel {channel.id}. Need 'Manage Webhooks' permission.")
+                logger.warning(f"Forbidden to fetch webhooks in channel {channel.id}. Need 'Manage Webhooks' permission.")
             except Exception as e:
-                print(f"[WebhookManager] Error fetching channel webhooks: {e}")
+                logger.error(f"Error fetching channel webhooks: {e}")
 
         # 3. If still no webhook, create one
         if not webhook:
             try:
                 webhook = await channel.create_webhook(name="Olive")
-                print(f"[WebhookManager] Created new webhook in channel {channel.id}")
+                logger.info(f"Created new webhook in channel {channel.id}")
             except disnake.Forbidden:
-                print(f"[WebhookManager] Forbidden to create webhook in channel {channel.id}. Need 'Manage Webhooks' permission.")
+                logger.warning(f"Forbidden to create webhook in channel {channel.id}. Need 'Manage Webhooks' permission.")
             except Exception as e:
-                print(f"[WebhookManager] Error creating webhook: {e}")
+                logger.error(f"Error creating webhook: {e}")
                 
         # 4. Save the URL if we got a valid webhook
         if webhook:
@@ -124,6 +128,6 @@ class WebhookManager:
         try:
             await channel.purge(check=lambda m: m.id not in exclude_ids)
         except Exception as e:
-            print(f"[WebhookManager] Error during purge_clean in {channel.id}: {e}")
+            logger.error(f"Error during purge_clean in {channel.id}: {e}")
 
 webhook_manager = WebhookManager()

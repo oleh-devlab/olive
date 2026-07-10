@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 from disnake.ext import commands, tasks
 import traceback
@@ -29,7 +33,7 @@ class ScheduleMessageLoop(commands.Cog):
                     self.bot.dispatch("schedule_update", channel_id)
                     await asyncio.sleep(0.5)
                 except Exception as e:
-                    print(f"[ERROR ScheduleMessageLoop main_loop] Error dispatching update: {e}")
+                    logger.error(f"Error dispatching update: {e}")
 
     @main_loop.before_loop
     async def before_main_loop(self):
@@ -55,7 +59,7 @@ class ScheduleMessageLoop(commands.Cog):
                     channel = await self.bot.get_or_fetch_channel(channel_id)
                     channels.append((channel, user_id))
                 except Exception as e:
-                    print(f"[before_main_loop WARNING] Not found channel {channel_id}: {e}")
+                    logger.warning(f"Not found channel {channel_id}: {e}")
 
             # 2. (Purge is now handled by EternalMessage in schedule_init)
             for channel, _ in channels:
@@ -67,12 +71,12 @@ class ScheduleMessageLoop(commands.Cog):
             for channel, user_id in channels:
                 try:
                     self.bot.dispatch("schedule_init", channel, user_id)
-                    print(f"Dispatched schedule_init for channel {channel.id}.")
+                    logger.info(f"Dispatched schedule_init for channel {channel.id}.")
                 except Exception as e:
-                    print(f"[ERROR before_main_loop : dispatch init] Error for channel {channel.id}: {e}")
+                    logger.error(f"Error for channel {channel.id}: {e}")
 
         except Exception as e:
-            print(f"[ERROR in before_main_loop]: {e}")
+            logger.error(f"Error in before_main_loop: {e}")
             traceback.print_exc()
 
     @main_loop.error
