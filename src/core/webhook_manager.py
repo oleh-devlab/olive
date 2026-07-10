@@ -53,6 +53,7 @@ class WebhookManager:
             try:
                 session = getattr(bot.http, "_HTTPClient__session", getattr(bot.http, "_session", None))
                 webhook = disnake.Webhook.from_url(webhook_url, session=session)
+                webhook._state = getattr(bot, "_connection", None)
                 # Verify it still exists on Discord
                 webhook = await webhook.fetch()
             except (ValueError, disnake.NotFound):
