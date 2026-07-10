@@ -57,13 +57,9 @@ class ScheduleMessageLoop(commands.Cog):
                 except Exception as e:
                     print(f"[before_main_loop WARNING] Not found channel {channel_id}: {e}")
 
-            # 2. Cleaning the detected channels
+            # 2. (Purge is now handled by EternalMessage in schedule_init)
             for channel, _ in channels:
                 await asyncio.sleep(0.5)
-                try:
-                    await channel.purge()
-                except Exception as e:
-                    print(f"[ERROR before_main_loop : purge] Error purging channel {channel.id}: {e}")
 
             # 3. Sending initial messages and filling the list for future edits
             await asyncio.sleep(0.5)

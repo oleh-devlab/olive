@@ -6,6 +6,7 @@ import core.cache as cache
 from core.utils import get_phrases
 from core.time_utils import tz
 import modules.schedule_formatter as auto_timetable
+from core.eternal_message import EternalMessage
 
 
 async def update_schedule_message(bot, channel_id, recalculate: bool = True):
@@ -14,7 +15,9 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
         return
 
     user_id = state["user_id"]
-    msg = state["message"]
+    em = state.get("em")
+    if not em:
+        return
     current_page = state["current_page"]
 
     now = datetime.now(tz)
@@ -147,7 +150,8 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
 
     if state.get("last_content") != schedule_content or state.get("last_view_state") != view_state:
         try:
-            await msg.edit(content=schedule_content, view=view)
+            fallback_text = "Initializing schedule..."
+            await em.update(fallback_kwargs={"content": fallback_text, "view": view}, content=schedule_content, view=view)
             state["last_content"] = schedule_content
             state["last_view_state"] = view_state
         except Exception as e:
@@ -234,11 +238,12 @@ class ScheduleUI(commands.Cog):
         text = phrases.get("welcome_message", "Initializing schedule...")
 
         view = SchedulePaginationView()
-        msg = await channel.send(text, view=view)
+        em = EternalMessage(self.bot, channel.id, "schedule")
+        await em.init_message({"content": text, "view": view}, purge_on_recreate=True)
 
         cache.schedule_states[channel.id] = {
             "user_id": user_id,
-            "message": msg,
+            "em": em,
             "current_page": 0,
             "max_pages": 1,
             "last_content": "",
