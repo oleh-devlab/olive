@@ -243,7 +243,10 @@ class ScheduleUI(commands.Cog):
 
         view = SchedulePaginationView()
         em = EternalMessage(self.bot, channel.id, "schedule")
-        await em.init_message({"content": text, "view": view}, purge_on_recreate=True)
+        success = await em.init_message({"content": text, "view": view}, purge_on_recreate=True)
+        if not success:
+            print(f"[schedule_ui] Failed to initialize eternal message for channel {channel.id}")
+            return
 
         cache.schedule_states[channel.id] = {
             "user_id": user_id,

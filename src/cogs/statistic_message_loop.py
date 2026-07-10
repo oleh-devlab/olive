@@ -110,6 +110,9 @@ class MessageLoop(commands.Cog):
                     success = await em.init_message({"content": text}, purge_on_recreate=True)
                     if success:
                         print(f"Eternal message initialized in channel {channel.id}")
+                    else:
+                        print(f"Failed to initialize eternal message in channel {channel.id}. Removing from loop.")
+                        self.eternal_messages.pop(channel.id, None)
                 except Exception as e:
                     print(f"[ERROR before_main_loop] Error processing channel {channel.id}: {e}")
 

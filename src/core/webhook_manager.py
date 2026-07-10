@@ -22,11 +22,17 @@ class WebhookManager:
         return {}
 
     def _save_config(self):
+        temp_path = CONFIG_PATH + ".tmp"
         try:
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4)
+            os.replace(temp_path, CONFIG_PATH)
         except Exception as e:
             print(f"[WebhookManager] Error saving config: {e}")
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     async def get_or_create_webhook(self, bot, channel: disnake.TextChannel):
         """
@@ -41,11 +47,9 @@ class WebhookManager:
         # 1. Try to fetch from URL if it exists
         if webhook_url:
             try:
-                # Extract webhook ID from URL: https://discord.com/api/webhooks/ID/TOKEN
-                parts = webhook_url.split('/')
-                if len(parts) >= 6:
-                    webhook_id = int(parts[-2])
-                    webhook = await bot.fetch_webhook(webhook_id)
+                webhook = disnake.Webhook.from_url(webhook_url, bot=bot)
+                # Verify it still exists on Discord
+                webhook = await webhook.fetch()
             except (ValueError, disnake.NotFound):
                 print(f"[WebhookManager] Saved webhook for channel {channel.id} not found on Discord. Will recreate.")
                 webhook = None
