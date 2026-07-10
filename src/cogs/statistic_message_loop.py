@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from disnake.ext import commands, tasks
+import disnake
 import traceback
 
 from settings import channels, embeds_blacklist
@@ -8,6 +9,7 @@ import core.cache
 from core.utils import get_phrases
 from core.task_handler import ResilientTaskHandler
 from core.time_utils import tz
+from core.webhook_manager import webhook_manager
 
 
 class MessageLoop(commands.Cog):
@@ -15,7 +17,8 @@ class MessageLoop(commands.Cog):
         self.bot = bot
 
         self.channels = []
-        self.messages = []
+        self.channel_webhooks = {}
+        self.channel_message_ids = {}
 
         self.last_embeds_dicts = {}
         self.channels_valid_embeds = {}
@@ -57,14 +60,19 @@ class MessageLoop(commands.Cog):
                 print(f"Error converting new embeds to dicts for {content} in channel {channel_id}.")
                 new_embeds_dicts[channel_id] = []
 
-        for message in self.messages:
-            message_channel_id = message.channel.id
-            if self.last_embeds_dicts.get(message_channel_id, []) == new_embeds_dicts.get(message_channel_id, []):
-                # print(f"Embeds are the same, skipping edit for {content} in channel {message_channel_id}.")
+        for channel_id, webhook in self.channel_webhooks.items():
+            message_id = self.channel_message_ids.get(channel_id)
+            if not message_id:
+                continue
+                
+            if self.last_embeds_dicts.get(channel_id, []) == new_embeds_dicts.get(channel_id, []):
+                # print(f"Embeds are the same, skipping edit for {content} in channel {channel_id}.")
                 continue
 
-            await message.edit(content=content, embeds=self.channels_valid_embeds[message_channel_id])
-            await asyncio.sleep(0.5)
+            try:
+                await webhook.edit_message(message_id, content=content, embeds=self.channels_valid_embeds[channel_id])
+            except Exception as e:
+                print(f"[ERROR main_loop edit] Error editing webhook message in {channel_id}: {e}")
 
         self.last_embeds_dicts = new_embeds_dicts
 
@@ -75,42 +83,61 @@ class MessageLoop(commands.Cog):
         try:
             self.channels = []
             self.channels_valid_embeds = {}
-            self.messages = []
+            self.channel_webhooks = {}
+            self.channel_message_ids = {}
 
-            # 1. Getting channels
+            # 1. Getting channels and webhooks
             for channel_id in channels["statistic"]:
                 try:
                     channel = await self.bot.get_or_fetch_channel(channel_id)
                     self.channels.append(channel)
                     self.channels_valid_embeds[channel.id] = []
+                    
+                    webhook = await webhook_manager.get_or_create_webhook(self.bot, channel)
+                    if webhook:
+                        self.channel_webhooks[channel.id] = webhook
                 except Exception as e:
                     print(f"[before_main_loop WARNING] Not found channel {channel_id}: {e}")
 
-            # 2. Cleaning the detected channels
+            # 2. Managing messages (purge and fetch/create)
             for channel in self.channels:
                 await asyncio.sleep(0.5)
-                try:
-                    await channel.purge()
-                except Exception as e:
-                    print(f"[ERROR before_main_loop : purge] Error purging channel {channel.id}: {e}")
+                webhook = self.channel_webhooks.get(channel.id)
+                if not webhook:
+                    print(f"[before_main_loop WARNING] No webhook for channel {channel.id}, skipping message init.")
+                    continue
+                    
+                message_id = webhook_manager.get_message_id(channel.id)
+                msg_exists = False
+                
+                if message_id:
+                    try:
+                        # Check if message actually exists
+                        await webhook.fetch_message(message_id)
+                        msg_exists = True
+                        self.channel_message_ids[channel.id] = message_id
+                    except disnake.NotFound:
+                        print(f"[before_main_loop] Saved message {message_id} not found in channel {channel.id}.")
+                    except Exception as e:
+                        print(f"[before_main_loop ERROR] Error fetching message {message_id}: {e}")
 
-            # 3. Sending initial messages and filling the list for future edits
-            await asyncio.sleep(0.5)
-
-            for channel in self.channels:
                 try:
-                    text = (
-                        get_phrases(channel.guild.id)
-                        .get("statistic_message_loop", {})
-                        .get("welcome_message", "Error with getting message for statistic channel.")
-                    )
-                    msg = await channel.send(text)
-                    self.messages.append(msg)
-                    print(f"Initial message sent to channel {channel.id} for MessageLoop.")
+                    if not msg_exists:
+                        await channel.purge()
+                        
+                        text = (
+                            get_phrases(channel.guild.id)
+                            .get("statistic_message_loop", {})
+                            .get("welcome_message", "Error with getting message for statistic channel.")
+                        )
+                        
+                        # Send via webhook
+                        msg = await webhook.send(text, wait=True)
+                        self.channel_message_ids[channel.id] = msg.id
+                        webhook_manager.save_message_id(channel.id, msg.id)
+                        print(f"Initial webhook message sent to channel {channel.id} for MessageLoop. Message ID: {msg.id}")
                 except Exception as e:
-                    print(
-                        f"[ERROR before_main_loop : send initial message] Error sending initial message to channel {channel.id}: {e}"
-                    )
+                    print(f"[ERROR before_main_loop] Error managing channel {channel.id}: {e}")
 
         except Exception as e:
             print(f"[ERROR in before_main_loop]: {e}")
