@@ -2,10 +2,12 @@ import logging
 import inspect
 import disnake
 from google.genai import types
+import time
 
 import core.cache as cache
 from core.utils import get_phrases, send_long_message
 from modules.llm_context_manager import LLMContextManager
+from modules.llm_message_formatter import FormattedUserMessage
 from modules.schedule_agent_tools import ScheduleAgentTools
 from modules.schedule_provider import ScheduleProvider
 
@@ -142,13 +144,21 @@ class UndoScheduleView(disnake.ui.View):
         )
 
 
-async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_text: str):
+async def run_schedule_agent(bot, message: disnake.Message, user_id: int, formatted_msg: FormattedUserMessage):
     """
     Agentic loop that allows OLIVE to call tools.
     """
     channel_id_str = str(message.channel.id)
 
-    schedule_context_manager.add_user_message(channel_id_str, new_text)
+    schedule_context_manager.add_user_message(
+        channel_id_str,
+        formatted_msg.text,
+        timestamp=formatted_msg.timestamp,
+        author_id=formatted_msg.author_id,
+        author_name=formatted_msg.author_name,
+        author_display_name=formatted_msg.author_display_name,
+        message_id=formatted_msg.message_id,
+    )
 
     context = schedule_context_manager.get_context(channel_id_str)
     system_instruction = _get_schedule_instruction(message.guild.id)
@@ -233,7 +243,12 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         break
 
                 # Append to context securely with token tracking (BEFORE adding used tools footer)
-                schedule_context_manager.add_model_message(channel_id_str, text_response, tokens=candidate_tokens)
+                schedule_context_manager.add_model_message(
+                    channel_id_str,
+                    text_response,
+                    tokens=candidate_tokens,
+                    timestamp_ms=int(time.time() * 1000),
+                )
 
                 if tools_instance.used_tools:
                     # Deduplicate in case SDK auto-retried

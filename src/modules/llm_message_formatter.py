@@ -4,6 +4,7 @@ from datetime import datetime
 
 from core.time_utils import tz
 from core.utils import get_phrases
+from modules.llm_context_manager import UserMessageMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ def _get_no_consent_placeholder() -> str:
     return get_phrases().get("olive", {}).get("no_consent_placeholder", _NO_CONSENT_FALLBACK)
 
 
-async def format_user_message(message: disnake.Message, has_consent: bool = True) -> str:
+async def format_user_message(message: disnake.Message, meta: UserMessageMetadata, has_consent: bool = True) -> str:
     """
     Formats a Discord message into a text string for the LLM context.
     Includes timestamp, author info, message content, and reply metadata if applicable.
@@ -25,12 +26,12 @@ async def format_user_message(message: disnake.Message, has_consent: bool = True
     If the user has not given consent, the message content is replaced with a placeholder
     and reply metadata is omitted.
     """
-    dt_now = datetime.now(tz)
+    dt_now = datetime.fromtimestamp(meta.timestamp_ms / 1000.0, tz)
     day_name = days_uk[dt_now.weekday()]
     time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"
 
     content = message.content if has_consent else _get_no_consent_placeholder()
-    text = f'[{time_now}][{message.author.display_name}][{message.author.name}]: "{content}"'
+    text = f'[{time_now}][{meta.author_display_name}][{meta.author_name}]: "{content}"'
 
     if has_consent and message.reference and message.reference.message_id:
         reply_prefix = _resolve_reply_prefix(message)

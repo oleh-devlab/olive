@@ -3,6 +3,7 @@ import disnake
 from disnake.ext import commands
 from google.genai import types
 import logging
+import time
 
 from modules.llm_client import LLMClient
 from modules.llm_rate_limiter import RateLimitExceeded
@@ -53,7 +54,6 @@ class AIAssistantCog(commands.Cog):
             or message.author.bot
             or not cache.llm_client
             or not message.content
-            or not message.guild
             or not cache.llm_client.is_available
         ):
             return
@@ -61,14 +61,21 @@ class AIAssistantCog(commands.Cog):
         guild_id = str(message.guild.id)
         has_consent = cache.llm_consent.has_consent(message.author.id) if cache.llm_consent else False
 
-        new_text = await format_user_message(message, has_consent=has_consent)
+        meta = UserMessageMetadata.from_message(message)
+
+        new_text = await format_user_message(message, meta, has_consent=has_consent)
 
         if not has_consent:
             # Deduplicate consecutive no-consent stubs from the same user
-            if self.context_manager.is_duplicate_no_consent(guild_id, message.author.name):
+            if self.context_manager.is_duplicate_no_consent(guild_id, meta.author_name):
                 return
 
-            self.context_manager.add_user_message(guild_id, new_text, no_consent=True)
+            self.context_manager.add_user_message(
+                guild_id,
+                new_text,
+                meta,
+                no_consent=True,
+            )
             return
 
         # Intercept schedule management in tasks_channel
@@ -77,10 +84,14 @@ class AIAssistantCog(commands.Cog):
 
         if message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
-            self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text))
+            self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text, meta))
             return
 
-        self.context_manager.add_user_message(guild_id, new_text)
+        self.context_manager.add_user_message(
+            guild_id,
+            new_text,
+            meta,
+        )
 
         if guild_id in self.response_tasks:
             self.response_tasks[guild_id].cancel()
@@ -143,7 +154,12 @@ class AIAssistantCog(commands.Cog):
                     logger.warning("Model returned empty response (possibly blocked by safety filters)")
                     return
 
-                self.context_manager.add_model_message(guild_id, response.text, tokens=candidate_tokens)
+                self.context_manager.add_model_message(
+                    guild_id,
+                    response.text,
+                    tokens=candidate_tokens,
+                    timestamp_ms=int(time.time() * 1000),
+                )
                 await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
 
         except RateLimitExceeded:

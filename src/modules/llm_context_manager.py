@@ -1,29 +1,60 @@
 import json
 import logging
 import os
+from dataclasses import dataclass
+import disnake
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class UserMessageMetadata:
+    timestamp_ms: int
+    author_id: int
+    author_name: str
+    author_display_name: str
+    message_id: int
+
+    @classmethod
+    def from_message(cls, message: disnake.Message) -> "UserMessageMetadata":
+        return cls(
+            timestamp_ms=int(message.created_at.timestamp() * 1000),
+            author_id=message.author.id,
+            author_name=message.author.name,
+            author_display_name=getattr(message.author, "display_name", message.author.name),
+            message_id=message.id,
+        )
 
 
 class LLMContextManager:
     def __init__(self, context_file_name="llm_context.json", max_messages_in_context=26):
         self.context_file_name = context_file_name
         self.max_messages_in_context = max_messages_in_context
-        self.llm_context = {}  # {"guild_id": [...]}
+        self.llm_context = {}  # {"guild_id": [...]} (trimmed cache)
+        self.database_context = {}  # {"guild_id": [...]} (full database)
 
     async def load_from_file(self):
         try:
             with open(self.context_file_name, "r", encoding="utf-8") as f:
-                self.llm_context = json.load(f)
+                self.database_context = json.load(f)
+            
+            self.llm_context = {
+                guild_id: list(messages) for guild_id, messages in self.database_context.items()
+            }
+            # Trim the loaded cache so we don't blow up memory/limits on startup
+            self.apply_restrictions()
             logger.info("LLM context is loaded from file.")
         except FileNotFoundError:
             logger.warning("Context file not found. Starting with an empty context.")
+            self.database_context = {}
             self.llm_context = {}
         except json.JSONDecodeError:
             logger.error("Context file is invalid. Starting with an empty context.")
+            self.database_context = {}
             self.llm_context = {}
         except Exception as e:
             logger.error("Error loading LLM context from file: %s", e)
+            self.database_context = {}
             self.llm_context = {}
 
     async def write_to_file(self):
@@ -35,7 +66,7 @@ class LLMContextManager:
         temp_path = self.context_file_name + ".tmp"
         try:
             with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(self.llm_context, f, ensure_ascii=False, separators=(",", ":"))
+                json.dump(self.database_context, f, ensure_ascii=False, separators=(",", ":"))
             os.replace(temp_path, self.context_file_name)
         except Exception as e:
             logger.error("Error writing LLM context file: %s", e)
@@ -58,13 +89,32 @@ class LLMContextManager:
             out["parts"] = message["parts"]
         return out
 
-    def add_user_message(self, guild_id: str, formatted_text: str, no_consent: bool = False):
+    def add_user_message(
+        self,
+        guild_id: str,
+        formatted_text: str,
+        meta: UserMessageMetadata,
+        no_consent: bool = False,
+    ):
         if guild_id not in self.llm_context:
             self.llm_context[guild_id] = []
-        entry = {"role": "user", "parts": [{"text": formatted_text}]}
+        if guild_id not in self.database_context:
+            self.database_context[guild_id] = []
+
+        entry = {
+            "role": "user",
+            "parts": [{"text": formatted_text}],
+            "timestamp_ms": meta.timestamp_ms,
+            "author_id": meta.author_id,
+            "author_name": meta.author_name,
+            "author_display_name": meta.author_display_name,
+            "message_id": meta.message_id,
+        }
         if no_consent:
             entry["no_consent"] = True
+
         self.llm_context[guild_id].append(entry)
+        self.database_context[guild_id].append(entry)
 
     def is_duplicate_no_consent(self, guild_id: str, author_name: str) -> bool:
         """
@@ -83,6 +133,9 @@ class LLMContextManager:
             if not msg.get("no_consent"):
                 return False
 
+            if msg.get("author_name") == author_name:
+                return True
+
             parts = msg.get("parts", [])
             if parts:
                 text = parts[0].get("text", "")
@@ -97,10 +150,20 @@ class LLMContextManager:
         # Fallback approximation
         return sum(len(str(p.get("text") or "")) for p in message.get("parts", [])) // 2
 
-    def add_model_message(self, guild_id: str, text: str, tokens: int = 0):
+    def add_model_message(self, guild_id: str, text: str, tokens: int = 0, timestamp_ms: int = 0):
         if guild_id not in self.llm_context:
             self.llm_context[guild_id] = []
-        self.llm_context[guild_id].append({"role": "model", "parts": [{"text": text}], "tokens": tokens})
+        if guild_id not in self.database_context:
+            self.database_context[guild_id] = []
+
+        entry = {
+            "role": "model",
+            "parts": [{"text": text}],
+            "tokens": tokens,
+            "timestamp_ms": timestamp_ms,
+        }
+        self.llm_context[guild_id].append(entry)
+        self.database_context[guild_id].append(entry)
 
     def update_latest_user_message_tokens(self, guild_id: str, prompt_token_count: int):
         if guild_id not in self.llm_context or not self.llm_context[guild_id]:
