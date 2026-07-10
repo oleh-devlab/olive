@@ -51,7 +51,8 @@ class WebhookManager:
         # 1. Try to fetch from URL if it exists
         if webhook_url:
             try:
-                webhook = disnake.Webhook.from_url(webhook_url, bot=bot)
+                session = getattr(bot.http, "_HTTPClient__session", getattr(bot.http, "_session", None))
+                webhook = disnake.Webhook.from_url(webhook_url, session=session)
                 # Verify it still exists on Discord
                 webhook = await webhook.fetch()
             except (ValueError, disnake.NotFound):
