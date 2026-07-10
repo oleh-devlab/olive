@@ -93,17 +93,35 @@ class WebhookManager:
                 
         return webhook
 
-    def get_message_id(self, channel_id: int):
+    def get_message_id(self, channel_id: int, message_type: str):
         channel_id_str = str(channel_id)
-        return self.config.get(channel_id_str, {}).get("message_id")
+        return self.config.get(channel_id_str, {}).get("messages", {}).get(message_type)
 
-    def save_message_id(self, channel_id: int, message_id: int):
+    def save_message_id(self, channel_id: int, message_type: str, message_id: int):
         channel_id_str = str(channel_id)
         if channel_id_str not in self.config:
             self.config[channel_id_str] = {}
             
-        if self.config[channel_id_str].get("message_id") != message_id:
-            self.config[channel_id_str]["message_id"] = message_id
-            self._save_config()
+        if "messages" not in self.config[channel_id_str]:
+            self.config[channel_id_str]["messages"] = {}
             
+        if self.config[channel_id_str]["messages"].get(message_type) != message_id:
+            self.config[channel_id_str]["messages"][message_type] = message_id
+            self._save_config()
+
+    def get_all_tracked_message_ids(self, channel_id: int) -> list:
+        channel_id_str = str(channel_id)
+        messages = self.config.get(channel_id_str, {}).get("messages", {})
+        return list(messages.values())
+
+    async def purge_clean(self, channel: disnake.TextChannel):
+        """
+        Purges the channel, preserving all tracked eternal messages.
+        """
+        exclude_ids = self.get_all_tracked_message_ids(channel.id)
+        try:
+            await channel.purge(check=lambda m: m.id not in exclude_ids)
+        except Exception as e:
+            print(f"[WebhookManager] Error during purge_clean in {channel.id}: {e}")
+
 webhook_manager = WebhookManager()
