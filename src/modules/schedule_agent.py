@@ -6,8 +6,7 @@ import time
 
 import core.cache as cache
 from core.utils import get_phrases, send_long_message
-from modules.llm_context_manager import LLMContextManager
-from modules.llm_message_formatter import FormattedUserMessage
+from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
 from modules.schedule_agent_tools import ScheduleAgentTools
 from modules.schedule_provider import ScheduleProvider
 
@@ -144,7 +143,7 @@ class UndoScheduleView(disnake.ui.View):
         )
 
 
-async def run_schedule_agent(bot, message: disnake.Message, user_id: int, formatted_msg: FormattedUserMessage):
+async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_text: str, meta: UserMessageMetadata):
     """
     Agentic loop that allows OLIVE to call tools.
     """
@@ -152,12 +151,8 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, format
 
     schedule_context_manager.add_user_message(
         channel_id_str,
-        formatted_msg.text,
-        timestamp=formatted_msg.timestamp,
-        author_id=formatted_msg.author_id,
-        author_name=formatted_msg.author_name,
-        author_display_name=formatted_msg.author_display_name,
-        message_id=formatted_msg.message_id,
+        new_text,
+        meta,
     )
 
     context = schedule_context_manager.get_context(channel_id_str)

@@ -7,7 +7,7 @@ import time
 
 from modules.llm_client import LLMClient
 from modules.llm_rate_limiter import RateLimitExceeded
-from modules.llm_context_manager import LLMContextManager
+from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
 from modules.llm_message_formatter import format_user_message
 from modules.llm_response_gate import want_respond
 from modules.schedule_agent import load_schedule_context, run_schedule_agent
