@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime
 from disnake.ext import commands, tasks
-import disnake
 import traceback
 
 from settings import channels, embeds_blacklist
@@ -9,7 +8,6 @@ import core.cache
 from core.utils import get_phrases
 from core.task_handler import ResilientTaskHandler
 from core.time_utils import tz
-from core.webhook_manager import webhook_manager
 from core.eternal_message import EternalMessage
 
 

@@ -1,8 +1,6 @@
 import json
 import os
 import disnake
-import traceback
-import asyncio
 
 CONFIG_PATH = "webhooks_config.json"
 
