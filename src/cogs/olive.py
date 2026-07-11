@@ -30,12 +30,16 @@ class AIAssistantCog(commands.Cog):
             cache.llm_client = LLMClient()
             logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
-            await self.context_manager.load_from_file()
-
-            await load_schedule_context()
+            error = self.context_manager.token_budget.validate(cache.llm_client.min_context_tokens)
+            if error:
+                logger.error(error + " LLM responses are disabled.")
+                cache.llm_client = None
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
             cache.llm_client = None
+
+        await self.context_manager.load_from_file()
+        await load_schedule_context()
 
     def cog_unload(self):
         if cache.llm_client:
@@ -168,8 +172,7 @@ class AIAssistantCog(commands.Cog):
             logger.error("Unexpected error in generate_answer: %s", e)
             return
         finally:
-            limit = cache.llm_client.min_context_tokens if cache.llm_client else 128000
-            self.context_manager.apply_restrictions(max_tokens=limit)
+            self.context_manager.apply_restrictions()
             await self.context_manager.write_to_file()
 
     @commands.slash_command(name="turn_olive", description="Enable or disable OLIVE AI")
@@ -184,6 +187,43 @@ class AIAssistantCog(commands.Cog):
             .format(status=status)
         )
         await ctx.send(text, ephemeral=True)
+
+    @commands.slash_command(name="token_budget", description="Manage LLM token budget")
+    @commands.is_owner()
+    async def token_budget(self, ctx: disnake.ApplicationCommandInteraction):
+        pass
+
+    @token_budget.sub_command(name="set", description="Update a token budget value")
+    async def token_budget_set(
+        self,
+        ctx: disnake.ApplicationCommandInteraction,
+        field: str = commands.Param(
+            description="Budget field to update",
+            choices=["context_tokens", "reserved_system_tokens", "reserved_memory_tokens", "reserved_response_tokens"],
+        ),
+        value: int = commands.Param(description="New value (tokens)", gt=0),
+    ):
+        budget = self.context_manager.token_budget
+
+        old_value = getattr(budget, field)
+        setattr(budget, field, value)
+
+        if cache.llm_client:
+            error = budget.validate(cache.llm_client.min_context_tokens)
+            if error:
+                setattr(budget, field, old_value)
+                await ctx.send(f"Error: {error}", ephemeral=True)
+                return
+
+        budget.save_to_file()
+
+        self.context_manager.apply_restrictions()
+        await self.context_manager.write_to_file()
+
+        await ctx.send(
+            f"`{field}`: {old_value:,} → {value:,} (total: {budget.total:,})",
+            ephemeral=True,
+        )
 
 
 def setup(bot: commands.Bot):

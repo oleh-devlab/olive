@@ -6,6 +6,62 @@ import disnake
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_BUDGET_PATH = "llm_token_budget.json"
+
+
+@dataclass
+class LLMTokenBudget:
+    context_tokens: int = 64000
+    reserved_system_tokens: int = 6000
+    reserved_memory_tokens: int = 32000
+    reserved_response_tokens: int = 5000
+
+    @property
+    def total(self) -> int:
+        """Total tokens required: dialogue + all reservations."""
+        return self.context_tokens + self.reserved_system_tokens + self.reserved_memory_tokens + self.reserved_response_tokens
+
+    def validate(self, min_model_tokens: int) -> str | None:
+        """Check if the budget fits within the smallest model's context window.
+
+        Returns None if valid, or an error message string if not.
+        """
+        if min_model_tokens < self.total:
+            return (
+                f"Token budget total ({self.total:,}) exceeds the smallest model context window ({min_model_tokens:,}). "
+                f"Adjust data/llm_token_budget.json or model configuration."
+            )
+        return None
+
+    @classmethod
+    def from_file(cls, path: str = _DEFAULT_BUDGET_PATH) -> "LLMTokenBudget":
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            budget = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+            logger.info("Loaded LLM token budget from %s: %s", path, budget)
+            return budget
+        except FileNotFoundError:
+            logger.warning("Token budget file not found at %s, using defaults.", path)
+            return cls()
+        except Exception as e:
+            logger.error("Error loading token budget from %s: %s. Using defaults.", path, e)
+            return cls()
+
+    def save_to_file(self, path: str = _DEFAULT_BUDGET_PATH):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "context_tokens": self.context_tokens,
+                    "reserved_system_tokens": self.reserved_system_tokens,
+                    "reserved_memory_tokens": self.reserved_memory_tokens,
+                    "reserved_response_tokens": self.reserved_response_tokens,
+                },
+                f,
+                indent=4,
+            )
+
 
 @dataclass
 class UserMessageMetadata:
@@ -27,9 +83,10 @@ class UserMessageMetadata:
 
 
 class LLMContextManager:
-    def __init__(self, context_file_name="llm_context.json", max_messages_in_context=26):
+    def __init__(self, context_file_name="llm_context.json", max_messages_in_context=26, token_budget: LLMTokenBudget | None = None):
         self.context_file_name = context_file_name
         self.max_messages_in_context = max_messages_in_context
+        self.token_budget = token_budget or LLMTokenBudget.from_file()
         self.llm_context = {}  # {"guild_id": [...]} (trimmed cache)
         self.database_context = {}  # {"guild_id": [...]} (full database)
 
@@ -184,13 +241,12 @@ class LLMContextManager:
                 )
             messages[-1]["tokens"] = max(1, new_user_tokens)
 
-    def apply_restrictions(self, max_tokens: int = 128000):
+    def apply_restrictions(self):
         """
-        Maintains the context size within exact token limits.
+        Maintains the context size within the configured token budget.
         Falls back to local approximation for legacy messages.
         """
-        # Safety margin for upcoming generated response
-        effective_limit = max(0, max_tokens - 2000)
+        effective_limit = self.token_budget.context_tokens
 
         for guild_id, messages in self.llm_context.items():
             while messages:

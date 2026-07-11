@@ -326,6 +326,5 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
             await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
 
     # Apply clipping and save context
-    limit = cache.llm_client.min_context_tokens if cache.llm_client else 128000
-    schedule_context_manager.apply_restrictions(max_tokens=limit)
+    schedule_context_manager.apply_restrictions()
     await schedule_context_manager.write_to_file()
