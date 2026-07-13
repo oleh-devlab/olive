@@ -155,7 +155,6 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         meta,
     )
 
-    context = schedule_context_manager.get_context(channel_id_str)
     system_instruction = _get_schedule_instruction(message.guild.id)
 
     tools_instance = ScheduleAgentTools(user_id)

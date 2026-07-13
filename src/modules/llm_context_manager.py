@@ -132,21 +132,13 @@ class LLMContextManager:
             except OSError:
                 pass
 
-    def get_context(self, guild_id: str) -> list:
-        if guild_id not in self.llm_context:
-            self.llm_context[guild_id] = []
-        # Return API-compatible copies — internal bookkeeping fields
-        # We never mutate the stored dicts here, so token tracking keeps working.
-        return [self._api_content(m) for m in self.llm_context[guild_id]]
-
-    @staticmethod
-    def _api_content(message: dict) -> dict:
-        out = {"role": message["role"]}
-        if "parts" in message:
-            out["parts"] = message["parts"]
-        return out
-
     def get_interaction_context(self, guild_id: str) -> list:
+        """
+        Retrieves context formatted for the new Interactions API.
+        The underlying JSON storage (`role` and `parts` fields) is kept in the older generateContent format 
+        for backward compatibility with existing saved conversation files on disk. This method dynamically 
+        translates them into `user_input` and `model_output` objects.
+        """
         if guild_id not in self.llm_context:
             self.llm_context[guild_id] = []
         return [self._interaction_content(m) for m in self.llm_context[guild_id]]
@@ -180,6 +172,8 @@ class LLMContextManager:
             if not isinstance(step_dict, dict):
                 step_dict = getattr(step, "__dict__", str(step))
                 
+            # TODO: If we consider the incompatibility of Gemini signatures in Gemma
+            # and take additional tokens into account.
             if step_dict.get("type") == "thought":
                 continue
             
@@ -189,13 +183,8 @@ class LLMContextManager:
                 "timestamp_ms": timestamp_ms,
             }
             
-            # Add parts for backwards compatibility with generateContent API
+            # Add tokens count
             if isinstance(step_dict, dict) and step_dict.get("type") == "model_output":
-                parts = []
-                for c in step_dict.get("content", []):
-                    if isinstance(c, dict) and c.get("type") == "text":
-                        parts.append({"text": c.get("text")})
-                entry["parts"] = parts
                 entry["tokens"] = tokens
 
             self.llm_context[guild_id].append(entry)
@@ -213,6 +202,8 @@ class LLMContextManager:
         if guild_id not in self.database_context:
             self.database_context[guild_id] = []
 
+        # We store "role" and "parts" for backward compatibility with older context files,
+        # but these get mapped dynamically when passed to Interactions API via get_interaction_context.
         entry = {
             "role": "user",
             "parts": [{"text": formatted_text}],
@@ -245,13 +236,7 @@ class LLMContextManager:
                 "interaction_step": res,
                 "timestamp_ms": timestamp_ms,
             }
-            # Add for backward compatibility
-            entry["parts"] = []
-            if "result" in res:
-                for r in res["result"]:
-                    if r.get("type") == "text":
-                        entry["parts"].append({"text": r.get("text")})
-
+            # For backward compatibility we used to add 'parts' here, but it's redundant.
             self.llm_context[guild_id].append(entry)
             self.database_context[guild_id].append(entry)
 
