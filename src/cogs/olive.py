@@ -136,35 +136,39 @@ class AIAssistantCog(commands.Cog):
     async def generate_answer(self, message: disnake.Message):
         guild_id = str(message.guild.id)
         system_instruction = self._resolve_system_instruction(message.guild.id)
-        context = self.context_manager.get_context(guild_id)
+        context = self.context_manager.get_interaction_context(guild_id)
 
         try:
             if not await want_respond(cache.llm_client, context, system_instruction, message.guild.id):
                 return
 
-            reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
-
             async with message.channel.typing():
-                response = await cache.llm_client.get_response(context, reply_config)
+                response = await cache.llm_client.get_interaction(
+                    context, 
+                    system_instruction=system_instruction, 
+                    max_output_tokens=1500
+                )
 
                 candidate_tokens = 0
-                if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
-                    prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
-                    candidate_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
+                if hasattr(response, "usage") and response.usage is not None:
+                    prompt_tokens = getattr(response.usage, "total_input_tokens", 0)
+                    candidate_tokens = getattr(response.usage, "total_output_tokens", 0)
                     if prompt_tokens > 0:
                         self.context_manager.update_latest_user_message_tokens(guild_id, prompt_tokens)
 
-                if not response.text:
+                out_text = getattr(response, "output_text", getattr(response, "text", ""))
+
+                if not out_text:
                     logger.warning("Model returned empty response (possibly blocked by safety filters)")
                     return
 
-                self.context_manager.add_model_message(
+                self.context_manager.add_interaction_steps(
                     guild_id,
-                    response.text,
+                    response.steps,
                     tokens=candidate_tokens,
                     timestamp_ms=int(time.time() * 1000),
                 )
-                await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
+                await message.reply(out_text, fail_if_not_exists=False, mention_author=False)
 
         except RateLimitExceeded:
             return

@@ -6,6 +6,7 @@ import os
 import json
 import logging
 import copy
+from typing import Any
 
 from core.utils import get_phrases
 from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
@@ -211,6 +212,113 @@ class LLMClient:
             )
             raise RateLimitExceeded("All configured models have exceeded their rate limits")
 
+    def _prepare_interaction_config(self, model: ModelConfig) -> dict:
+        config = {"thinking_summaries": "auto"}
+        
+        if model.thinking_level is not None:
+            config["thinking_level"] = model.thinking_level
+                
+        return config
+
+    async def get_interaction(
+        self, input_data: str | Any, system_instruction: str = None, response_format: list = None, max_output_tokens: int = None, cheap_first: bool = False, model_priority: list[str] | None = None, tools: list = None
+    ):
+        now = time.time()
+        attempted_errors = []
+
+        models_to_use = []
+        if model_priority:
+            models_dict = {m.name: m for m in self.models}
+            models_to_use = [models_dict[name] for name in model_priority if name in models_dict]
+        if not models_to_use:
+            models_to_use = list(reversed(self.models)) if cheap_first else self.models
+
+        for model in models_to_use:
+            if not model.is_available(now):
+                continue
+
+            model.record_request(now)
+            logger.info("Using model '%s' for interaction request", model.name)
+
+            try:
+                generation_config = self._prepare_interaction_config(model)
+                if max_output_tokens:
+                    generation_config["max_output_tokens"] = max_output_tokens
+                
+                kwargs = {
+                    "model": model.name,
+                    "store": False,
+                    "input": input_data,
+                }
+                if generation_config:
+                    kwargs["generation_config"] = generation_config
+                if system_instruction:
+                    kwargs["system_instruction"] = system_instruction
+                if response_format:
+                    kwargs["response_format"] = response_format
+                if tools:
+                    kwargs["tools"] = tools
+
+                response = await self.client.aio.interactions.create(**kwargs)
+
+                if hasattr(response, "usage") and response.usage is not None:
+                    usage = response.usage
+                    total_tokens = getattr(usage, "total_tokens", 0)
+                    prompt_tokens = getattr(usage, "total_input_tokens", 0)
+                    response_tokens = getattr(usage, "total_output_tokens", 0)
+                    thoughts_tokens = getattr(usage, "total_thought_tokens", 0)
+
+                    model.record_tokens(time.time(), prompt_tokens)
+
+                    logger.info(
+                        "Token usage for '%s': total=%s, prompt (input)=%s, response=%s, thoughts=%s",
+                        model.name,
+                        total_tokens,
+                        prompt_tokens,
+                        response_tokens,
+                        thoughts_tokens,
+                    )
+
+                model.record_success()
+                return response
+
+            except errors.APIError as e:
+                model.refund_request()
+                code = getattr(e, "code", 0)
+                message = getattr(e, "message", str(e))
+                logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
+
+                if code == 429:
+                    model.handle_429()
+                    attempted_errors.append(f"{model.name} (APIError {code})")
+                    logger.warning(
+                        "Attempting fallback to next model due to 429 (Consecutive: %d)", model._consecutive_429s
+                    )
+                    continue
+                elif code >= 500:
+                    attempted_errors.append(f"{model.name} (APIError {code})")
+                    logger.warning("Attempting fallback to next model due to server error %s", code)
+                    continue
+
+                raise
+
+            except Exception as e:
+                model.refund_request()
+                logger.error("Exception on model '%s': %s", model.name, str(e))
+                attempted_errors.append(f"{model.name} (Exception: {type(e).__name__})")
+                logger.warning("Attempting fallback to next model due to generic exception")
+                continue
+
+        if attempted_errors:
+            error_msg = f"All attempted models failed. Errors: {', '.join(attempted_errors)}"
+            logger.error(error_msg)
+            raise RateLimitExceeded(error_msg)
+        else:
+            logger.warning(
+                "All models rate-limited locally. Status: %s", [m.get_status(time.time()) for m in self.models]
+            )
+            raise RateLimitExceeded("All configured models have exceeded their rate limits")
+
     def get_limits_status(self) -> list[dict]:
         """Return limits status for all configured models."""
         now = time.time()
@@ -230,4 +338,9 @@ def get_new_client():
     token = read_api_token()
     if not token:
         return None
-    return genai.Client(api_key=token)
+    return genai.Client(
+        api_key=token,
+        http_options=types.HttpOptions(
+            retryOptions=types.HttpRetryOptions(attempts=2)
+        )
+    )

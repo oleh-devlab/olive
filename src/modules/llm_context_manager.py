@@ -146,6 +146,61 @@ class LLMContextManager:
             out["parts"] = message["parts"]
         return out
 
+    def get_interaction_context(self, guild_id: str) -> list:
+        if guild_id not in self.llm_context:
+            self.llm_context[guild_id] = []
+        return [self._interaction_content(m) for m in self.llm_context[guild_id]]
+
+    @staticmethod
+    def _interaction_content(message: dict) -> dict:
+        if "interaction_step" in message:
+            return message["interaction_step"]
+            
+        step_type = "user_input" if message["role"] == "user" else "model_output"
+        out = {"type": step_type}
+        if "parts" in message:
+            content = []
+            for part in message["parts"]:
+                item = part.copy()
+                if "text" in item and "type" not in item:
+                    item["type"] = "text"
+                content.append(item)
+            out["content"] = content
+        return out
+
+    def add_interaction_steps(self, guild_id: str, steps: list, tokens: int = 0, timestamp_ms: int = 0):
+        if guild_id not in self.llm_context:
+            self.llm_context[guild_id] = []
+        if guild_id not in self.database_context:
+            self.database_context[guild_id] = []
+
+        for step in steps:
+            # Support both Pydantic models (from SDK) and raw dicts
+            step_dict = step.model_dump() if hasattr(step, "model_dump") else step
+            if not isinstance(step_dict, dict):
+                step_dict = getattr(step, "__dict__", str(step))
+                
+            if step_dict.get("type") == "thought":
+                continue
+            
+            entry = {
+                "role": "model",
+                "interaction_step": step_dict,
+                "timestamp_ms": timestamp_ms,
+            }
+            
+            # Add parts for backwards compatibility with generateContent API
+            if isinstance(step_dict, dict) and step_dict.get("type") == "model_output":
+                parts = []
+                for c in step_dict.get("content", []):
+                    if isinstance(c, dict) and c.get("type") == "text":
+                        parts.append({"text": c.get("text")})
+                entry["parts"] = parts
+                entry["tokens"] = tokens
+
+            self.llm_context[guild_id].append(entry)
+            self.database_context[guild_id].append(entry)
+
     def add_user_message(
         self,
         guild_id: str,
@@ -172,6 +227,33 @@ class LLMContextManager:
 
         self.llm_context[guild_id].append(entry)
         self.database_context[guild_id].append(entry)
+
+    def add_function_results(
+        self,
+        guild_id: str,
+        results: list[dict],
+        timestamp_ms: int = 0,
+    ):
+        if guild_id not in self.llm_context:
+            self.llm_context[guild_id] = []
+        if guild_id not in self.database_context:
+            self.database_context[guild_id] = []
+            
+        for res in results:
+            entry = {
+                "role": "user",
+                "interaction_step": res,
+                "timestamp_ms": timestamp_ms,
+            }
+            # Add for backward compatibility
+            entry["parts"] = []
+            if "result" in res:
+                for r in res["result"]:
+                    if r.get("type") == "text":
+                        entry["parts"].append({"text": r.get("text")})
+
+            self.llm_context[guild_id].append(entry)
+            self.database_context[guild_id].append(entry)
 
     def is_duplicate_no_consent(self, guild_id: str, author_name: str) -> bool:
         """
