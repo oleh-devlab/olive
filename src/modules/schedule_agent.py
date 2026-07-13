@@ -183,16 +183,21 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
     ]
 
 
-    agent_tools_schema = [
-        {
+    agent_tools_schema = []
+    for f in agent_tools:
+        decl = types.FunctionDeclaration.from_callable(
+            client=cache.llm_client.client._api_client,
+            callable=f
+        ).model_dump(exclude_unset=True, exclude_none=True)
+        
+        # Interactions API requires parameters to be an object
+        if "parameters" not in decl:
+            decl["parameters"] = {"type": "OBJECT", "properties": {}}
+            
+        agent_tools_schema.append({
             "type": "function",
-            **types.FunctionDeclaration.from_callable(
-                client=cache.llm_client.client._api_client,
-                callable=f
-            ).model_dump(exclude_unset=True, exclude_none=True)
-        }
-        for f in agent_tools
-    ]
+            **decl
+        })
 
     max_iterations = 7
     iteration = 0
