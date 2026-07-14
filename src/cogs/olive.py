@@ -59,6 +59,7 @@ class AIAssistantCog(commands.Cog):
             or not cache.llm_client
             or not message.content
             or not cache.llm_client.is_available
+            or not isinstance(message.channel, disnake.TextChannel)
         ):
             return
 
