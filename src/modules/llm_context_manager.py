@@ -308,6 +308,11 @@ class LLMContextManager:
                 )
             messages[-1]["tokens"] = max(1, new_user_tokens)
 
+    def get_total_tokens(self, guild_id: str) -> int:
+        """Returns the total tokens for a guild's context in O(M)."""
+        messages = self.llm_context.get(guild_id, [])
+        return sum(self.get_message_tokens(m) for m in messages)
+
     def apply_restrictions(self):
         """
         Maintains the context size within the configured token budget.
@@ -316,14 +321,13 @@ class LLMContextManager:
         effective_limit = self.token_budget.context_tokens
 
         for guild_id, messages in self.llm_context.items():
-            while messages:
-                total_tokens = sum(self.get_message_tokens(m) for m in messages)
-
-                if total_tokens <= effective_limit:
-                    break
-
-                messages.pop(0)
+            total_tokens = sum(self.get_message_tokens(m) for m in messages)
+            
+            while messages and total_tokens > effective_limit:
+                removed_msg = messages.pop(0)
+                total_tokens -= self.get_message_tokens(removed_msg)
 
                 # Remove leading model messages so the context always starts with a user message
                 while messages and messages[0].get("role") in ["assistant", "model"]:
-                    messages.pop(0)
+                    removed_msg = messages.pop(0)
+                    total_tokens -= self.get_message_tokens(removed_msg)
