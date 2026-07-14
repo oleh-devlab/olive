@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from google.genai import types
 
@@ -91,8 +92,17 @@ def _parse_want_reply(response) -> bool:
         if not raw_text:
             return False
 
-        data = json.loads(raw_text)
-        return data.get("i_want_to_reply", False)
+        try:
+            data = json.loads(raw_text)
+            return data.get("i_want_to_reply", False)
+        except json.JSONDecodeError:
+            # Fallback for models (like Gemini) that sometimes embed the JSON in conversational text
+            match = re.search(r'"i_want_to_reply"\s*:\s*(true|false)', raw_text, re.IGNORECASE)
+            if match:
+                return match.group(1).lower() == "true"
+            
+            # Re-raise to be caught by the outer block if still no match
+            raise
 
     except Exception as e:
         logger.error("Error parsing response gate JSON: %s", e)
