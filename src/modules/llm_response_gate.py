@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from google.genai import types
 
@@ -44,13 +45,11 @@ async def want_respond(llm_client, context: list, system_instruction: str, guild
 
     test_system_instruction = f"{system_instruction}\n\n{test_instruction}"
 
-    response_format = [
-        {
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": _WANT_REPLY_SCHEMA,
-        }
-    ]
+    response_format = {
+        "type": "text",
+        "mime_type": "application/json",
+        "schema": _WANT_REPLY_SCHEMA,
+    }
 
     test_models_priority = global_olive.get("test_models_priority")
 
@@ -88,8 +87,21 @@ def _parse_want_reply(response) -> bool:
         if raw_text.endswith("```"):
             raw_text = raw_text[:-3].strip()
 
-        data = json.loads(raw_text)
-        return data.get("i_want_to_reply", False)
+        logger.debug(f"Test response: \"\"\"{raw_text}\"\"\"")
+
+        if not raw_text:
+            return False
+
+        try:
+            data = json.loads(raw_text)
+            return data.get("i_want_to_reply", False)
+        except json.JSONDecodeError:
+            match = re.search(r'"i_want_to_reply"\s*:\s*(true|false)', raw_text, re.IGNORECASE)
+            if match:
+                return match.group(1).lower() == "true"
+            
+            # Re-raise to be caught by the outer block if still no match
+            raise
 
     except Exception as e:
         logger.error("Error parsing response gate JSON: %s", e)
