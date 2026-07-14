@@ -44,13 +44,11 @@ async def want_respond(llm_client, context: list, system_instruction: str, guild
 
     test_system_instruction = f"{system_instruction}\n\n{test_instruction}"
 
-    response_format = [
-        {
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": _WANT_REPLY_SCHEMA,
-        }
-    ]
+    response_format = {
+        "type": "text",
+        "mime_type": "application/json",
+        "schema": _WANT_REPLY_SCHEMA,
+    }
 
     test_models_priority = global_olive.get("test_models_priority")
 
