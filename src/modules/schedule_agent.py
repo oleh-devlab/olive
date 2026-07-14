@@ -210,6 +210,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
 
             # Fetch fresh context before each API call
             context = schedule_context_manager.get_interaction_context(channel_id_str)
+            anticipated_tokens = (len(system_instruction) // 2) + schedule_context_manager.get_total_tokens(channel_id_str)
 
             try:
                 response = await cache.llm_client.get_interaction(
@@ -218,6 +219,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     max_output_tokens=2500,
                     tools=agent_tools_schema,
                     model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
+                    anticipated_tokens=anticipated_tokens,
                 )
             except Exception as e:
                 logger.error("Error in schedule agent get_interaction: %s", e)
