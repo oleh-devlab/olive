@@ -88,6 +88,11 @@ def _parse_want_reply(response) -> bool:
         if raw_text.endswith("```"):
             raw_text = raw_text[:-3].strip()
 
+        logger.debug(f"Test response: \"\"\"{raw_text}\"\"\"")
+
+        if not raw_text:
+            return False
+
         data = json.loads(raw_text)
         return data.get("i_want_to_reply", False)
 
