@@ -480,7 +480,8 @@ class AutoSchedule(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         planning_days: int = None,
         priority_threshold: int = None,
-        compute_timeout: float = None,
+        packer_timeout: float = None,
+        gravity_timeout: float = None,
         step_minutes: int = commands.Param(
             default=None,
             description="Time step in minutes (higher values increase probability of errors/inaccuracy)",
@@ -501,22 +502,28 @@ class AutoSchedule(commands.Cog):
         if priority_threshold is not None and (priority_threshold < 0 or priority_threshold > 10):
             return await inter.edit_original_response("Priority threshold must be between 0 and 10.")
 
-        if compute_timeout is not None and (compute_timeout <= 0 or compute_timeout > max_timeout):
+        if packer_timeout is not None and (packer_timeout <= 0 or packer_timeout > max_timeout):
             return await inter.edit_original_response(
-                f"Compute timeout must be greater than 0 and up to {max_timeout} seconds."
+                f"Packer timeout must be greater than 0 and up to {max_timeout} seconds."
+            )
+
+        if gravity_timeout is not None and (gravity_timeout <= 0 or gravity_timeout > max_timeout):
+            return await inter.edit_original_response(
+                f"Gravity timeout must be greater than 0 and up to {max_timeout} seconds."
             )
 
         if step_minutes is not None and step_minutes not in allowed_steps:
             return await inter.edit_original_response(f"Step minutes must be one of {allowed_steps}.")
 
-        if planning_days is None and priority_threshold is None and compute_timeout is None and step_minutes is None:
+        if planning_days is None and priority_threshold is None and packer_timeout is None and gravity_timeout is None and step_minutes is None:
             return await inter.edit_original_response("Please provide at least one setting to update.")
 
         success = provider.update_schedule_settings(
             inter.author.id,
             planning_days=planning_days,
             priority_threshold=priority_threshold,
-            compute_timeout=compute_timeout,
+            packer_timeout=packer_timeout,
+            gravity_timeout=gravity_timeout,
             step_minutes=step_minutes,
         )
         if success:
@@ -525,8 +532,10 @@ class AutoSchedule(commands.Cog):
                 msg += f"- Planning horizon: {planning_days} days\n"
             if priority_threshold is not None:
                 msg += f"- Priority threshold: {priority_threshold}\n"
-            if compute_timeout is not None:
-                msg += f"- Compute timeout: {compute_timeout}s\n"
+            if packer_timeout is not None:
+                msg += f"- Packer timeout: {packer_timeout}s\n"
+            if gravity_timeout is not None:
+                msg += f"- Gravity timeout: {gravity_timeout}s\n"
             if step_minutes is not None:
                 msg += f"- Time step: {step_minutes} min\n"
             await inter.edit_original_response(msg)
