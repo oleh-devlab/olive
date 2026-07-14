@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import disnake
 from disnake.ext import commands
 from datetime import datetime
@@ -6,15 +10,18 @@ import core.cache as cache
 from core.utils import get_phrases
 from core.time_utils import tz
 import modules.schedule_formatter as auto_timetable
+from core.eternal_message import EternalMessage
 
 
-async def update_schedule_message(bot, channel_id, recalculate: bool = True):
+async def update_schedule_message(bot, channel_id, recalculate: bool = True, interaction: disnake.MessageInteraction = None):
     state = cache.schedule_states.get(channel_id)
     if not state:
         return
 
     user_id = state["user_id"]
-    msg = state["message"]
+    em = state.get("em")
+    if not em:
+        return
     current_page = state["current_page"]
 
     now = datetime.now(tz)
@@ -38,7 +45,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
             )
             error_msg = None
         except Exception as e:
-            print(f"[ERROR schedule_ui update_schedule_message] Error fetching schedule: {e}")
+            logger.error(f"Error fetching schedule: {e}")
             schedule_days = []
             perf_time = 0.0
             planning_days = 0
@@ -147,11 +154,16 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True):
 
     if state.get("last_content") != schedule_content or state.get("last_view_state") != view_state:
         try:
-            await msg.edit(content=schedule_content, view=view)
+            if interaction:
+                await interaction.edit_original_response(content=schedule_content, view=view)
+            else:
+                fallback_text = "Initializing schedule..."
+                await em.update(fallback_kwargs={"content": fallback_text, "view": view}, content=schedule_content, view=view)
+                
             state["last_content"] = schedule_content
             state["last_view_state"] = view_state
         except Exception as e:
-            print(f"[ERROR schedule_ui update_schedule_message] Error editing message: {e}")
+            logger.error(f"Error editing message: {e}")
 
 
 class SchedulePaginationView(disnake.ui.View):
@@ -193,7 +205,7 @@ class SchedulePaginationView(disnake.ui.View):
                 pass
             return
 
-        await update_schedule_message(interaction.bot, channel_id, recalculate=should_recalc)
+        await update_schedule_message(interaction.bot, channel_id, recalculate=should_recalc, interaction=interaction)
 
     @disnake.ui.button(label="⏮", style=disnake.ButtonStyle.primary, custom_id="schedule_first_page")
     async def first_page(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction):
@@ -234,11 +246,15 @@ class ScheduleUI(commands.Cog):
         text = phrases.get("welcome_message", "Initializing schedule...")
 
         view = SchedulePaginationView()
-        msg = await channel.send(text, view=view)
+        em = EternalMessage(self.bot, channel.id, "schedule")
+        success = await em.init_message({"content": text, "view": view}, purge_on_recreate=True)
+        if not success:
+            logger.error(f"Failed to initialize eternal message for channel {channel.id}")
+            return
 
         cache.schedule_states[channel.id] = {
             "user_id": user_id,
-            "message": msg,
+            "em": em,
             "current_page": 0,
             "max_pages": 1,
             "last_content": "",

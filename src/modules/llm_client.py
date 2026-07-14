@@ -6,6 +6,7 @@ import os
 import json
 import logging
 import copy
+from typing import Any
 
 from core.utils import get_phrases
 from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
@@ -72,31 +73,6 @@ class LLMClient:
         legacy_name = olive_cfg.get("model_name", "gemma-4-31b-it")
         return [ModelConfig(name=legacy_name)]
 
-    @staticmethod
-    def _prepare_model_config(base_config, model: ModelConfig):
-        """Creates a model-specific configuration, merging base settings with model-specific overrides (like thinking)."""
-        current_config = base_config
-        if current_config is not None:
-            current_config = copy.copy(base_config)
-
-        if model.thinking_budget == 0:
-            if not current_config:
-                current_config = types.GenerateContentConfig()
-            current_config.thinking_config = types.ThinkingConfig(thinking_budget=0)
-        elif model.thinking_budget is not None or model.thinking_level is not None:
-            if not current_config:
-                current_config = types.GenerateContentConfig()
-
-            thinking_kwargs = {}
-            if model.thinking_budget is not None:
-                thinking_kwargs["thinking_budget"] = model.thinking_budget
-
-            if model.thinking_level:
-                thinking_kwargs["thinking_level"] = model.thinking_level
-
-            current_config.thinking_config = types.ThinkingConfig(**thinking_kwargs, include_thoughts=True)
-
-        return current_config
 
     @property
     def is_available(self) -> bool:
@@ -120,9 +96,18 @@ class LLMClient:
 
         return await self.client.aio.aclose()
 
-    async def get_response(
-        self, contents, config, cheap_first: bool = False, model_priority: list[str] | None = None
-    ) -> types.Content:
+
+    def _prepare_interaction_config(self, model: ModelConfig) -> dict:
+        config = {"thinking_summaries": "auto"}
+        
+        if model.thinking_level is not None:
+            config["thinking_level"] = model.thinking_level
+                
+        return config
+
+    async def get_interaction(
+        self, input_data: str | Any, system_instruction: str = None, response_format: list = None, max_output_tokens: int = None, cheap_first: bool = False, model_priority: list[str] | None = None, tools: list = None
+    ):
         now = time.time()
         attempted_errors = []
 
@@ -138,26 +123,36 @@ class LLMClient:
                 continue
 
             model.record_request(now)
-            logger.info("Using model '%s' for request", model.name)
+            logger.info("Using model '%s' for interaction request", model.name)
 
             try:
-                # Apply model-specific configuration (e.g. thinking config)
-                current_config = self._prepare_model_config(config, model)
+                generation_config = self._prepare_interaction_config(model)
+                if max_output_tokens:
+                    generation_config["max_output_tokens"] = max_output_tokens
+                
+                kwargs = {
+                    "model": model.name,
+                    "store": False,
+                    "input": input_data,
+                }
+                if generation_config:
+                    kwargs["generation_config"] = generation_config
+                if system_instruction:
+                    kwargs["system_instruction"] = system_instruction
+                if response_format:
+                    kwargs["response_format"] = response_format
+                if tools:
+                    kwargs["tools"] = tools
 
-                response = await self.client.aio.models.generate_content(
-                    model=model.name,
-                    config=current_config,
-                    contents=contents,
-                )
+                response = await self.client.aio.interactions.create(**kwargs)
 
-                if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
-                    usage = response.usage_metadata
-                    total_tokens = getattr(usage, "total_token_count", 0)
-                    prompt_tokens = getattr(usage, "prompt_token_count", 0)
-                    response_tokens = getattr(usage, "candidates_token_count", 0)
-                    thoughts_tokens = getattr(usage, "thoughts_token_count", 0)
+                if hasattr(response, "usage") and response.usage is not None:
+                    usage = response.usage
+                    total_tokens = getattr(usage, "total_tokens", 0)
+                    prompt_tokens = getattr(usage, "total_input_tokens", 0)
+                    response_tokens = getattr(usage, "total_output_tokens", 0)
+                    thoughts_tokens = getattr(usage, "total_thought_tokens", 0)
 
-                    # TPM (Tokens Per Minute) зазвичай враховує лише вхідні токени (input)
                     model.record_tokens(time.time(), prompt_tokens)
 
                     logger.info(
@@ -178,7 +173,6 @@ class LLMClient:
                 message = getattr(e, "message", str(e))
                 logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
 
-                # 5xx - Server Errors (Internal Server Error, Service Unavailable, etc.)
                 if code == 429:
                     model.handle_429()
                     attempted_errors.append(f"{model.name} (APIError {code})")
@@ -191,7 +185,6 @@ class LLMClient:
                     logger.warning("Attempting fallback to next model due to server error %s", code)
                     continue
 
-                # 4xx client errors (like 400 Bad Request) mean our request is invalid
                 raise
 
             except Exception as e:
@@ -230,4 +223,9 @@ def get_new_client():
     token = read_api_token()
     if not token:
         return None
-    return genai.Client(api_key=token)
+    return genai.Client(
+        api_key=token,
+        http_options=types.HttpOptions(
+            retryOptions=types.HttpRetryOptions(attempts=2)
+        )
+    )

@@ -46,12 +46,23 @@ class LLMContextEmbed(commands.Cog):
             return
 
         ctx_mgr = olive_cog.context_manager
-        max_tokens = core.cache.llm_client.min_context_tokens if getattr(core.cache, "llm_client", None) else 128000
+        budget = ctx_mgr.token_budget
+
+        budget_value = (
+            f"`Context:  {budget.context_tokens:,}`\n"
+            f"`System:   {budget.reserved_system_tokens:,}`\n"
+            f"`Memory:   {budget.reserved_memory_tokens:,}`\n"
+            f"`Response: {budget.reserved_response_tokens:,}`\n"
+            f"`Total:    {budget.total:,}`"
+        )
+        embed.add_field(name="Reserved tokens", value=budget_value, inline=False)
 
         if not ctx_mgr.llm_context:
             embed.description = "No active contexts."
             core.cache.embeds_to_send["llm_context"] = embed
             return
+
+        max_tokens = budget.context_tokens
 
         for guild_id, messages in ctx_mgr.llm_context.items():
             total_tokens = sum(ctx_mgr.get_message_tokens(m) for m in messages)

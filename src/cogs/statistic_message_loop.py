@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 from datetime import datetime
 from disnake.ext import commands, tasks
@@ -8,6 +12,7 @@ import core.cache
 from core.utils import get_phrases
 from core.task_handler import ResilientTaskHandler
 from core.time_utils import tz
+from core.eternal_message import EternalMessage
 
 
 class MessageLoop(commands.Cog):
@@ -15,7 +20,7 @@ class MessageLoop(commands.Cog):
         self.bot = bot
 
         self.channels = []
-        self.messages = []
+        self.eternal_messages = {}
 
         self.last_embeds_dicts = {}
         self.channels_valid_embeds = {}
@@ -54,17 +59,24 @@ class MessageLoop(commands.Cog):
             try:
                 new_embeds_dicts[channel_id] = [e.to_dict() for e in embeds]
             except Exception:
-                print(f"Error converting new embeds to dicts for {content} in channel {channel_id}.")
+                logger.error(f"Error converting new embeds to dicts for {content} in channel {channel_id}.")
                 new_embeds_dicts[channel_id] = []
 
-        for message in self.messages:
-            message_channel_id = message.channel.id
-            if self.last_embeds_dicts.get(message_channel_id, []) == new_embeds_dicts.get(message_channel_id, []):
-                # print(f"Embeds are the same, skipping edit for {content} in channel {message_channel_id}.")
+        for channel_id, em in self.eternal_messages.items():
+            if self.last_embeds_dicts.get(channel_id, []) == new_embeds_dicts.get(channel_id, []):
                 continue
 
-            await message.edit(content=content, embeds=self.channels_valid_embeds[message_channel_id])
-            await asyncio.sleep(0.5)
+            fallback_text = (
+                get_phrases(em.guild_id)
+                .get("statistic_message_loop", {})
+                .get("welcome_message", "Error with getting message for statistic channel.")
+            )
+            
+            await em.update(
+                fallback_kwargs={"content": fallback_text, "embeds": self.channels_valid_embeds[channel_id]}, 
+                content=content, 
+                embeds=self.channels_valid_embeds[channel_id]
+            )
 
         self.last_embeds_dicts = new_embeds_dicts
 
@@ -75,45 +87,41 @@ class MessageLoop(commands.Cog):
         try:
             self.channels = []
             self.channels_valid_embeds = {}
-            self.messages = []
+            self.eternal_messages = {}
 
-            # 1. Getting channels
+            # 1. Getting channels and preparing eternal messages
             for channel_id in channels["statistic"]:
                 try:
                     channel = await self.bot.get_or_fetch_channel(channel_id)
                     self.channels.append(channel)
                     self.channels_valid_embeds[channel.id] = []
+                    self.eternal_messages[channel.id] = EternalMessage(self.bot, channel.id, "statistic")
                 except Exception as e:
-                    print(f"[before_main_loop WARNING] Not found channel {channel_id}: {e}")
+                    logger.warning(f"Not found channel {channel_id}: {e}")
 
-            # 2. Cleaning the detected channels
+            # 2. Cleaning channels and initializing messages
             for channel in self.channels:
                 await asyncio.sleep(0.5)
-                try:
-                    await channel.purge()
-                except Exception as e:
-                    print(f"[ERROR before_main_loop : purge] Error purging channel {channel.id}: {e}")
 
-            # 3. Sending initial messages and filling the list for future edits
-            await asyncio.sleep(0.5)
-
-            for channel in self.channels:
                 try:
                     text = (
                         get_phrases(channel.guild.id)
                         .get("statistic_message_loop", {})
                         .get("welcome_message", "Error with getting message for statistic channel.")
                     )
-                    msg = await channel.send(text)
-                    self.messages.append(msg)
-                    print(f"Initial message sent to channel {channel.id} for MessageLoop.")
+                    
+                    em = self.eternal_messages[channel.id]
+                    success = await em.init_message({"content": text}, purge_on_recreate=True)
+                    if success:
+                        logger.info(f"Eternal message initialized in channel {channel.id}")
+                    else:
+                        logger.error(f"Failed to initialize eternal message in channel {channel.id}. Removing from loop.")
+                        self.eternal_messages.pop(channel.id, None)
                 except Exception as e:
-                    print(
-                        f"[ERROR before_main_loop : send initial message] Error sending initial message to channel {channel.id}: {e}"
-                    )
+                    logger.error(f"Error processing channel {channel.id}: {e}")
 
         except Exception as e:
-            print(f"[ERROR in before_main_loop]: {e}")
+            logger.error(f"Error in before_main_loop: {e}")
             traceback.print_exc()
 
     @main_loop.error

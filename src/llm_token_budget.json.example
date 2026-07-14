@@ -1,0 +1,6 @@
+{
+    "context_tokens": 64000,
+    "reserved_system_tokens": 6000,
+    "reserved_memory_tokens": 32000,
+    "reserved_response_tokens": 5000
+}

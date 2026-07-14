@@ -3,10 +3,11 @@ import disnake
 from disnake.ext import commands
 from google.genai import types
 import logging
+import time
 
 from modules.llm_client import LLMClient
 from modules.llm_rate_limiter import RateLimitExceeded
-from modules.llm_context_manager import LLMContextManager
+from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
 from modules.llm_message_formatter import format_user_message
 from modules.llm_response_gate import want_respond
 from modules.schedule_agent import load_schedule_context, run_schedule_agent
@@ -35,15 +36,19 @@ class AIAssistantCog(commands.Cog):
             cache.llm_client = LLMClient()
             logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
-            self.openai_client = OpenAIClient()
-
-            await self.context_manager.load_from_file()
-            await self.openai_context_manager.load_from_file()
-
-            await load_schedule_context()
+            error = self.context_manager.token_budget.validate(cache.llm_client.min_context_tokens)
+            if error:
+                logger.error(error + " LLM responses are disabled.")
+                cache.llm_client = None
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
             cache.llm_client = None
+
+        self.openai_client = OpenAIClient()
+
+        await self.context_manager.load_from_file()
+        await self.openai_context_manager.load_from_file()
+        await load_schedule_context()
 
     def cog_unload(self):
         if cache.llm_client:
@@ -66,7 +71,6 @@ class AIAssistantCog(commands.Cog):
             or message.author.bot
             or not cache.llm_client
             or not message.content
-            or not message.guild
             or not cache.llm_client.is_available
         ):
             return
@@ -84,7 +88,9 @@ class AIAssistantCog(commands.Cog):
         guild_id = str(message.guild.id)
         has_consent = cache.llm_consent.has_consent(message.author.id) if getattr(cache, "llm_consent", None) else False
 
-        new_text = await format_user_message(message, has_consent=has_consent)
+        meta = UserMessageMetadata.from_message(message)
+
+        new_text = await format_user_message(message, meta, has_consent=has_consent)
 
         if is_openai_test:
             if not has_consent:
@@ -99,10 +105,15 @@ class AIAssistantCog(commands.Cog):
 
         if not has_consent:
             # Deduplicate consecutive no-consent stubs from the same user
-            if self.context_manager.is_duplicate_no_consent(guild_id, message.author.name):
+            if self.context_manager.is_duplicate_no_consent(guild_id, meta.author_name):
                 return
 
-            self.context_manager.add_user_message(guild_id, new_text, no_consent=True)
+            self.context_manager.add_user_message(
+                guild_id,
+                new_text,
+                meta,
+                no_consent=True,
+            )
             return
 
         # Intercept schedule management in tasks_channel
@@ -111,10 +122,14 @@ class AIAssistantCog(commands.Cog):
 
         if message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
-            self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text))
+            self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text, meta))
             return
 
-        self.context_manager.add_user_message(guild_id, new_text)
+        self.context_manager.add_user_message(
+            guild_id,
+            new_text,
+            meta,
+        )
 
         if guild_id in self.response_tasks:
             self.response_tasks[guild_id].cancel()
@@ -181,30 +196,39 @@ class AIAssistantCog(commands.Cog):
     async def generate_answer(self, message: disnake.Message):
         guild_id = str(message.guild.id)
         system_instruction = self._resolve_system_instruction(message.guild.id)
-        context = self.context_manager.get_context(guild_id)
+        context = self.context_manager.get_interaction_context(guild_id)
 
         try:
             if not await want_respond(cache.llm_client, context, system_instruction, message.guild.id):
                 return
 
-            reply_config = types.GenerateContentConfig(system_instruction=system_instruction, max_output_tokens=1500)
-
             async with message.channel.typing():
-                response = await cache.llm_client.get_response(context, reply_config)
+                response = await cache.llm_client.get_interaction(
+                    context, 
+                    system_instruction=system_instruction, 
+                    max_output_tokens=1500
+                )
 
                 candidate_tokens = 0
-                if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
-                    prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
-                    candidate_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
+                if hasattr(response, "usage") and response.usage is not None:
+                    prompt_tokens = getattr(response.usage, "total_input_tokens", 0)
+                    candidate_tokens = getattr(response.usage, "total_output_tokens", 0)
                     if prompt_tokens > 0:
                         self.context_manager.update_latest_user_message_tokens(guild_id, prompt_tokens)
 
-                if not response.text:
+                out_text = getattr(response, "output_text", getattr(response, "text", ""))
+
+                if not out_text:
                     logger.warning("Model returned empty response (possibly blocked by safety filters)")
                     return
 
-                self.context_manager.add_model_message(guild_id, response.text, tokens=candidate_tokens)
-                await message.reply(response.text, fail_if_not_exists=False, mention_author=False)
+                self.context_manager.add_interaction_steps(
+                    guild_id,
+                    response.steps,
+                    tokens=candidate_tokens,
+                    timestamp_ms=int(time.time() * 1000),
+                )
+                await message.reply(out_text, fail_if_not_exists=False, mention_author=False)
 
         except RateLimitExceeded:
             return
@@ -212,8 +236,7 @@ class AIAssistantCog(commands.Cog):
             logger.error("Unexpected error in generate_answer: %s", e)
             return
         finally:
-            limit = cache.llm_client.min_context_tokens if cache.llm_client else 128000
-            self.context_manager.apply_restrictions(max_tokens=limit)
+            self.context_manager.apply_restrictions()
             await self.context_manager.write_to_file()
 
     @commands.slash_command(name="turn_olive", description="Enable or disable OLIVE AI")
@@ -228,6 +251,43 @@ class AIAssistantCog(commands.Cog):
             .format(status=status)
         )
         await ctx.send(text, ephemeral=True)
+
+    @commands.slash_command(name="token_budget", description="Manage LLM token budget")
+    @commands.is_owner()
+    async def token_budget(self, ctx: disnake.ApplicationCommandInteraction):
+        pass
+
+    @token_budget.sub_command(name="set", description="Update a token budget value")
+    async def token_budget_set(
+        self,
+        ctx: disnake.ApplicationCommandInteraction,
+        field: str = commands.Param(
+            description="Budget field to update",
+            choices=["context_tokens", "reserved_system_tokens", "reserved_memory_tokens", "reserved_response_tokens"],
+        ),
+        value: int = commands.Param(description="New value (tokens)", gt=0),
+    ):
+        budget = self.context_manager.token_budget
+
+        old_value = getattr(budget, field)
+        setattr(budget, field, value)
+
+        if cache.llm_client:
+            error = budget.validate(cache.llm_client.min_context_tokens)
+            if error:
+                setattr(budget, field, old_value)
+                await ctx.send(f"Error: {error}", ephemeral=True)
+                return
+
+        budget.save_to_file()
+
+        self.context_manager.apply_restrictions()
+        await self.context_manager.write_to_file()
+
+        await ctx.send(
+            f"`{field}`: {old_value:,} → {value:,} (total: {budget.total:,})",
+            ephemeral=True,
+        )
 
 
 def setup(bot: commands.Bot):

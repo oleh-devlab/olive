@@ -21,7 +21,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
         return [], 0.0, planning_days, [], [], "NO_DATA"
     planning_days = provider.get_planning_days(client_ID)
     priority_threshold = provider.get_priority_threshold(client_ID)
-    compute_timeout = provider.get_compute_timeout(client_ID)
+    timeouts = provider.get_timeouts(client_ID)
     step_minutes = provider.get_step_minutes(client_ID)
     scheduler = Scheduler(
         min_horizon_days=planning_days, priority_threshold=priority_threshold, step_minutes=step_minutes
@@ -39,7 +39,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
     workers = getattr(settings, "schedule_compute_workers", 1)
 
     start_perf = time.perf_counter()
-    result = scheduler.solve(start_time=now_tz, timeout_seconds=compute_timeout, num_search_workers=workers)
+    result = scheduler.solve(start_time=now_tz, timeouts=timeouts, num_search_workers=workers)
     solve_time = time.perf_counter() - start_perf
 
     if result.status == "UNKNOWN":

@@ -2,10 +2,11 @@ import logging
 import inspect
 import disnake
 from google.genai import types
+import time
 
 import core.cache as cache
 from core.utils import get_phrases, send_long_message
-from modules.llm_context_manager import LLMContextManager
+from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
 from modules.schedule_agent_tools import ScheduleAgentTools
 from modules.schedule_provider import ScheduleProvider
 
@@ -142,15 +143,18 @@ class UndoScheduleView(disnake.ui.View):
         )
 
 
-async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_text: str):
+async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_text: str, meta: UserMessageMetadata):
     """
     Agentic loop that allows OLIVE to call tools.
     """
     channel_id_str = str(message.channel.id)
 
-    schedule_context_manager.add_user_message(channel_id_str, new_text)
+    schedule_context_manager.add_user_message(
+        channel_id_str,
+        new_text,
+        meta,
+    )
 
-    context = schedule_context_manager.get_context(channel_id_str)
     system_instruction = _get_schedule_instruction(message.guild.id)
 
     tools_instance = ScheduleAgentTools(user_id)
@@ -177,12 +181,22 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         tools_instance.skip_routine,
     ]
 
-    reply_config = types.GenerateContentConfig(
-        system_instruction=system_instruction,
-        max_output_tokens=2500,
-        tools=agent_tools,
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-    )
+
+    agent_tools_schema = []
+    for f in agent_tools:
+        decl = types.FunctionDeclaration.from_callable(
+            client=cache.llm_client.client._api_client,
+            callable=f
+        ).model_dump(exclude_unset=True, exclude_none=True)
+        
+        # Interactions API requires parameters to be an object
+        if "parameters" not in decl:
+            decl["parameters"] = {"type": "OBJECT", "properties": {}}
+            
+        agent_tools_schema.append({
+            "type": "function",
+            **decl
+        })
 
     max_iterations = 7
     iteration = 0
@@ -195,45 +209,47 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
             iteration += 1
 
             # Fetch fresh context before each API call
-            context = schedule_context_manager.get_context(channel_id_str)
+            context = schedule_context_manager.get_interaction_context(channel_id_str)
 
             try:
-                response = await cache.llm_client.get_response(
+                response = await cache.llm_client.get_interaction(
                     context,
-                    reply_config,
+                    system_instruction=system_instruction,
+                    max_output_tokens=2500,
+                    tools=agent_tools_schema,
                     model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
                 )
             except Exception as e:
-                logger.error("Error in schedule agent get_response: %s", e)
+                logger.error("Error in schedule agent get_interaction: %s", e)
                 await message.reply(f"An error occurred while communicating with the model: {e}")
                 return
 
             candidate_tokens = 0
-            if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
-                prompt_tokens = getattr(response.usage_metadata, "prompt_token_count", 0)
-                candidate_tokens = getattr(response.usage_metadata, "candidates_token_count", 0)
+            if hasattr(response, "usage") and response.usage is not None:
+                prompt_tokens = getattr(response.usage, "total_input_tokens", 0)
+                candidate_tokens = getattr(response.usage, "total_output_tokens", 0)
                 if prompt_tokens > 0:
                     schedule_context_manager.update_latest_user_message_tokens(channel_id_str, prompt_tokens)
 
+            # Save the model's steps to context
+            if getattr(response, "steps", None):
+                schedule_context_manager.add_interaction_steps(channel_id_str, response.steps, tokens=candidate_tokens)
+
             # Check if there are function calls
             function_calls = []
-            if response.candidates and response.candidates[0].content:
-                for part in response.candidates[0].content.parts:
-                    if part.function_call:
-                        function_calls.append(part.function_call)
+            for step in getattr(response, "steps", []):
+                if getattr(step, "type", "") == "function_call":
+                    function_calls.append(step)
 
             if not function_calls:
                 # No function calls, the model responded with text.
-                text_response = response.text or ""
+                text_response = getattr(response, "output_text", "")
                 if not text_response:
                     if tools_instance.used_tools:
                         text_response = "The action was completed (the model did not provide a text response)."
                     else:
                         logger.warning("Agent returned empty response")
                         break
-
-                # Append to context securely with token tracking (BEFORE adding used tools footer)
-                schedule_context_manager.add_model_message(channel_id_str, text_response, tokens=candidate_tokens)
 
                 if tools_instance.used_tools:
                     # Deduplicate in case SDK auto-retried
@@ -253,25 +269,19 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                 await send_long_message(message.channel, text_response, **kwargs)
                 break
 
-            # Model made function calls. We must append them as pure dicts to survive json.dump
-            model_parts = []
-            for fc in function_calls:
-                args_dict = dict(fc.args) if fc.args else {}
-                model_parts.append({"function_call": {"name": fc.name, "args": args_dict}})
-
-            schedule_context_manager.llm_context[channel_id_str].append(
-                {"role": "model", "parts": model_parts, "tokens": candidate_tokens}
-            )
-
             # Execute all function calls
             function_responses = []
             schedule_modified = False
 
             for fc in function_calls:
-                func_name = fc.name
-                args = dict(fc.args) if fc.args else {}
+                func_name = getattr(fc, "name", "")
+                args = fc.arguments if hasattr(fc, "arguments") and fc.arguments is not None else {}
+                # Sometimes arguments might be passed as dictionary, but let's make sure it's dict
+                if not isinstance(args, dict):
+                    args = dict(args) if hasattr(args, "keys") else {}
+                call_id = getattr(fc, "id", "")
 
-                func_to_call = next((f for f in agent_tools if f.__name__ == func_name), None)
+                func_to_call = next((f for f in agent_tools if getattr(f, "__name__", "") == func_name), None)
 
                 if not func_to_call:
                     result = {"error": f"Unknown function {func_name}"}
@@ -282,7 +292,8 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         else:
                             res = func_to_call(**args)
 
-                        result = {"result": res}
+                        # Must return strings for result texts
+                        result = {"result": str(res)}
                         if func_name in [
                             "add_task",
                             "remove_task",
@@ -301,12 +312,15 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         logger.warning("Tool execution error for %s: %s", func_name, str(e))
                         result = {"error": str(e)}
 
-                function_responses.append({"function_response": {"name": func_name, "response": result}})
+                function_responses.append({
+                    "type": "function_result",
+                    "call_id": call_id,
+                    "name": func_name,
+                    "result": [{"type": "text", "text": str(result.get("result", result.get("error")))}]
+                })
 
-            # Append the function responses to the context as pure dicts
-            schedule_context_manager.llm_context[channel_id_str].append(
-                {"role": "user", "parts": function_responses, "tokens": 0}  # Will be updated in the next loop iteration
-            )
+            # Append the function responses to the context
+            schedule_context_manager.add_function_results(channel_id_str, function_responses)
 
             if schedule_modified:
                 bot.dispatch("schedule_update", message.channel.id)
@@ -316,6 +330,5 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
             await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
 
     # Apply clipping and save context
-    limit = cache.llm_client.min_context_tokens if cache.llm_client else 128000
-    schedule_context_manager.apply_restrictions(max_tokens=limit)
+    schedule_context_manager.apply_restrictions()
     await schedule_context_manager.write_to_file()

@@ -44,17 +44,23 @@ async def want_respond(llm_client, context: list, system_instruction: str, guild
 
     test_system_instruction = f"{system_instruction}\n\n{test_instruction}"
 
-    test_config = types.GenerateContentConfig(
-        system_instruction=test_system_instruction,
-        response_mime_type="application/json",
-        response_json_schema=_WANT_REPLY_SCHEMA,
-    )
+    response_format = [
+        {
+            "type": "text",
+            "mime_type": "application/json",
+            "schema": _WANT_REPLY_SCHEMA,
+        }
+    ]
 
     test_models_priority = global_olive.get("test_models_priority")
 
     try:
-        response = await llm_client.get_response(
-            context, test_config, cheap_first=True, model_priority=test_models_priority
+        response = await llm_client.get_interaction(
+            context,
+            system_instruction=test_system_instruction,
+            response_format=response_format,
+            cheap_first=True,
+            model_priority=test_models_priority
         )
     except RateLimitExceeded:
         logger.warning("Rate limit exceeded during response gate check, skipping response.")
@@ -71,7 +77,7 @@ def _parse_want_reply(response) -> bool:
                 return response.parsed.get("i_want_to_reply", False)
             return getattr(response.parsed, "i_want_to_reply", False)
 
-        raw_text = (response.text or "").strip()
+        raw_text = (getattr(response, "output_text", getattr(response, "text", "")) or "").strip()
 
         # Strip markdown code fences if present
         if raw_text.startswith("```"):

@@ -225,9 +225,12 @@ class ScheduleProvider:
         data = self.load_channels()
         return data.get(str(user_id), {}).get("priority_threshold", 5)
 
-    def get_compute_timeout(self, user_id: int) -> float:
+    def get_timeouts(self, user_id: int) -> dict[str, float]:
         data = self.load_channels()
-        return data.get(str(user_id), {}).get("compute_timeout", 0.5)
+        user_data = data.get(str(user_id), {})
+        packer = user_data.get("packer_timeout", 0.5)
+        gravity = user_data.get("gravity_timeout", 0.5)
+        return {"packer": packer, "gravity": gravity}
 
     def get_step_minutes(self, user_id: int) -> int:
         data = self.load_channels()
@@ -238,7 +241,8 @@ class ScheduleProvider:
         user_id: int,
         planning_days: int | None = None,
         priority_threshold: int | None = None,
-        compute_timeout: float | None = None,
+        packer_timeout: float | None = None,
+        gravity_timeout: float | None = None,
         step_minutes: int | None = None,
     ) -> bool:
         data = self.load_channels()
@@ -249,8 +253,10 @@ class ScheduleProvider:
             data[user_id_str]["planning_days"] = planning_days
         if priority_threshold is not None:
             data[user_id_str]["priority_threshold"] = priority_threshold
-        if compute_timeout is not None:
-            data[user_id_str]["compute_timeout"] = compute_timeout
+        if packer_timeout is not None:
+            data[user_id_str]["packer_timeout"] = packer_timeout
+        if gravity_timeout is not None:
+            data[user_id_str]["gravity_timeout"] = gravity_timeout
         if step_minutes is not None:
             data[user_id_str]["step_minutes"] = step_minutes
         self.save_channels(data)
