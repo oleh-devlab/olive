@@ -64,12 +64,12 @@ class ModelConfig:
         self._day_window_start = data.get("day_window_start")
         self._consecutive_429s = data.get("consecutive_429s", 0)
 
-    def is_available(self, now: float) -> bool:
+    def is_available(self, now: float, anticipated_tokens: int = 0) -> bool:
         """Check if this model can handle another request right now."""
         self._reset_windows_if_needed(now)
         if self._minute_requests >= self.rpm or self._day_requests >= self.rpd:
             return False
-        if self.tpm is not None and self._minute_tokens >= self.tpm:
+        if self.tpm is not None and (self._minute_tokens + anticipated_tokens) >= self.tpm:
             return False
         return True
 

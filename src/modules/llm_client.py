@@ -106,7 +106,7 @@ class LLMClient:
         return config
 
     async def get_interaction(
-        self, input_data: str | Any, system_instruction: str = None, response_format: list = None, max_output_tokens: int = None, cheap_first: bool = False, model_priority: list[str] | None = None, tools: list = None
+        self, input_data: str | Any, system_instruction: str = None, response_format: list = None, max_output_tokens: int = None, cheap_first: bool = False, model_priority: list[str] | None = None, tools: list = None, anticipated_tokens: int = 0
     ):
         now = time.time()
         attempted_errors = []
@@ -119,7 +119,7 @@ class LLMClient:
             models_to_use = list(reversed(self.models)) if cheap_first else self.models
 
         for model in models_to_use:
-            if not model.is_available(now):
+            if not model.is_available(now, anticipated_tokens=anticipated_tokens):
                 continue
 
             model.record_request(now)

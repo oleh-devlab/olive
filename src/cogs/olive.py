@@ -137,6 +137,9 @@ class AIAssistantCog(commands.Cog):
     async def generate_answer(self, message: disnake.Message):
         guild_id = str(message.guild.id)
         system_instruction = self._resolve_system_instruction(message.guild.id)
+        
+        anticipated_tokens = (len(system_instruction) // 2) + self.context_manager.get_total_tokens(guild_id)
+        
         context = self.context_manager.get_interaction_context(guild_id)
 
         try:
@@ -147,7 +150,8 @@ class AIAssistantCog(commands.Cog):
                 response = await cache.llm_client.get_interaction(
                     context, 
                     system_instruction=system_instruction, 
-                    max_output_tokens=1500
+                    max_output_tokens=1500,
+                    anticipated_tokens=anticipated_tokens
                 )
 
                 candidate_tokens = 0
