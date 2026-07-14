@@ -22,7 +22,7 @@ _WANT_REPLY_SCHEMA = {
 }
 
 
-async def want_respond(llm_client, context: list, system_instruction: str, guild_id) -> bool:
+async def want_respond(llm_client, context: list, system_instruction: str, guild_id, *, anticipated_tokens: int) -> bool:
     """
     Determines whether the bot should respond in the current conversation.
 
@@ -59,7 +59,8 @@ async def want_respond(llm_client, context: list, system_instruction: str, guild
             system_instruction=test_system_instruction,
             response_format=response_format,
             cheap_first=True,
-            model_priority=test_models_priority
+            model_priority=test_models_priority,
+            anticipated_tokens=anticipated_tokens
         )
     except RateLimitExceeded:
         logger.warning("Rate limit exceeded during response gate check, skipping response.")

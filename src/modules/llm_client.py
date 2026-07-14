@@ -106,7 +106,7 @@ class LLMClient:
         return config
 
     async def get_interaction(
-        self, input_data: str | Any, system_instruction: str = None, response_format: list = None, max_output_tokens: int = None, cheap_first: bool = False, model_priority: list[str] | None = None, tools: list = None, anticipated_tokens: int = 0
+        self, input_data: str | Any, system_instruction: str = None, response_format: list = None, max_output_tokens: int = None, cheap_first: bool = False, model_priority: list[str] | None = None, tools: list = None, *, anticipated_tokens: int
     ):
         now = time.time()
         attempted_errors = []

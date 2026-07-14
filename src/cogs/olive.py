@@ -143,7 +143,7 @@ class AIAssistantCog(commands.Cog):
         context = self.context_manager.get_interaction_context(guild_id)
 
         try:
-            if not await want_respond(cache.llm_client, context, system_instruction, message.guild.id):
+            if not await want_respond(cache.llm_client, context, system_instruction, message.guild.id, anticipated_tokens=anticipated_tokens):
                 return
 
             async with message.channel.typing():
