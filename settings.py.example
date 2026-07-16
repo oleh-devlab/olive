@@ -67,3 +67,7 @@ schedule_max_planning_days = 60
 schedule_max_compute_timeout = 15.0
 schedule_allowed_step_minutes = [1, 5, 15]
 schedule_skipped_routine_collapse_threshold = 3
+schedule_max_tasks_per_user = 100
+schedule_max_routines_per_user = 20
+schedule_max_timeblocks_per_user = 50
+schedule_max_channels_per_guild = 5

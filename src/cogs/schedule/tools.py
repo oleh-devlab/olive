@@ -25,7 +25,6 @@ class AutoSchedule(commands.Cog):
         self.bot = bot
 
     @commands.slash_command(test_guilds=settings.guilds)
-    @commands.is_owner()
     async def task(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
@@ -45,6 +44,11 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            tasks = provider.list_tasks(inter.author.id)
+            max_tasks = getattr(settings, "schedule_max_tasks_per_user", 200)
+            if len(tasks) >= max_tasks:
+                return await inter.edit_original_response(f"You have reached the maximum limit of {max_tasks} tasks.")
+
             new_task = validate_task_creation_data(
                 name=name,
                 duration_min=duration_min,
@@ -166,7 +170,6 @@ class AutoSchedule(commands.Cog):
         await inter.edit_original_response("History listed above.")
 
     @commands.slash_command(test_guilds=settings.guilds)
-    @commands.is_owner()
     async def timeblock(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
@@ -176,10 +179,15 @@ class AutoSchedule(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         start_time: str,
         end_time: str,
-        daily: bool = True,
+        daily: bool = False,
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            blocks = provider.list_time_blocks(inter.author.id)
+            max_blocks = getattr(settings, "schedule_max_timeblocks_per_user", 20)
+            if len(blocks) >= max_blocks:
+                return await inter.edit_original_response(f"You have reached the maximum limit of {max_blocks} timeblocks.")
+
             block = validate_timeblock_creation_data(start_time, end_time, daily)
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
@@ -208,7 +216,6 @@ class AutoSchedule(commands.Cog):
         await inter.edit_original_response("Time blocks listed above.")
 
     @commands.slash_command(test_guilds=settings.guilds)
-    @commands.is_owner()
     async def routine(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
@@ -220,11 +227,17 @@ class AutoSchedule(commands.Cog):
         time: str,
         duration_min: int,
         priority: int = getattr(settings, "schedule_default_priority", 1),
+        break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
         weekdays: str = None,
         depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            routines = provider.list_routines(inter.author.id)
+            max_routines = getattr(settings, "schedule_max_routines_per_user", 30)
+            if len(routines) >= max_routines:
+                return await inter.edit_original_response(f"You have reached the maximum limit of {max_routines} routines.")
+
             wd_list = None
             repeat = "daily"
             if weekdays:
@@ -239,6 +252,7 @@ class AutoSchedule(commands.Cog):
                 time_str=time,
                 weekdays=wd_list,
                 priority=priority,
+                break_duration_min=break_duration_min,
                 depends_on=depends_on,
                 user_id=inter.author.id,
             )
@@ -278,11 +292,17 @@ class AutoSchedule(commands.Cog):
         deadline_time: str,
         duration_min: int,
         priority: int = getattr(settings, "schedule_default_priority", 1),
+        break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
         weekdays: str = None,
         depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            routines = provider.list_routines(inter.author.id)
+            max_routines = getattr(settings, "schedule_max_routines_per_user", 30)
+            if len(routines) >= max_routines:
+                return await inter.edit_original_response(f"You have reached the maximum limit of {max_routines} routines.")
+
             wd_list = None
             repeat = "daily"
             if weekdays:
@@ -297,6 +317,7 @@ class AutoSchedule(commands.Cog):
                 deadline_time_str=deadline_time,
                 weekdays=wd_list,
                 priority=priority,
+                break_duration_min=break_duration_min,
                 depends_on=depends_on,
                 user_id=inter.author.id,
             )
@@ -349,6 +370,7 @@ class AutoSchedule(commands.Cog):
         deadline_time: str = None,
         weekdays: str = None,
         priority: int = None,
+        break_duration_min: int = None,
         depends_on: str = None,
     ):
         await inter.response.defer(ephemeral=True)
@@ -366,6 +388,7 @@ class AutoSchedule(commands.Cog):
                 deadline_time_str=deadline_time,
                 weekdays=wd_list,
                 priority=priority,
+                break_duration_min=break_duration_min,
                 depends_on=depends_on,
                 user_id=inter.author.id,
                 self_id=routine_id,
@@ -417,9 +440,10 @@ class AutoSchedule(commands.Cog):
 
         # Check limit per server
         channels_in_guild = sum(1 for d in data.values() if d.get("guild_id") == inter.guild.id)
-        if channels_in_guild >= 3:
+        max_channels = getattr(settings, "schedule_max_channels_per_guild", 3)
+        if channels_in_guild >= max_channels:
             await inter.edit_original_response(
-                phrases.get("limit_exceeded", "Schedule channel limit exceeded for this server (max 3).")
+                phrases.get("limit_exceeded", f"Schedule channel limit exceeded for this server (max {max_channels}).")
             )
             return
 
@@ -464,9 +488,15 @@ class AutoSchedule(commands.Cog):
             self.bot.dispatch("schedule_init", schedule_channel, inter.author.id)
 
             msg_created = phrases.get(
-                "channel_created", "Channels successfully created: Schedule {schedule_channel}, Tasks {tasks_channel}"
+                "channel_created", "Channels successfully created:\n- Schedule {schedule_channel}\n- Tasks {tasks_channel}"
             ).format(schedule_channel=schedule_channel.mention, tasks_channel=tasks_channel.mention)
             await inter.edit_original_response(msg_created)
+
+            warning_msg = phrases.get(
+                "privacy_warning",
+                "{user_mention}, please note: view commands (such as `/task list` or `/routine list`) are not ephemeral (private). Their results will be visible to all participants in the channel where you use them. If privacy is important to you, use them only in this private channel."
+            ).format(user_mention=f"<@{inter.author.id}>")
+            await tasks_channel.send(warning_msg)
 
         except Exception as e:
             print(f"Error creating channel: {e}")

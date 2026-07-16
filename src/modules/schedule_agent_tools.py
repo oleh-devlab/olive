@@ -112,6 +112,18 @@ class ScheduleAgentTools:
         return schd_item_formatters.format_task_info(task, use_markdown=False)
 
     @log_tool(modifies_schedule=False)
+    def list_completed_tasks(self) -> str:
+        """
+        Returns a list of all completed tasks (task history).
+        Use this to check what tasks the user has already finished.
+        """
+        tasks = self.provider.list_completed_tasks(self.user_id)
+        if not tasks:
+            return "No completed tasks found in history."
+
+        return schd_item_formatters.format_completed_task_list(tasks, use_markdown=False)
+
+    @log_tool(modifies_schedule=False)
     def list_time_blocks(self) -> str:
         """
         Returns a list of all time blocks (fixed schedule events).

@@ -166,6 +166,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         tools_instance.get_current_schedule,
         tools_instance.list_tasks,
         tools_instance.get_task_info,
+        tools_instance.list_completed_tasks,
         tools_instance.list_time_blocks,
         tools_instance.add_time_block,
         tools_instance.remove_time_block,
