@@ -11,6 +11,7 @@ from core.utils import get_phrases
 from core.time_utils import tz
 import modules.schedule_formatter as auto_timetable
 from core.eternal_message import EternalMessage
+import settings
 
 
 async def update_schedule_message(bot, channel_id, recalculate: bool = True, interaction: disnake.MessageInteraction = None):
