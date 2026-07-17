@@ -139,9 +139,9 @@ class ScheduleAgentTools:
         """
         Adds a strict time block (busy time) during which NO tasks can be scheduled.
         Args:
-            start_time_str: "HH:MM" e.g., "12:00"
-            end_time_str: "HH:MM" e.g., "13:00"
-            daily: True if this block happens every day, False if it's a one-time block for today.
+            start_time_str: The start time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
+            end_time_str: The end time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
+            daily: Whether it repeats every day.
             name: Optional name for the block.
         """
         try:
