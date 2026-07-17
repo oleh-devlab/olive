@@ -48,6 +48,9 @@ TimeBlocks are strict periods of "busy time" when the user is unavailable (e.g.,
 - The solver will completely avoid scheduling any tasks or flexible routines during these periods.
 - They can be one-time (today only) or daily recurring.
 - Use `add_time_block`, `list_time_blocks`, and `remove_time_block` tools to manage them.
+- It is highly recommended NOT to specify a name for a TimeBlock (leave it empty) so that it doesn't clutter the schedule visually.
+- You should only specify a name for one-time events (e.g., a specific meeting or appointment).
+- If the user explicitly asks to specify a name for a daily or recurring TimeBlock, you must warn them that this might clutter their schedule visually.
 
 ### 4. Priorities
 - Tasks and routines have a priority from 0 to 10 (default 1).

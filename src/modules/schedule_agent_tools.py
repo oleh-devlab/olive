@@ -135,18 +135,19 @@ class ScheduleAgentTools:
         return schd_item_formatters.format_timeblock_list(blocks, use_markdown=False)
 
     @log_tool(modifies_schedule=True)
-    def add_time_block(self, start_time_str: str, end_time_str: str, daily: bool = False) -> str:
+    def add_time_block(self, start_time_str: str, end_time_str: str, daily: bool = False, name: str = "") -> str:
         """
         Adds a strict time block (busy time) during which NO tasks can be scheduled.
         Args:
             start_time_str: "HH:MM" e.g., "12:00"
             end_time_str: "HH:MM" e.g., "13:00"
             daily: True if this block happens every day, False if it's a one-time block for today.
+            name: Optional name for the block.
         """
         try:
             from modules.schedule_validators import validate_timeblock_creation_data
 
-            block = validate_timeblock_creation_data(start_time_str, end_time_str, daily)
+            block = validate_timeblock_creation_data(start_time_str, end_time_str, daily, name)
         except ScheduleValidationError as e:
             raise ValueError(str(e))
 

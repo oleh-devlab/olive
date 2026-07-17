@@ -112,6 +112,7 @@ def _timeblock_to_dict(block: TimeBlock) -> dict:
         "start": start_val,
         "end": end_val,
         "daily": block.daily,
+        "name": getattr(block, "name", ""),
     }
 
 
@@ -126,6 +127,7 @@ def _dict_to_timeblock(d: dict) -> TimeBlock:
         start=start,
         end=end,
         daily=d.get("daily", True),
+        name=d.get("name", ""),
     )
 
 

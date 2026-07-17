@@ -227,6 +227,7 @@ class AutoSchedule(commands.Cog):
         start_time: str = commands.Param(description=phrases_cmd.get("param_start_time", "Start time (HH:MM)")),
         end_time: str = commands.Param(description=phrases_cmd.get("param_end_time", "End time (HH:MM)")),
         daily: bool = commands.Param(default=False, description=phrases_cmd.get("param_daily", "Repeat daily?")),
+        name: str = commands.Param(default="", description=phrases_cmd.get("param_timeblock_name", "Name")),
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -237,7 +238,7 @@ class AutoSchedule(commands.Cog):
                     f"You have reached the maximum limit of {max_blocks} timeblocks."
                 )
 
-            block = validate_timeblock_creation_data(start_time, end_time, daily)
+            block = validate_timeblock_creation_data(start_time, end_time, daily, name)
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
         except Exception as e:

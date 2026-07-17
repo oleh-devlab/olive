@@ -113,7 +113,21 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                     total_sessions=1,
                     algo_notes="",
                 )
-            )  # Sort the items sequentially so they appear in order
+            )
+            
+        for tb in getattr(result, "scheduled_timeblocks", []):
+            items.append(
+                ScheduleItem(
+                    item_type="time_block",
+                    task_name=tb.name,
+                    dt_start=tb.start_time,
+                    dt_end=tb.end_time,
+                    session_index="1",
+                    total_sessions=1,
+                    algo_notes="",
+                )
+            )
+
     items.sort(key=lambda x: x.dt_start)
 
     return items, solve_time, planning_days, skipped_ids, skipped_routines, result.status

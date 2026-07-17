@@ -116,7 +116,7 @@ def validate_task_creation_data(
     )
 
 
-def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, daily: bool) -> TimeBlock:
+def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, daily: bool, name: str = "") -> TimeBlock:
     try:
         now = datetime.datetime.now(tz)
         sh, sm = map(int, start_time_str.split(":"))
@@ -128,7 +128,7 @@ def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, dai
         if end_dt <= start_dt:
             end_dt += datetime.timedelta(days=1)
 
-        return TimeBlock(start=start_dt, end=end_dt, daily=daily)
+        return TimeBlock(start=start_dt, end=end_dt, daily=daily, name=name)
     except Exception:
         raise ScheduleValidationError("Invalid time format. Use HH:MM (e.g. 10:30).")
 
