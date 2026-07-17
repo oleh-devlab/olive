@@ -48,3 +48,7 @@ class LLMConsentManager:
         """Set consent status for a user and persist it to the database."""
         self._consents[str(user_id)] = consent
         self._save_to_db()
+
+    def get_consented_users_count(self) -> int:
+        """Get the total number of users who have consented to LLM data processing."""
+        return sum(1 for v in self._consents.values() if v)
