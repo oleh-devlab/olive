@@ -10,6 +10,9 @@ from modules.automatic_timetable_py.src.scheduler import Scheduler
 import settings
 
 
+_solver_lock = asyncio.Lock()
+
+
 def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], list[str], str]:
     provider = ScheduleProvider()
     tasks = provider.list_tasks(client_ID)
@@ -124,4 +127,5 @@ async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], fl
     Runs the CPU-intensive solve operation in a background thread.
     Returns: (items, solve_time_seconds, planning_days, skipped_ids, skipped_routines, status_text)
     """
-    return await asyncio.to_thread(_solve_sync, client_ID)
+    async with _solver_lock:
+        return await asyncio.to_thread(_solve_sync, client_ID)
