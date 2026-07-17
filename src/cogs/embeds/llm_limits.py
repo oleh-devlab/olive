@@ -24,7 +24,9 @@ class LLMLimitsEmbed(commands.Cog):
         raw_embed_data = (
             get_phrases()
             .get("llm_limits_embed", {})
-            .get("embed_data", {"title": ":robot: | LLM API Limits", "description": "Current consumption of LLM models"})
+            .get(
+                "embed_data", {"title": ":robot: | LLM API Limits", "description": "Current consumption of LLM models"}
+            )
         )
 
         formatted_embed_data = format_embed_data(raw_embed_data)

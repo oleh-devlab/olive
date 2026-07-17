@@ -9,6 +9,7 @@ from modules.schedule_provider import ScheduleProvider
 
 UPDATE_SECONDS = getattr(settings, "usage_stats_update_seconds", 30)
 
+
 class UsageStatsEmbed(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -26,7 +27,7 @@ class UsageStatsEmbed(commands.Cog):
             schedule_users = len(channels_data)
         except Exception:
             schedule_users = 0
-            
+
         # Calculate LLM consented users
         llm_consented = 0
         if hasattr(cache, "llm_consent") and cache.llm_consent:
@@ -36,18 +37,16 @@ class UsageStatsEmbed(commands.Cog):
             get_phrases()
             .get("usage_stats_embed", {})
             .get(
-                "embed_data", 
+                "embed_data",
                 {
-                    "title": ":chart_with_upwards_trend: | Usage Statistics", 
-                    "description": "Schedule users: `{schedule_users}`\nLLM consented: `{llm_consented}`"
-                }
+                    "title": ":chart_with_upwards_trend: | Usage Statistics",
+                    "description": "Schedule users: `{schedule_users}`\nLLM consented: `{llm_consented}`",
+                },
             )
         )
-        
+
         formatted_embed_data = format_embed_data(
-            raw_embed_data, 
-            schedule_users=schedule_users,
-            llm_consented=llm_consented
+            raw_embed_data, schedule_users=schedule_users, llm_consented=llm_consented
         )
 
         embed = disnake.Embed.from_dict(formatted_embed_data)

@@ -14,7 +14,9 @@ from core.eternal_message import EternalMessage
 import settings
 
 
-async def update_schedule_message(bot, channel_id, recalculate: bool = True, interaction: disnake.MessageInteraction = None):
+async def update_schedule_message(
+    bot, channel_id, recalculate: bool = True, interaction: disnake.MessageInteraction = None
+):
     state = cache.schedule_states.get(channel_id)
     if not state:
         return
@@ -132,7 +134,11 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
         planning_days=planning_days,
         perf_time=perf_time,
         status_text=status_text,
-        update_mins=str(getattr(settings, "schedule_loop_update_seconds") // 60) if hasattr(settings, "schedule_loop_update_seconds") else "N/A",
+        update_mins=(
+            str(getattr(settings, "schedule_loop_update_seconds") // 60)
+            if hasattr(settings, "schedule_loop_update_seconds")
+            else "N/A"
+        ),
     )
 
     if skipped_tasks_ids:
@@ -160,8 +166,10 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
                 await interaction.edit_original_response(content=schedule_content, view=view)
             else:
                 fallback_text = "Initializing schedule..."
-                await em.update(fallback_kwargs={"content": fallback_text, "view": view}, content=schedule_content, view=view)
-                
+                await em.update(
+                    fallback_kwargs={"content": fallback_text, "view": view}, content=schedule_content, view=view
+                )
+
             state["last_content"] = schedule_content
             state["last_view_state"] = view_state
         except Exception as e:

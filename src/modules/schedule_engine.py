@@ -9,7 +9,6 @@ from modules.schedule_provider import ScheduleProvider
 from modules.automatic_timetable_py.src.scheduler import Scheduler
 import settings
 
-
 _solver_lock = asyncio.Lock()
 
 

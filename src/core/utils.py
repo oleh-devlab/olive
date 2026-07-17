@@ -104,7 +104,7 @@ def get_phrases(guild_id=None):
     global_phrases = core.cache._phrases.get("global", {})
     if guild_id is None:
         return global_phrases
-    
+
     return core.cache._phrases.get(str(guild_id), global_phrases)
 
 
