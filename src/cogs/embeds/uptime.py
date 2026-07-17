@@ -55,7 +55,9 @@ class UptimeEmbed(commands.Cog):
         cost_str = f"{cost_session:.4f}{'' if is_battery else '(VPS)'} uah."
 
         raw_embed_data = (
-            get_phrases().get("uptime_embed", {}).get("embed_data", {"title": ":clock1: | Uptime", "description": "`{uptime_str}\n{cost_str}`"})
+            get_phrases()
+            .get("uptime_embed", {})
+            .get("embed_data", {"title": ":clock1: | Uptime", "description": "`{uptime_str}\n{cost_str}`"})
         )
         formatted_embed_data = format_embed_data(raw_embed_data, uptime_str=uptime_str, cost_str=cost_str)
         embed = disnake.Embed.from_dict(formatted_embed_data)

@@ -73,7 +73,6 @@ class LLMClient:
         legacy_name = olive_cfg.get("model_name", "gemma-4-31b-it")
         return [ModelConfig(name=legacy_name)]
 
-
     @property
     def is_available(self) -> bool:
         """Check if at least one model can serve a request right now."""
@@ -96,17 +95,25 @@ class LLMClient:
 
         return await self.client.aio.aclose()
 
-
     def _prepare_interaction_config(self, model: ModelConfig) -> dict:
         config = {"thinking_summaries": "auto"}
-        
+
         if model.thinking_level is not None:
             config["thinking_level"] = model.thinking_level
-                
+
         return config
 
     async def get_interaction(
-        self, input_data: str | Any, system_instruction: str = None, response_format: list = None, max_output_tokens: int = None, cheap_first: bool = False, model_priority: list[str] | None = None, tools: list = None, *, anticipated_tokens: int
+        self,
+        input_data: str | Any,
+        system_instruction: str = None,
+        response_format: list = None,
+        max_output_tokens: int = None,
+        cheap_first: bool = False,
+        model_priority: list[str] | None = None,
+        tools: list = None,
+        *,
+        anticipated_tokens: int,
     ):
         now = time.time()
         attempted_errors = []
@@ -129,7 +136,7 @@ class LLMClient:
                 generation_config = self._prepare_interaction_config(model)
                 if max_output_tokens:
                     generation_config["max_output_tokens"] = max_output_tokens
-                
+
                 kwargs = {
                     "model": model.name,
                     "store": False,
@@ -223,9 +230,4 @@ def get_new_client():
     token = read_api_token()
     if not token:
         return None
-    return genai.Client(
-        api_key=token,
-        http_options=types.HttpOptions(
-            retryOptions=types.HttpRetryOptions(attempts=2)
-        )
-    )
+    return genai.Client(api_key=token, http_options=types.HttpOptions(retryOptions=types.HttpRetryOptions(attempts=2)))

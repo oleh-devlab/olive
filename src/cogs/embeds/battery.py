@@ -60,7 +60,9 @@ class Battery(commands.Cog):
         raw_embed = (
             get_phrases()
             .get("battery_embed", {})
-            .get("battery_embed", {"title": ":battery: | Battery Information", "description": "Error with getting text."})
+            .get(
+                "battery_embed", {"title": ":battery: | Battery Information", "description": "Error with getting text."}
+            )
         )
 
         embed = disnake.Embed.from_dict(

@@ -5,6 +5,7 @@ logger = logging.getLogger(__name__)
 import disnake
 from core.webhook_manager import webhook_manager
 
+
 class EternalMessage:
     def __init__(self, bot, channel_id: int, message_type: str):
         self.bot = bot
@@ -66,7 +67,7 @@ class EternalMessage:
     async def update(self, fallback_kwargs: dict = None, **kwargs):
         """
         Updates the message. If it was deleted, recreates it automatically.
-        `fallback_kwargs` is used to recreate the message if `kwargs` only contains partial data 
+        `fallback_kwargs` is used to recreate the message if `kwargs` only contains partial data
         (e.g., just an embed change, but we need the original text/view to recreate).
         """
         if not self.webhook or not self.message_id:
@@ -82,7 +83,7 @@ class EternalMessage:
                 msg = await self.webhook.send(wait=True, **fallback_kwargs)
                 self.message_id = msg.id
                 webhook_manager.save_message_id(self.channel_id, self.message_type, self.message_id)
-                
+
                 # If fallback_kwargs didn't contain the new updates, apply them now
                 if fallback_kwargs != kwargs:
                     await self.webhook.edit_message(self.message_id, **kwargs)

@@ -19,7 +19,12 @@ class LLMTokenBudget:
     @property
     def total(self) -> int:
         """Total tokens required: dialogue + all reservations."""
-        return self.context_tokens + self.reserved_system_tokens + self.reserved_memory_tokens + self.reserved_response_tokens
+        return (
+            self.context_tokens
+            + self.reserved_system_tokens
+            + self.reserved_memory_tokens
+            + self.reserved_response_tokens
+        )
 
     def validate(self, min_model_tokens: int) -> str | None:
         """Check if the budget fits within the smallest model's context window.
@@ -83,7 +88,12 @@ class UserMessageMetadata:
 
 
 class LLMContextManager:
-    def __init__(self, context_file_name="llm_context.json", max_messages_in_context=26, token_budget: LLMTokenBudget | None = None):
+    def __init__(
+        self,
+        context_file_name="llm_context.json",
+        max_messages_in_context=26,
+        token_budget: LLMTokenBudget | None = None,
+    ):
         self.context_file_name = context_file_name
         self.max_messages_in_context = max_messages_in_context
         self.token_budget = token_budget or LLMTokenBudget.from_file()
@@ -94,10 +104,8 @@ class LLMContextManager:
         try:
             with open(self.context_file_name, "r", encoding="utf-8") as f:
                 self.database_context = json.load(f)
-            
-            self.llm_context = {
-                guild_id: list(messages) for guild_id, messages in self.database_context.items()
-            }
+
+            self.llm_context = {guild_id: list(messages) for guild_id, messages in self.database_context.items()}
             # Trim the loaded cache so we don't blow up memory/limits on startup
             self.apply_restrictions()
             logger.info("LLM context is loaded from file.")
@@ -135,8 +143,8 @@ class LLMContextManager:
     def get_interaction_context(self, guild_id: str) -> list:
         """
         Retrieves context formatted for the new Interactions API.
-        The underlying JSON storage (`role` and `parts` fields) is kept in the older generateContent format 
-        for backward compatibility with existing saved conversation files on disk. This method dynamically 
+        The underlying JSON storage (`role` and `parts` fields) is kept in the older generateContent format
+        for backward compatibility with existing saved conversation files on disk. This method dynamically
         translates them into `user_input` and `model_output` objects.
         """
         if guild_id not in self.llm_context:
@@ -147,7 +155,7 @@ class LLMContextManager:
     def _interaction_content(message: dict) -> dict:
         if "interaction_step" in message:
             return message["interaction_step"]
-            
+
         step_type = "user_input" if message["role"] == "user" else "model_output"
         out = {"type": step_type}
         if "parts" in message:
@@ -171,18 +179,18 @@ class LLMContextManager:
             step_dict = step.model_dump() if hasattr(step, "model_dump") else step
             if not isinstance(step_dict, dict):
                 step_dict = getattr(step, "__dict__", str(step))
-                
+
             # TODO: If we consider the incompatibility of Gemini signatures in Gemma
             # and take additional tokens into account.
             if step_dict.get("type") == "thought":
                 continue
-            
+
             entry = {
                 "role": "model",
                 "interaction_step": step_dict,
                 "timestamp_ms": timestamp_ms,
             }
-            
+
             # Add tokens count
             if isinstance(step_dict, dict) and step_dict.get("type") == "model_output":
                 entry["tokens"] = tokens
@@ -229,7 +237,7 @@ class LLMContextManager:
             self.llm_context[guild_id] = []
         if guild_id not in self.database_context:
             self.database_context[guild_id] = []
-            
+
         for res in results:
             entry = {
                 "role": "user",
@@ -322,7 +330,7 @@ class LLMContextManager:
 
         for guild_id, messages in self.llm_context.items():
             total_tokens = sum(self.get_message_tokens(m) for m in messages)
-            
+
             while messages and total_tokens > effective_limit:
                 removed_msg = messages.pop(0)
                 total_tokens -= self.get_message_tokens(removed_msg)

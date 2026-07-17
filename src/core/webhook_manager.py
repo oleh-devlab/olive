@@ -8,6 +8,7 @@ import disnake
 
 CONFIG_PATH = "webhooks_config.json"
 
+
 class WebhookManager:
     def __init__(self):
         self.config = self._load_config()
@@ -44,10 +45,10 @@ class WebhookManager:
         """
         channel_id_str = str(channel.id)
         channel_config = self.config.get(channel_id_str, {})
-        
+
         webhook_url = channel_config.get("webhook_url")
         webhook = None
-        
+
         # 1. Try to fetch from URL if it exists
         if webhook_url:
             try:
@@ -75,7 +76,9 @@ class WebhookManager:
                         webhook = wh
                         break
             except disnake.Forbidden:
-                logger.warning(f"Forbidden to fetch webhooks in channel {channel.id}. Need 'Manage Webhooks' permission.")
+                logger.warning(
+                    f"Forbidden to fetch webhooks in channel {channel.id}. Need 'Manage Webhooks' permission."
+                )
             except Exception as e:
                 logger.error(f"Error fetching channel webhooks: {e}")
 
@@ -85,20 +88,22 @@ class WebhookManager:
                 webhook = await channel.create_webhook(name="Olive")
                 logger.info(f"Created new webhook in channel {channel.id}")
             except disnake.Forbidden:
-                logger.warning(f"Forbidden to create webhook in channel {channel.id}. Need 'Manage Webhooks' permission.")
+                logger.warning(
+                    f"Forbidden to create webhook in channel {channel.id}. Need 'Manage Webhooks' permission."
+                )
             except Exception as e:
                 logger.error(f"Error creating webhook: {e}")
-                
+
         # 4. Save the URL if we got a valid webhook
         if webhook:
             if channel_id_str not in self.config:
                 self.config[channel_id_str] = {}
-            
+
             # Only save if changed
             if self.config[channel_id_str].get("webhook_url") != webhook.url:
                 self.config[channel_id_str]["webhook_url"] = webhook.url
                 self._save_config()
-                
+
         return webhook
 
     def get_message_id(self, channel_id: int, message_type: str):
@@ -109,10 +114,10 @@ class WebhookManager:
         channel_id_str = str(channel_id)
         if channel_id_str not in self.config:
             self.config[channel_id_str] = {}
-            
+
         if "messages" not in self.config[channel_id_str]:
             self.config[channel_id_str]["messages"] = {}
-            
+
         if self.config[channel_id_str]["messages"].get(message_type) != message_id:
             self.config[channel_id_str]["messages"][message_type] = message_id
             self._save_config()
@@ -131,5 +136,6 @@ class WebhookManager:
             await channel.purge(check=lambda m: m.id not in exclude_ids)
         except Exception as e:
             logger.error(f"Error during purge_clean in {channel.id}: {e}")
+
 
 webhook_manager = WebhookManager()

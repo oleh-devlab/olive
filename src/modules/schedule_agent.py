@@ -182,22 +182,17 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         tools_instance.skip_routine,
     ]
 
-
     agent_tools_schema = []
     for f in agent_tools:
         decl = types.FunctionDeclaration.from_callable(
-            client=cache.llm_client.client._api_client,
-            callable=f
+            client=cache.llm_client.client._api_client, callable=f
         ).model_dump(exclude_unset=True, exclude_none=True)
-        
+
         # Interactions API requires parameters to be an object
         if "parameters" not in decl:
             decl["parameters"] = {"type": "OBJECT", "properties": {}}
-            
-        agent_tools_schema.append({
-            "type": "function",
-            **decl
-        })
+
+        agent_tools_schema.append({"type": "function", **decl})
 
     max_iterations = 7
     iteration = 0
@@ -211,7 +206,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
 
             # Fetch fresh context before each API call
             context = schedule_context_manager.get_interaction_context(channel_id_str)
-            anticipated_tokens = (len(system_instruction) // 2) + schedule_context_manager.get_total_tokens(channel_id_str)
+            anticipated_tokens = (len(system_instruction) // 2) + schedule_context_manager.get_total_tokens(
+                channel_id_str
+            )
 
             try:
                 response = await cache.llm_client.get_interaction(
@@ -315,12 +312,14 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         logger.warning("Tool execution error for %s: %s", func_name, str(e))
                         result = {"error": str(e)}
 
-                function_responses.append({
-                    "type": "function_result",
-                    "call_id": call_id,
-                    "name": func_name,
-                    "result": [{"type": "text", "text": str(result.get("result", result.get("error")))}]
-                })
+                function_responses.append(
+                    {
+                        "type": "function_result",
+                        "call_id": call_id,
+                        "name": func_name,
+                        "result": [{"type": "text", "text": str(result.get("result", result.get("error")))}],
+                    }
+                )
 
             # Append the function responses to the context
             schedule_context_manager.add_function_results(channel_id_str, function_responses)
