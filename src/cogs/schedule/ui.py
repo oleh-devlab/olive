@@ -120,7 +120,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
 
     schedule_format = phrases.get(
         "schedule_page_format",
-        "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n`Status: {status_text}`\n`The minimum planning horizon is {planning_days} days.`\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
+        "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n`Status: {status_text}`\n`The minimum planning horizon is {planning_days} days.`\n*(Auto-updates every {update_mins} min)*\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
     )
     # Provide defaults if missing, but typically we have valid perf_time and planning_days
     schedule_content = schedule_format.format(
@@ -131,6 +131,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
         planning_days=planning_days,
         perf_time=perf_time,
         status_text=status_text,
+        update_mins=str(getattr(settings, "schedule_loop_update_seconds") // 60) if hasattr(settings, "schedule_loop_update_seconds") else "N/A",
     )
 
     if skipped_tasks_ids:
