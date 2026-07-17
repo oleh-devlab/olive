@@ -108,7 +108,7 @@ def get_phrases(guild_id=None):
     return core.cache._phrases.get(str(guild_id), global_phrases)
 
 
-async def load_phrases():
+def load_phrases():
     try:
         with open("phrases.json", "r", encoding="utf-8") as file:
             new_phrases = json.load(file)

@@ -114,7 +114,7 @@ async def on_ready():
 
 
 if __name__ == "__main__":
-    asyncio.run(core.utils.load_phrases())
+    core.utils.load_phrases()
     bot.load_extensions(cogs_directory)  # The source code says that this calls `load_extension`
 
     print("[INFO] bot.run() trying to start...")
