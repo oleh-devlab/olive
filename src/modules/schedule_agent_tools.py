@@ -155,17 +155,17 @@ class ScheduleAgentTools:
         return f"Time block added: {start_time_str} - {end_time_str} (Daily: {daily})."
 
     @log_tool(modifies_schedule=True)
-    def remove_time_block(self, index: int) -> str:
+    def remove_time_block(self, block_id: int) -> str:
         """
-        Removes a time block by its index (1-based, use list_time_blocks first).
+        Removes a time block by its ID (use list_time_blocks first).
         Args:
-            index: The 1-based index of the time block to remove.
+            block_id: The ID of the time block to remove.
         """
-        removed = self.provider.remove_time_block(self.user_id, index - 1)
+        removed = self.provider.remove_time_block(self.user_id, block_id)
         if removed:
-            return f"Time block {index} removed successfully."
+            return f"Time block {block_id} removed successfully."
         else:
-            raise ValueError(f"Time block {index} not found.")
+            raise ValueError(f"Time block {block_id} not found.")
 
     @log_tool(modifies_schedule=True)
     def add_task(

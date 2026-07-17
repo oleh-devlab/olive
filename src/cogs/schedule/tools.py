@@ -245,19 +245,23 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response(f"Error: {str(e)}")
 
     @timeblock.sub_command(
-        name="remove", description=phrases_cmd.get("cmd_timeblock_remove_desc", "Remove a time block by index")
+        name="remove", description=phrases_cmd.get("cmd_timeblock_remove_desc", "Remove a time block by ID")
     )
     async def timeblock_remove(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        index: int = commands.Param(description=phrases_cmd.get("param_index", "Index")),
+        block_id: int = commands.Param(description=phrases_cmd.get("param_timeblock_id", "ID of the timeblock")),
     ):
         await inter.response.defer(ephemeral=True)
-        removed = provider.remove_time_block(inter.author.id, index - 1)
-        if removed:
-            await inter.edit_original_response(f"Timeblock {index} removed successfully.")
-        else:
-            await inter.edit_original_response(f"Timeblock {index} not found.")
+        try:
+            success = provider.remove_time_block(inter.author.id, block_id)
+            if success:
+                await inter.edit_original_response(f"Timeblock {block_id} removed.")
+                self.bot.dispatch("schedule_update", inter.channel.id)
+            else:
+                await inter.edit_original_response(f"Invalid timeblock ID: {block_id}.")
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
 
     @timeblock.sub_command(name="list", description=phrases_cmd.get("cmd_timeblock_list_desc", "List all time blocks"))
     async def timeblock_list(self, inter: disnake.ApplicationCommandInteraction):
