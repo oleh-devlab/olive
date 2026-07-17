@@ -70,7 +70,7 @@ class Hosting(commands.Cog):
         active_days_total_start = await u_decline(active_days_total, ["день", "дні", "днів"])
         active_hours_total_start = await u_decline(active_hours_total, ["година", "години", "годин"])
 
-        raw_embed_data = get_phrases().get("hosting_embed", {}).get("nmt_taimer_embed_data", {"title": "NMT"})
+        raw_embed_data = get_phrases().get("hosting_embed", {}).get("nmt_taimer_embed_data", {"title": ":newspaper: | NMT"})
         formatted_embed_data = format_embed_data(
             raw_embed_data,
             weeks_start=weeks_start,
@@ -97,7 +97,7 @@ class Hosting(commands.Cog):
         total_total = memory_info["swap_total_gib"] + memory_info["memory_total_gib"]
         total_percent = (100 * (total_used / total_total)) if total_total > 0 else 0
 
-        raw_embed_data = get_phrases().get("hosting_embed", {}).get("server_embed_data", {"title": "Сервер"})
+        raw_embed_data = get_phrases().get("hosting_embed", {}).get("server_embed_data", {"title": ":nut_and_bolt: | Server"})
         formatted_embed_data = format_embed_data(
             raw_embed_data,
             memory_used_gib=memory_info["memory_used_gib"],

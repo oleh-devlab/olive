@@ -65,7 +65,7 @@ class Errors(commands.Cog):
                     .get("errors", {})
                     .get(
                         "antiflood_kick_message_to_user_embed",
-                        {"title": "Server", "description": "You have been kicked for flooding commands."},
+                        {"title": ":warning: | Server", "description": "You have been kicked for flooding commands."},
                     )
                 )
                 embed = disnake.Embed.from_dict(raw_embed_data)
@@ -95,7 +95,7 @@ class Errors(commands.Cog):
                     raw_embed_data = (
                         get_phrases(guild_id)
                         .get("errors", {})
-                        .get("antiflood_kicked_log_embed", {"title": "Anti-flood kicked a user"})
+                        .get("antiflood_kicked_log_embed", {"title": ":shield: | Anti-flood kicked a user"})
                     )
                     formatted_embed_data = format_embed_data(
                         raw_embed_data,
@@ -113,7 +113,7 @@ class Errors(commands.Cog):
                     raw_embed_data = (
                         get_phrases(guild_id)
                         .get("errors", {})
-                        .get("antiflood_not_kicked_log_embed", {"title": "Anti-flood (almost) triggered"})
+                        .get("antiflood_not_kicked_log_embed", {"title": ":shield: | Anti-flood (almost) triggered"})
                     )
                     formatted_embed_data = format_embed_data(
                         raw_embed_data,
@@ -146,7 +146,7 @@ class Errors(commands.Cog):
             text = (
                 get_phrases(guild_id)
                 .get("errors", {})
-                .get("command_not_found", 'Command **"{command}"** not found.')
+                .get("command_not_found", 'Command `"{command}"` not found.')
                 .format(command=ctx_or_inter.message.content.split()[0])
             )
             await ctx_or_inter.reply(text)

@@ -44,6 +44,7 @@ llm_context_update_seconds = 30
 hosting_update_seconds = 10
 currency_update_seconds = 10
 active_cogs_update_seconds = 45
+usage_stats_update_seconds = 60
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery

@@ -56,7 +56,7 @@ def _build_consent_embed(current_consent: bool) -> disnake.Embed:
     )
 
     embed = disnake.Embed(
-        title=olive_phrases.get("title", "OLIVE — Data Consent"),
+        title=olive_phrases.get("title", ":scroll: | OLIVE — Data Consent"),
         description=description,
         color=disnake.Color.green() if current_consent else disnake.Color.orange(),
     )

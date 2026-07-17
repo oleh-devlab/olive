@@ -38,8 +38,8 @@ class UsageStatsEmbed(commands.Cog):
             .get(
                 "embed_data", 
                 {
-                    "title": "📈 | Usage Statistics", 
-                    "description": "Schedule users: **{schedule_users}**\nLLM consented: **{llm_consented}**"
+                    "title": ":chart_with_upwards_trend: | Usage Statistics", 
+                    "description": "Schedule users: `{schedule_users}`\nLLM consented: `{llm_consented}`"
                 }
             )
         )
