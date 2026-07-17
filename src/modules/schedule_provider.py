@@ -3,6 +3,7 @@ import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional
 
+import settings
 from modules.schedule_models import Task, TimeBlock, Routine
 
 
@@ -228,8 +229,8 @@ class ScheduleProvider:
     def get_timeouts(self, user_id: int) -> dict[str, float]:
         data = self.load_channels()
         user_data = data.get(str(user_id), {})
-        packer = user_data.get("packer_timeout", 0.5)
-        gravity = user_data.get("gravity_timeout", 0.5)
+        packer = user_data.get("packer_timeout", getattr(settings, "schedule_default_packer_timeout", 3.0))
+        gravity = user_data.get("gravity_timeout", getattr(settings, "schedule_default_gravity_timeout", 0.5))
         return {"packer": packer, "gravity": gravity}
 
     def get_step_minutes(self, user_id: int) -> int:
