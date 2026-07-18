@@ -69,15 +69,13 @@ class AIAssistantCog(commands.Cog):
         if (
             not self.olive_enabled
             or message.author.bot
-            or not cache.llm_client
             or not message.content
-            or not cache.llm_client.is_available
             or not isinstance(message.channel, disnake.TextChannel)
         ):
             return
 
         openai_test_channel = getattr(settings, "openai_test_channel_id", 0)
-        is_openai_test = message.channel.id == openai_test_channel
+        is_openai_test = bool(openai_test_channel) and message.channel.id == openai_test_channel
 
         if is_openai_test:
             if not self.openai_client:
