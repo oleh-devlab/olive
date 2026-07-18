@@ -5,21 +5,46 @@ from google.genai import types
 import logging
 import time
 
-from modules.llm_client import LLMClientPool
-from modules.llm_rate_limiter import RateLimitExceeded
 from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
 from modules.llm_message_formatter import format_user_message, FormattingProfile
-from modules.llm_response_gate import want_respond
-from modules.schedule_agent import load_schedule_context, run_schedule_agent, schedule_context_manager
+from modules.openai_context_manager import OpenAIContextManager
 import core.cache as cache
 from core.utils import get_phrases, TaskDebouncer, send_long_reply
 from core.token_manager import token_registry
-from modules.openai_client import OpenAIClient
-from modules.openai_context_manager import OpenAIContextManager
 import settings
 
 logger = logging.getLogger(__name__)
 
+# --- Optional AI Modules ---
+try:
+    from modules.llm_client import LLMClientPool  # noqa: E402
+    from modules.llm_rate_limiter import RateLimitExceeded  # noqa: E402
+    from modules.llm_response_gate import want_respond  # noqa: E402
+    GEMINI_AVAILABLE = True
+except ImportError as e:
+    logger.warning("Gemini API modules failed to load: %s", e)
+    GEMINI_AVAILABLE = False
+    LLMClientPool = None
+    RateLimitExceeded = Exception  # Dummy exception to avoid NameError
+    want_respond = None
+
+try:
+    from modules.openai_client import OpenAIClient  # noqa: E402
+    OPENAI_AVAILABLE = True
+except ImportError as e:
+    logger.warning("OpenAI API modules failed to load: %s", e)
+    OPENAI_AVAILABLE = False
+    OpenAIClient = None
+
+try:
+    from modules.schedule_agent import load_schedule_context, run_schedule_agent, schedule_context_manager  # noqa: E402
+    SCHEDULE_AGENT_AVAILABLE = True
+except ImportError as e:
+    logger.warning("Schedule Agent modules failed to load (possibly missing OR-Tools): %s", e)
+    SCHEDULE_AGENT_AVAILABLE = False
+    load_schedule_context = None
+    run_schedule_agent = None
+    schedule_context_manager = None
 
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -32,37 +57,53 @@ class AIAssistantCog(commands.Cog):
         self.openai_client = None
 
         self.olive_enabled = True
+        
+        self.gemini_enabled = getattr(settings, "olive_enable_gemini", True) and GEMINI_AVAILABLE
+        self.openai_enabled = getattr(settings, "olive_enable_openai", True) and OPENAI_AVAILABLE
+        self.schedule_agent_enabled = getattr(settings, "olive_enable_schedule_agent", True) and SCHEDULE_AGENT_AVAILABLE
 
     async def cog_load(self):
-        try:
-            pool = LLMClientPool()
+        if self.gemini_enabled:
+            try:
+                pool = LLMClientPool()
 
-            default_token = token_registry.get_genai_token("default")
-            if not default_token:
-                raise ValueError("GenAI API token not found in tokens.json or GENAI_API_KEY env var")
-            pool.register("default", default_token)
+                default_token = token_registry.get_genai_token("default")
+                if not default_token:
+                    raise ValueError("GenAI API token not found in tokens.json or GENAI_API_KEY env var")
+                pool.register("default", default_token)
 
-            # Register private role (for agent and private messages)
-            private_token = token_registry.get_genai_token("private")
-            if private_token:
-                pool.register("private", private_token)
+                # Register private role (for agent and private messages)
+                private_token = token_registry.get_genai_token("private")
+                if private_token:
+                    pool.register("private", private_token)
 
-            cache.llm_pool = pool
-            logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
+                cache.llm_pool = pool
+                logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
-            error = self.context_manager.token_budget.validate(pool.default.min_context_tokens)
-            if error:
-                logger.error(error + " LLM responses are disabled.")
+                error = self.context_manager.token_budget.validate(pool.default.min_context_tokens)
+                if error:
+                    logger.error(error + " LLM responses are disabled.")
+                    cache.llm_pool = None
+            except Exception as e:
+                logger.error("Error initializing LLMClientPool: %s", e)
                 cache.llm_pool = None
-        except ValueError as e:
-            logger.error("Error initializing LLMClient: %s", e)
+        else:
             cache.llm_pool = None
 
-        self.openai_client = OpenAIClient()
-        await self.openai_context_manager.load_from_file()
+        if self.openai_enabled:
+            try:
+                self.openai_client = OpenAIClient()
+            except Exception as e:
+                logger.error("Error initializing OpenAIClient: %s", e)
+                self.openai_client = None
+        else:
+            self.openai_client = None
 
         await self.context_manager.load_from_file()
-        await load_schedule_context()
+        await self.openai_context_manager.load_from_file()
+        
+        if self.schedule_agent_enabled and load_schedule_context:
+            await load_schedule_context()
 
     def cog_unload(self):
         if cache.llm_pool:
@@ -95,10 +136,10 @@ class AIAssistantCog(commands.Cog):
         is_openai_test = bool(openai_test_channel) and message.channel.id == openai_test_channel
 
         if is_openai_test:
-            if not self.openai_client:
+            if not self.openai_enabled or not self.openai_client:
                 return
         else:
-            if not cache.llm_pool or not cache.llm_pool.is_available:
+            if not self.gemini_enabled or not cache.llm_pool or not cache.llm_pool.is_available:
                 return
 
         guild_id = str(message.guild.id)
@@ -136,7 +177,7 @@ class AIAssistantCog(commands.Cog):
         if not hasattr(cache, "tasks_channels"):
             cache.tasks_channels = {}
 
-        if message.channel.id in cache.tasks_channels:
+        if self.schedule_agent_enabled and message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
 
             # Format with AGENT profile (minimal: time + text only)
@@ -265,6 +306,39 @@ class AIAssistantCog(commands.Cog):
             .format(status=status)
         )
         await ctx.send(text, ephemeral=True)
+
+    @commands.slash_command(name="turn_gemini", description="Enable or disable Gemini API locally")
+    @commands.is_owner()
+    async def turn_gemini(self, ctx: disnake.ApplicationCommandInteraction):
+        if not GEMINI_AVAILABLE:
+            await ctx.send("Gemini API modules are not available (missing dependencies).", ephemeral=True)
+            return
+            
+        self.gemini_enabled = not self.gemini_enabled
+        status = "enabled" if self.gemini_enabled else "disabled"
+        await ctx.send(f"Gemini API is now {status}.", ephemeral=True)
+
+    @commands.slash_command(name="turn_openai", description="Enable or disable OpenAI API locally")
+    @commands.is_owner()
+    async def turn_openai(self, ctx: disnake.ApplicationCommandInteraction):
+        if not OPENAI_AVAILABLE:
+            await ctx.send("OpenAI API modules are not available (missing dependencies).", ephemeral=True)
+            return
+            
+        self.openai_enabled = not self.openai_enabled
+        status = "enabled" if self.openai_enabled else "disabled"
+        await ctx.send(f"OpenAI API is now {status}.", ephemeral=True)
+
+    @commands.slash_command(name="turn_schedule", description="Enable or disable Schedule Agent locally")
+    @commands.is_owner()
+    async def turn_schedule(self, ctx: disnake.ApplicationCommandInteraction):
+        if not SCHEDULE_AGENT_AVAILABLE:
+            await ctx.send("Schedule Agent modules are not available (missing OR-Tools?).", ephemeral=True)
+            return
+            
+        self.schedule_agent_enabled = not self.schedule_agent_enabled
+        status = "enabled" if self.schedule_agent_enabled else "disabled"
+        await ctx.send(f"Schedule Agent is now {status}.", ephemeral=True)
 
     @commands.slash_command(name="token_budget", description="Manage LLM token budget")
     @commands.is_owner()
