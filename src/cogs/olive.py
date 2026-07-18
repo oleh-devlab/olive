@@ -92,7 +92,7 @@ class AIAssistantCog(commands.Cog):
             return
 
         openai_test_channel = getattr(settings, "openai_test_channel_id", 0)
-        is_openai_test = message.channel.id == openai_test_channel
+        is_openai_test = bool(openai_test_channel) and message.channel.id == openai_test_channel
 
         if is_openai_test:
             if not self.openai_client:
