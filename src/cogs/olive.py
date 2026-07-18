@@ -13,6 +13,7 @@ from modules.llm_response_gate import want_respond
 from modules.schedule_agent import load_schedule_context, run_schedule_agent
 import core.cache as cache
 from core.utils import get_phrases
+import settings
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +54,12 @@ class AIAssistantCog(commands.Cog):
 
     @commands.Cog.listener("on_message")
     async def on_message(self, message: disnake.Message):
+        bot_whitelist = getattr(settings, "olive_bot_whitelist", [])
+        is_whitelisted_bot = message.author.bot and message.author.id in bot_whitelist
+        
         if (
             not self.olive_enabled
-            or message.author.bot
+            or (message.author.bot and not is_whitelisted_bot)
             or not cache.llm_client
             or not message.content
             or not cache.llm_client.is_available

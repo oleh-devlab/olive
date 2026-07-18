@@ -58,6 +58,8 @@ is_processor_info = 1
 
 safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
 
+olive_bot_whitelist = [] # List of bot user IDs that the LLM is allowed to respond to
+
 # --- Schedule Settings ---
 schedule_default_priority = 1
 schedule_default_max_chunk_min = 45
