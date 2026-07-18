@@ -59,9 +59,14 @@ is_processor_info = 1
 
 safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
 
+# --- Olive AI Settings ---
+olive_enable_gemini = True
+olive_enable_openai = True
+olive_enable_schedule_agent = True
+
 # --- OpenAI Compatible Test Settings ---
 openai_test_channel_id = 0
-openai_api_base = ""
+openai_api_base = "http://localhost:11434/v1"
 openai_model_name = ""
 openai_default_max_messages = 26
 

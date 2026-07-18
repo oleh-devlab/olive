@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 class OpenAIClient:
     def __init__(self):
         self.api_key = self.read_api_token()
-        self.base_url = getattr(settings, "openai_api_base")
-        self.model_name = getattr(settings, "openai_model_name")
+        self.base_url = getattr(settings, "openai_api_base", "https://api.openai.com/v1")
+        self.model_name = getattr(settings, "openai_model_name", "gemma4:e2b")
         
         if not self.api_key:
             logger.warning("OpenAI API token not found.")
