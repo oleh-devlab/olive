@@ -74,9 +74,12 @@ def format_timeblock_list(blocks, use_markdown: bool = False) -> str:
             st = blk.start.strftime("%H:%M") if hasattr(blk.start, "strftime") else "???"
             et = blk.end.strftime("%H:%M") if hasattr(blk.end, "strftime") else "???"
             rep = "Daily" if getattr(blk, "daily", False) else "One-time"
-            lines.append(f"{c}[{i + 1}]{c} {st} - {et} ({rep})")
+            name_str = f" {b}{blk.name}{b}" if getattr(blk, "name", None) else ""
+            b_id = getattr(blk, "id", "?")
+            lines.append(f"{c}[ID: {b_id}]{c}{name_str} {st} - {et} ({rep})")
         except Exception:
-            lines.append(f"{c}[{i + 1}]{c} Invalid Block Data")
+            b_id = getattr(blk, "id", "?")
+            lines.append(f"{c}[ID: {b_id}]{c} Invalid Block Data")
 
     return "\n".join(lines)
 

@@ -22,7 +22,7 @@ class Battery(commands.Cog):
             self.battery_loop.start()
         else:
             pass
-            # raw_embed = get_phrases().get("battery_embed", {}).get("no_battery_embed", {"title": "No battery information available", "description": "This device does not have battery information or it cannot be accessed."})
+            # raw_embed = get_phrases().get("battery_embed", {}).get("no_battery_embed", {"title": ":battery: | No battery information available", "description": "This device does not have battery information or it cannot be accessed."})
             # core.cache.embeds_to_send["battery"] = disnake.Embed.from_dict(raw_embed)
 
     def cog_unload(self):
@@ -60,7 +60,9 @@ class Battery(commands.Cog):
         raw_embed = (
             get_phrases()
             .get("battery_embed", {})
-            .get("battery_embed", {"title": "Battery Information", "description": "Error with getting text."})
+            .get(
+                "battery_embed", {"title": ":battery: | Battery Information", "description": "Error with getting text."}
+            )
         )
 
         embed = disnake.Embed.from_dict(

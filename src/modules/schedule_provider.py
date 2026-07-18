@@ -3,6 +3,7 @@ import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional
 
+import settings
 from modules.schedule_models import Task, TimeBlock, Routine
 
 
@@ -108,9 +109,11 @@ def _timeblock_to_dict(block: TimeBlock) -> dict:
     start_val = _serialize_datetime(block.start) if isinstance(block.start, datetime.datetime) else block.start
     end_val = _serialize_datetime(block.end) if isinstance(block.end, datetime.datetime) else block.end
     return {
+        "id": block.id,
         "start": start_val,
         "end": end_val,
         "daily": block.daily,
+        "name": getattr(block, "name", ""),
     }
 
 
@@ -122,9 +125,11 @@ def _dict_to_timeblock(d: dict) -> TimeBlock:
     if isinstance(end, str):
         end = _deserialize_datetime(end)
     return TimeBlock(
+        id=d.get("id"),
         start=start,
         end=end,
         daily=d.get("daily", True),
+        name=d.get("name", ""),
     )
 
 
@@ -228,8 +233,8 @@ class ScheduleProvider:
     def get_timeouts(self, user_id: int) -> dict[str, float]:
         data = self.load_channels()
         user_data = data.get(str(user_id), {})
-        packer = user_data.get("packer_timeout", 0.5)
-        gravity = user_data.get("gravity_timeout", 0.5)
+        packer = user_data.get("packer_timeout", getattr(settings, "schedule_default_packer_timeout", 3.0))
+        gravity = user_data.get("gravity_timeout", getattr(settings, "schedule_default_gravity_timeout", 0.5))
         return {"packer": packer, "gravity": gravity}
 
     def get_step_minutes(self, user_id: int) -> int:
@@ -378,24 +383,45 @@ class ScheduleProvider:
         self._save_data(user_id, data)
         return True
 
-    def add_time_block(self, user_id: int, block: TimeBlock):
+    def add_time_block(self, user_id: int, block: TimeBlock) -> int:
         data = self._load_data(user_id)
+        if block.id is None:
+            max_id = max((b.get("id", 0) or 0 for b in data.get("time_blocks", [])), default=0)
+            block.id = max_id + 1
         data.setdefault("time_blocks", []).append(_timeblock_to_dict(block))
         self._save_data(user_id, data)
+        return block.id
 
     def list_time_blocks(self, user_id: int) -> List[TimeBlock]:
         data = self._load_data(user_id)
-        return [_dict_to_timeblock(b) for b in data.get("time_blocks", [])]
+        blocks = data.get("time_blocks", [])
+        
+        # Auto-assign IDs for legacy timeblocks
+        changed = False
+        max_id = max((b.get("id", 0) or 0 for b in blocks), default=0)
+        for b in blocks:
+            if not b.get("id"):
+                max_id += 1
+                b["id"] = max_id
+                changed = True
+        
+        if changed:
+            self._save_data(user_id, data)
+            
+        return [_dict_to_timeblock(b) for b in blocks]
 
-    def remove_time_block(self, user_id: int, index: int) -> bool:
+    def remove_time_block(self, user_id: int, block_id: int) -> bool:
         data = self._load_data(user_id)
         blocks = data.get("time_blocks", [])
-        if index < 0 or index >= len(blocks):
-            return False
-
-        blocks.pop(index)
-        self._save_data(user_id, data)
-        return True
+        initial_len = len(blocks)
+        
+        data["time_blocks"] = [b for b in blocks if b.get("id") != block_id]
+        
+        if len(data["time_blocks"]) != initial_len:
+            self._save_data(user_id, data)
+            return True
+            
+        return False
 
     def add_routine(self, user_id: int, routine: Routine):
         data = self._load_data(user_id)

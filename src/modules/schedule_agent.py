@@ -48,6 +48,9 @@ TimeBlocks are strict periods of "busy time" when the user is unavailable (e.g.,
 - The solver will completely avoid scheduling any tasks or flexible routines during these periods.
 - They can be one-time (today only) or daily recurring.
 - Use `add_time_block`, `list_time_blocks`, and `remove_time_block` tools to manage them.
+- It is highly recommended NOT to specify a name for a TimeBlock (leave it empty) so that it doesn't clutter the schedule visually.
+- You should only specify a name for one-time events (e.g., a specific meeting or appointment).
+- If the user explicitly asks to specify a name for a daily or recurring TimeBlock, you must warn them that this might clutter their schedule visually.
 
 ### 4. Priorities
 - Tasks and routines have a priority from 0 to 10 (default 1).
@@ -166,6 +169,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         tools_instance.get_current_schedule,
         tools_instance.list_tasks,
         tools_instance.get_task_info,
+        tools_instance.list_completed_tasks,
         tools_instance.list_time_blocks,
         tools_instance.add_time_block,
         tools_instance.remove_time_block,
@@ -181,22 +185,17 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
         tools_instance.skip_routine,
     ]
 
-
     agent_tools_schema = []
     for f in agent_tools:
         decl = types.FunctionDeclaration.from_callable(
-            client=cache.llm_client.client._api_client,
-            callable=f
+            client=cache.llm_client.client._api_client, callable=f
         ).model_dump(exclude_unset=True, exclude_none=True)
-        
+
         # Interactions API requires parameters to be an object
         if "parameters" not in decl:
             decl["parameters"] = {"type": "OBJECT", "properties": {}}
-            
-        agent_tools_schema.append({
-            "type": "function",
-            **decl
-        })
+
+        agent_tools_schema.append({"type": "function", **decl})
 
     max_iterations = 7
     iteration = 0
@@ -210,6 +209,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
 
             # Fetch fresh context before each API call
             context = schedule_context_manager.get_interaction_context(channel_id_str)
+            anticipated_tokens = (len(system_instruction) // 2) + schedule_context_manager.get_total_tokens(
+                channel_id_str
+            )
 
             try:
                 response = await cache.llm_client.get_interaction(
@@ -218,6 +220,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                     max_output_tokens=2500,
                     tools=agent_tools_schema,
                     model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
+                    anticipated_tokens=anticipated_tokens,
                 )
             except Exception as e:
                 logger.error("Error in schedule agent get_interaction: %s", e)
@@ -312,12 +315,14 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_te
                         logger.warning("Tool execution error for %s: %s", func_name, str(e))
                         result = {"error": str(e)}
 
-                function_responses.append({
-                    "type": "function_result",
-                    "call_id": call_id,
-                    "name": func_name,
-                    "result": [{"type": "text", "text": str(result.get("result", result.get("error")))}]
-                })
+                function_responses.append(
+                    {
+                        "type": "function_result",
+                        "call_id": call_id,
+                        "name": func_name,
+                        "result": [{"type": "text", "text": str(result.get("result", result.get("error")))}],
+                    }
+                )
 
             # Append the function responses to the context
             schedule_context_manager.add_function_results(channel_id_str, function_responses)

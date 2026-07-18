@@ -19,7 +19,7 @@ class PhrasesTools(commands.Cog):
     @commands.slash_command(guild_ids=guilds)
     @commands.is_owner()
     async def reload_phrases(self, inter: disnake.ApplicationCommandInteraction):
-        await core.utils.load_phrases()
+        core.utils.load_phrases()
 
         text = (
             get_phrases(inter.guild.id)

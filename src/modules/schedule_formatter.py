@@ -13,6 +13,11 @@ def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem]
     last_end = None
 
     for item in all_items:
+        # Unnamed timeblocks are intentionally skipped in the visual representation.
+        # This causes them to coalesce with adjacent algorithmic gaps into a single `[ Xm break ]` indicator.
+        if item.item_type == "time_block" and not item.task_name:
+            continue
+
         is_spill = item in (spillovers or [])
         lines = []
 
@@ -38,6 +43,16 @@ def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem]
             if item.algo_notes:
                 lines.append(f" │      !!! {item.algo_notes}")
             lines.append(task_line)
+        elif item.item_type == "time_block":
+            prefix = " ├──- "
+            if is_spill:
+                prefix += "[From yesterday] "
+            
+            note = item.task_name if item.task_name else "Break"
+            
+            if item.algo_notes:
+                lines.append(f" │      !!! {item.algo_notes}")
+            lines.append(f"{prefix}{note} ({item.duration_min}m)")
         else:
             note = item.algo_notes if item.algo_notes else "Break"
             prefix = " ├──- "

@@ -9,6 +9,8 @@ from modules.schedule_provider import ScheduleProvider
 from modules.automatic_timetable_py.src.scheduler import Scheduler
 import settings
 
+_solver_lock = asyncio.Lock()
+
 
 def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], list[str], str]:
     provider = ScheduleProvider()
@@ -111,7 +113,21 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                     total_sessions=1,
                     algo_notes="",
                 )
-            )  # Sort the items sequentially so they appear in order
+            )
+            
+        for tb in getattr(result, "scheduled_timeblocks", []):
+            items.append(
+                ScheduleItem(
+                    item_type="time_block",
+                    task_name=tb.name,
+                    dt_start=tb.start_time,
+                    dt_end=tb.end_time,
+                    session_index="1",
+                    total_sessions=1,
+                    algo_notes="",
+                )
+            )
+
     items.sort(key=lambda x: x.dt_start)
 
     return items, solve_time, planning_days, skipped_ids, skipped_routines, result.status
@@ -124,4 +140,5 @@ async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], fl
     Runs the CPU-intensive solve operation in a background thread.
     Returns: (items, solve_time_seconds, planning_days, skipped_ids, skipped_routines, status_text)
     """
-    return await asyncio.to_thread(_solve_sync, client_ID)
+    async with _solver_lock:
+        return await asyncio.to_thread(_solve_sync, client_ID)

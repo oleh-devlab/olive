@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from google.genai import types
 
@@ -21,7 +22,9 @@ _WANT_REPLY_SCHEMA = {
 }
 
 
-async def want_respond(llm_client, context: list, system_instruction: str, guild_id) -> bool:
+async def want_respond(
+    llm_client, context: list, system_instruction: str, guild_id, *, anticipated_tokens: int
+) -> bool:
     """
     Determines whether the bot should respond in the current conversation.
 
@@ -44,13 +47,11 @@ async def want_respond(llm_client, context: list, system_instruction: str, guild
 
     test_system_instruction = f"{system_instruction}\n\n{test_instruction}"
 
-    response_format = [
-        {
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": _WANT_REPLY_SCHEMA,
-        }
-    ]
+    response_format = {
+        "type": "text",
+        "mime_type": "application/json",
+        "schema": _WANT_REPLY_SCHEMA,
+    }
 
     test_models_priority = global_olive.get("test_models_priority")
 
@@ -60,7 +61,8 @@ async def want_respond(llm_client, context: list, system_instruction: str, guild
             system_instruction=test_system_instruction,
             response_format=response_format,
             cheap_first=True,
-            model_priority=test_models_priority
+            model_priority=test_models_priority,
+            anticipated_tokens=anticipated_tokens,
         )
     except RateLimitExceeded:
         logger.warning("Rate limit exceeded during response gate check, skipping response.")
@@ -88,8 +90,22 @@ def _parse_want_reply(response) -> bool:
         if raw_text.endswith("```"):
             raw_text = raw_text[:-3].strip()
 
-        data = json.loads(raw_text)
-        return data.get("i_want_to_reply", False)
+        logger.debug(f'Test response: """{raw_text}"""')
+
+        if not raw_text:
+            return False
+
+        try:
+            data = json.loads(raw_text)
+            return data.get("i_want_to_reply", False)
+        except json.JSONDecodeError:
+            # Fallback for models (like Gemini) that sometimes embed the JSON in conversational text
+            match = re.search(r'"i_want_to_reply"\s*:\s*(true|false)', raw_text, re.IGNORECASE)
+            if match:
+                return match.group(1).lower() == "true"
+
+            # Re-raise to be caught by the outer block if still no match
+            raise
 
     except Exception as e:
         logger.error("Error parsing response gate JSON: %s", e)

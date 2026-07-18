@@ -87,23 +87,42 @@ async def send_long_message(target, text, max_length=2000, **kwargs):
     return sent_messages
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    merged = base.copy()
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = _deep_merge(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
+
+
 def get_phrases(guild_id=None):
     """
-    Returns a dictionary of phrases for a specific server.
-    If no arguments are provided or guild_id=None, it returns phrases from the “global” key.
+    Returns a dictionary of phrases for a specific server, falling back to global phrases.
     """
+    global_phrases = core.cache._phrases.get("global", {})
     if guild_id is None:
-        return core.cache._phrases.get("global", {})
-    return core.cache._phrases.get(str(guild_id), {})
+        return global_phrases
+
+    return core.cache._phrases.get(str(guild_id), global_phrases)
 
 
-async def load_phrases():
+def load_phrases():
     try:
         with open("phrases.json", "r", encoding="utf-8") as file:
             new_phrases = json.load(file)
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"Error loading phrases: {e}")
         return
+
+    global_phrases = new_phrases.get("global", {})
+    # Note: Pre-merging global phrases with guild-specific overrides at load time
+    # optimizes get_phrases() lookups to O(1). However, this duplicated data structure
+    # may consume significant memory if the bot is present in a large number of servers.
+    for key, value in new_phrases.items():
+        if key != "global" and isinstance(value, dict):
+            new_phrases[key] = _deep_merge(global_phrases, value)
 
     core.cache._phrases.clear()
     core.cache._phrases.update(new_phrases)

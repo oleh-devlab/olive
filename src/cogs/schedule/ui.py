@@ -11,9 +11,12 @@ from core.utils import get_phrases
 from core.time_utils import tz
 import modules.schedule_formatter as auto_timetable
 from core.eternal_message import EternalMessage
+import settings
 
 
-async def update_schedule_message(bot, channel_id, recalculate: bool = True, interaction: disnake.MessageInteraction = None):
+async def update_schedule_message(
+    bot, channel_id, recalculate: bool = True, interaction: disnake.MessageInteraction = None
+):
     state = cache.schedule_states.get(channel_id)
     if not state:
         return
@@ -120,7 +123,7 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
 
     schedule_format = phrases.get(
         "schedule_page_format",
-        "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n`Status: {status_text}`\n`The minimum planning horizon is {planning_days} days.`\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
+        "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n`Status: {status_text}`\n`The minimum planning horizon is {planning_days} days.`\n*(Auto-updates every {update_mins} min)*\n\n**Schedule (Page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
     )
     # Provide defaults if missing, but typically we have valid perf_time and planning_days
     schedule_content = schedule_format.format(
@@ -131,6 +134,11 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
         planning_days=planning_days,
         perf_time=perf_time,
         status_text=status_text,
+        update_mins=(
+            str(getattr(settings, "schedule_loop_update_seconds") // 60)
+            if hasattr(settings, "schedule_loop_update_seconds")
+            else "N/A"
+        ),
     )
 
     if skipped_tasks_ids:
@@ -158,8 +166,10 @@ async def update_schedule_message(bot, channel_id, recalculate: bool = True, int
                 await interaction.edit_original_response(content=schedule_content, view=view)
             else:
                 fallback_text = "Initializing schedule..."
-                await em.update(fallback_kwargs={"content": fallback_text, "view": view}, content=schedule_content, view=view)
-                
+                await em.update(
+                    fallback_kwargs={"content": fallback_text, "view": view}, content=schedule_content, view=view
+                )
+
             state["last_content"] = schedule_content
             state["last_view_state"] = view_state
         except Exception as e:

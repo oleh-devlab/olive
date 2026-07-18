@@ -112,6 +112,18 @@ class ScheduleAgentTools:
         return schd_item_formatters.format_task_info(task, use_markdown=False)
 
     @log_tool(modifies_schedule=False)
+    def list_completed_tasks(self) -> str:
+        """
+        Returns a list of all completed tasks (task history).
+        Use this to check what tasks the user has already finished.
+        """
+        tasks = self.provider.list_completed_tasks(self.user_id)
+        if not tasks:
+            return "No completed tasks found in history."
+
+        return schd_item_formatters.format_completed_task_list(tasks, use_markdown=False)
+
+    @log_tool(modifies_schedule=False)
     def list_time_blocks(self) -> str:
         """
         Returns a list of all time blocks (fixed schedule events).
@@ -123,18 +135,19 @@ class ScheduleAgentTools:
         return schd_item_formatters.format_timeblock_list(blocks, use_markdown=False)
 
     @log_tool(modifies_schedule=True)
-    def add_time_block(self, start_time_str: str, end_time_str: str, daily: bool = False) -> str:
+    def add_time_block(self, start_time_str: str, end_time_str: str, daily: bool = False, name: str = "") -> str:
         """
         Adds a strict time block (busy time) during which NO tasks can be scheduled.
         Args:
-            start_time_str: "HH:MM" e.g., "12:00"
-            end_time_str: "HH:MM" e.g., "13:00"
-            daily: True if this block happens every day, False if it's a one-time block for today.
+            start_time_str: The start time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
+            end_time_str: The end time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
+            daily: Whether it repeats every day.
+            name: Optional name for the block.
         """
         try:
             from modules.schedule_validators import validate_timeblock_creation_data
 
-            block = validate_timeblock_creation_data(start_time_str, end_time_str, daily)
+            block = validate_timeblock_creation_data(start_time_str, end_time_str, daily, name)
         except ScheduleValidationError as e:
             raise ValueError(str(e))
 
@@ -142,17 +155,17 @@ class ScheduleAgentTools:
         return f"Time block added: {start_time_str} - {end_time_str} (Daily: {daily})."
 
     @log_tool(modifies_schedule=True)
-    def remove_time_block(self, index: int) -> str:
+    def remove_time_block(self, block_id: int) -> str:
         """
-        Removes a time block by its index (1-based, use list_time_blocks first).
+        Removes a time block by its ID (use list_time_blocks first).
         Args:
-            index: The 1-based index of the time block to remove.
+            block_id: The ID of the time block to remove.
         """
-        removed = self.provider.remove_time_block(self.user_id, index - 1)
+        removed = self.provider.remove_time_block(self.user_id, block_id)
         if removed:
-            return f"Time block {index} removed successfully."
+            return f"Time block {block_id} removed successfully."
         else:
-            raise ValueError(f"Time block {index} not found.")
+            raise ValueError(f"Time block {block_id} not found.")
 
     @log_tool(modifies_schedule=True)
     def add_task(

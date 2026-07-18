@@ -114,7 +114,9 @@ class CurrencyEmbed(commands.Cog):
                 logger.debug(f"EUR: {eur_rate} грн, дата: {eur_date}")
                 self.usd_eur_test = {"usd": usd_rate, "eur": eur_rate}
 
-        raw_embed_data = get_phrases().get("currency_embed", {}).get("currency_embed_data", {"title": "Економіка"})
+        raw_embed_data = (
+            get_phrases().get("currency_embed", {}).get("currency_embed_data", {"title": ":dollar: | Currency"})
+        )
         formatted_embed_data = format_embed_data(
             raw_embed_data,
             usd_rate=(usd_rate if usd_rate is not None else "N/A"),

@@ -32,7 +32,7 @@ class ActiveCogsEmbed(commands.Cog):
         raw_embed_data = (
             get_phrases()
             .get("active_cogs_embed", {})
-            .get("embed_data", {"title": "Active Cogs", "description": "No data available."})
+            .get("embed_data", {"title": ":electric_plug: | Active Cogs", "description": "No data available."})
         )
         formatted_embed_data = format_embed_data(raw_embed_data, formatted_cogs_list=formatted_cogs_list)
 

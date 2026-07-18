@@ -18,33 +18,53 @@ from modules.schedule_validators import (
 
 # We can instantiate the provider here.
 provider = ScheduleProvider()
+phrases_cmd = utils.get_phrases().get("schedule_cmd", {})
 
 
 class AutoSchedule(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.slash_command(test_guilds=settings.guilds)
-    @commands.is_owner()
+    @commands.slash_command(test_guilds=settings.guilds, description=phrases_cmd.get("cmd_task_desc", "Manage tasks"))
     async def task(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
-    @task.sub_command(name="add", description="Add a new task")
+    @task.sub_command(name="add", description=phrases_cmd.get("cmd_task_add_desc", "Add a new task"))
     async def task_add(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        name: str,
-        duration_min: int,
-        description: str = "",
-        priority: int = getattr(settings, "schedule_default_priority", 1),
-        max_chunk_duration_min: int = getattr(settings, "schedule_default_max_chunk_min", 45),
-        break_duration_min: int = getattr(settings, "schedule_default_break_min", 15),
-        min_chunk_duration_min: int = None,
-        deadline: str = None,
-        depends_on: str = None,
+        name: str = commands.Param(description=phrases_cmd.get("param_name", "Name")),
+        duration_min: int = commands.Param(description=phrases_cmd.get("param_duration_min", "Duration (min)")),
+        description: str = commands.Param(default="", description=phrases_cmd.get("param_description", "Description")),
+        priority: int = commands.Param(
+            default=getattr(settings, "schedule_default_priority", 1),
+            description=phrases_cmd.get("param_priority", "Priority (0-10)"),
+        ),
+        max_chunk_duration_min: int = commands.Param(
+            default=getattr(settings, "schedule_default_max_chunk_min", 45),
+            description=phrases_cmd.get("param_max_chunk", "Max session (min)"),
+        ),
+        break_duration_min: int = commands.Param(
+            default=getattr(settings, "schedule_default_break_min", 15),
+            description=phrases_cmd.get("param_break", "Break between sessions (min)"),
+        ),
+        min_chunk_duration_min: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_min_chunk", "Min session (min)")
+        ),
+        deadline: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_deadline", "Deadline (DD.MM.YYYY HH:MM)")
+        ),
+        depends_on: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_depends", "Dependencies (comma-separated IDs)")
+        ),
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            tasks = provider.list_tasks(inter.author.id)
+            max_tasks = getattr(settings, "schedule_max_tasks_per_user", 200)
+            if len(tasks) >= max_tasks:
+                return await inter.edit_original_response(f"You have reached the maximum limit of {max_tasks} tasks.")
+
             new_task = validate_task_creation_data(
                 name=name,
                 duration_min=duration_min,
@@ -64,8 +84,12 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @task.sub_command(name="remove", description="Remove a task by ID")
-    async def task_remove(self, inter: disnake.ApplicationCommandInteraction, task_id: int):
+    @task.sub_command(name="remove", description=phrases_cmd.get("cmd_task_remove_desc", "Remove a task by ID"))
+    async def task_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        task_id: int = commands.Param(description=phrases_cmd.get("param_task_id", "Task ID")),
+    ):
         await inter.response.defer(ephemeral=True)
         removed = provider.remove_task(inter.author.id, task_id)
         if removed:
@@ -73,7 +97,7 @@ class AutoSchedule(commands.Cog):
         else:
             await inter.edit_original_response(f"Task {task_id} not found.")
 
-    @task.sub_command(name="list", description="List all current tasks")
+    @task.sub_command(name="list", description=phrases_cmd.get("cmd_task_list_desc", "List all current tasks"))
     async def task_list(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
         tasks = provider.list_tasks(inter.author.id)
@@ -85,8 +109,13 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Tasks listed above.")
 
-    @task.sub_command(name="spend", description="Mark time spent on a task")
-    async def task_spend(self, inter: disnake.ApplicationCommandInteraction, task_id: int, minutes: int):
+    @task.sub_command(name="spend", description=phrases_cmd.get("cmd_task_spend_desc", "Mark time spent on a task"))
+    async def task_spend(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        task_id: int = commands.Param(description=phrases_cmd.get("param_task_id", "Task ID")),
+        minutes: int = commands.Param(description=phrases_cmd.get("param_spend_minutes", "Minutes spent")),
+    ):
         await inter.response.defer(ephemeral=True)
         if minutes <= 0:
             return await inter.edit_original_response("Error: minutes must be > 0.")
@@ -101,20 +130,34 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @task.sub_command(name="edit", description="Edit specific fields of an existing task")
+    @task.sub_command(
+        name="edit", description=phrases_cmd.get("cmd_task_edit_desc", "Edit specific fields of an existing task")
+    )
     async def task_edit(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        task_id: int,
-        name: str = None,
-        duration_min: int = None,
-        description: str = None,
-        priority: int = None,
-        max_chunk_duration_min: int = None,
-        break_duration_min: int = None,
-        min_chunk_duration_min: int = None,
-        deadline: str = None,
-        depends_on: str = None,
+        task_id: int = commands.Param(description=phrases_cmd.get("param_task_id", "Task ID")),
+        name: str = commands.Param(default=None, description=phrases_cmd.get("param_name", "Name")),
+        duration_min: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_duration_min", "Duration (min)")
+        ),
+        description: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_description", "Description")
+        ),
+        priority: int = commands.Param(default=None, description=phrases_cmd.get("param_priority", "Priority")),
+        max_chunk_duration_min: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_max_chunk", "Max session (min)")
+        ),
+        break_duration_min: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_break", "Break between sessions (min)")
+        ),
+        min_chunk_duration_min: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_min_chunk", "Min chunk (min)")
+        ),
+        deadline: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_deadline", "Deadline (DD.MM.YYYY HH:MM)")
+        ),
+        depends_on: str = commands.Param(default=None, description=phrases_cmd.get("param_depends", "Dependencies")),
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -142,8 +185,14 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @task.sub_command(name="info", description="View detailed information about a task")
-    async def task_info(self, inter: disnake.ApplicationCommandInteraction, task_id: int):
+    @task.sub_command(
+        name="info", description=phrases_cmd.get("cmd_task_info_desc", "View detailed information about a task")
+    )
+    async def task_info(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        task_id: int = commands.Param(description=phrases_cmd.get("param_task_id", "Task ID")),
+    ):
         await inter.response.defer(ephemeral=True)
         task = provider.get_task(inter.author.id, task_id)
         if not task:
@@ -153,7 +202,7 @@ class AutoSchedule(commands.Cog):
         formatted = schd_item_formatters.format_task_info(task, use_markdown=True)
         await inter.edit_original_response(formatted)
 
-    @task.sub_command(name="history", description="List completed tasks")
+    @task.sub_command(name="history", description=phrases_cmd.get("cmd_task_history_desc", "List completed tasks"))
     async def task_history(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
         tasks = provider.list_completed_tasks(inter.author.id)
@@ -165,37 +214,56 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("History listed above.")
 
-    @commands.slash_command(test_guilds=settings.guilds)
-    @commands.is_owner()
+    @commands.slash_command(
+        test_guilds=settings.guilds, description=phrases_cmd.get("cmd_timeblock_desc", "Manage time blocks")
+    )
     async def timeblock(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
-    @timeblock.sub_command(name="add", description="Add a new time block")
+    @timeblock.sub_command(name="add", description=phrases_cmd.get("cmd_timeblock_add_desc", "Add a new time block"))
     async def timeblock_add(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        start_time: str,
-        end_time: str,
-        daily: bool = True,
+        start_time: str = commands.Param(description=phrases_cmd.get("param_start_time", "Start time (HH:MM)")),
+        end_time: str = commands.Param(description=phrases_cmd.get("param_end_time", "End time (HH:MM)")),
+        daily: bool = commands.Param(default=False, description=phrases_cmd.get("param_daily", "Repeat daily?")),
+        name: str = commands.Param(default="", description=phrases_cmd.get("param_timeblock_name", "Name")),
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            block = validate_timeblock_creation_data(start_time, end_time, daily)
+            blocks = provider.list_time_blocks(inter.author.id)
+            max_blocks = getattr(settings, "schedule_max_timeblocks_per_user", 20)
+            if len(blocks) >= max_blocks:
+                return await inter.edit_original_response(
+                    f"You have reached the maximum limit of {max_blocks} timeblocks."
+                )
+
+            block = validate_timeblock_creation_data(start_time, end_time, daily, name)
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @timeblock.sub_command(name="remove", description="Remove a time block by index")
-    async def timeblock_remove(self, inter: disnake.ApplicationCommandInteraction, index: int):
+    @timeblock.sub_command(
+        name="remove", description=phrases_cmd.get("cmd_timeblock_remove_desc", "Remove a time block by ID")
+    )
+    async def timeblock_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        block_id: int = commands.Param(description=phrases_cmd.get("param_timeblock_id", "ID of the timeblock")),
+    ):
         await inter.response.defer(ephemeral=True)
-        removed = provider.remove_time_block(inter.author.id, index - 1)
-        if removed:
-            await inter.edit_original_response(f"Timeblock {index} removed successfully.")
-        else:
-            await inter.edit_original_response(f"Timeblock {index} not found.")
+        try:
+            success = provider.remove_time_block(inter.author.id, block_id)
+            if success:
+                await inter.edit_original_response(f"Timeblock {block_id} removed.")
+                self.bot.dispatch("schedule_update", inter.channel.id)
+            else:
+                await inter.edit_original_response(f"Invalid timeblock ID: {block_id}.")
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {str(e)}")
 
-    @timeblock.sub_command(name="list", description="List all time blocks")
+    @timeblock.sub_command(name="list", description=phrases_cmd.get("cmd_timeblock_list_desc", "List all time blocks"))
     async def timeblock_list(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
         blocks = provider.list_time_blocks(inter.author.id)
@@ -207,24 +275,44 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Time blocks listed above.")
 
-    @commands.slash_command(test_guilds=settings.guilds)
-    @commands.is_owner()
+    @commands.slash_command(
+        test_guilds=settings.guilds, description=phrases_cmd.get("cmd_routine_desc", "Manage routines")
+    )
     async def routine(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
-    @routine.sub_command(name="add_fixed", description="Add a routine that runs at a specific time")
+    @routine.sub_command(
+        name="add_fixed",
+        description=phrases_cmd.get("cmd_routine_add_fixed_desc", "Add a routine that runs at a specific time"),
+    )
     async def routine_add_fixed(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        name: str,
-        time: str,
-        duration_min: int,
-        priority: int = getattr(settings, "schedule_default_priority", 1),
-        weekdays: str = None,
-        depends_on: str = None,
+        name: str = commands.Param(description=phrases_cmd.get("param_name", "Name")),
+        time: str = commands.Param(description=phrases_cmd.get("param_time", "Time (HH:MM)")),
+        duration_min: int = commands.Param(description=phrases_cmd.get("param_duration_min", "Duration (min)")),
+        priority: int = commands.Param(
+            default=getattr(settings, "schedule_default_priority", 1),
+            description=phrases_cmd.get("param_priority", "Priority"),
+        ),
+        break_duration_min: int = commands.Param(
+            default=getattr(settings, "schedule_default_break_min", 15),
+            description=phrases_cmd.get("param_break", "Break (min)"),
+        ),
+        weekdays: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_weekdays", "Weekdays (0=Mon..6=Sun, e.g. 0,2,4)")
+        ),
+        depends_on: str = commands.Param(default=None, description=phrases_cmd.get("param_depends", "Dependencies")),
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            routines = provider.list_routines(inter.author.id)
+            max_routines = getattr(settings, "schedule_max_routines_per_user", 30)
+            if len(routines) >= max_routines:
+                return await inter.edit_original_response(
+                    f"You have reached the maximum limit of {max_routines} routines."
+                )
+
             wd_list = None
             repeat = "daily"
             if weekdays:
@@ -239,6 +327,7 @@ class AutoSchedule(commands.Cog):
                 time_str=time,
                 weekdays=wd_list,
                 priority=priority,
+                break_duration_min=break_duration_min,
                 depends_on=depends_on,
                 user_id=inter.author.id,
             )
@@ -247,13 +336,20 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @routine.sub_command(name="skip", description="Skip a routine for today, X days, or until a specific date")
+    @routine.sub_command(
+        name="skip",
+        description=phrases_cmd.get(
+            "cmd_routine_skip_desc", "Skip a routine for today, X days, or until a specific date"
+        ),
+    )
     async def routine_skip(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        routine_id: int,
-        days: int = None,
-        resume_after: str = None,
+        routine_id: int = commands.Param(description=phrases_cmd.get("param_routine_id", "Routine ID")),
+        days: int = commands.Param(default=None, description=phrases_cmd.get("param_skip_days", "Days to skip")),
+        resume_after: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_resume_after", "Resume date (DD.MM.YYYY)")
+        ),
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -270,19 +366,42 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @routine.sub_command(name="add_flexible", description="Add a routine with a flexible time until a deadline")
+    @routine.sub_command(
+        name="add_flexible",
+        description=phrases_cmd.get(
+            "cmd_routine_add_flexible_desc", "Add a routine with a flexible time until a deadline"
+        ),
+    )
     async def routine_add_flexible(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        name: str,
-        deadline_time: str,
-        duration_min: int,
-        priority: int = getattr(settings, "schedule_default_priority", 1),
-        weekdays: str = None,
-        depends_on: str = None,
+        name: str = commands.Param(description=phrases_cmd.get("param_name", "Name")),
+        deadline_time: str = commands.Param(
+            description=phrases_cmd.get("param_deadline_time", "Deadline time (HH:MM)")
+        ),
+        duration_min: int = commands.Param(description=phrases_cmd.get("param_duration_min", "Duration (min)")),
+        priority: int = commands.Param(
+            default=getattr(settings, "schedule_default_priority", 1),
+            description=phrases_cmd.get("param_priority", "Priority"),
+        ),
+        break_duration_min: int = commands.Param(
+            default=getattr(settings, "schedule_default_break_min", 15),
+            description=phrases_cmd.get("param_break", "Break (min)"),
+        ),
+        weekdays: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_weekdays", "Weekdays (0=Mon..6=Sun, e.g. 0,2,4)")
+        ),
+        depends_on: str = commands.Param(default=None, description=phrases_cmd.get("param_depends", "Dependencies")),
     ):
         await inter.response.defer(ephemeral=True)
         try:
+            routines = provider.list_routines(inter.author.id)
+            max_routines = getattr(settings, "schedule_max_routines_per_user", 30)
+            if len(routines) >= max_routines:
+                return await inter.edit_original_response(
+                    f"You have reached the maximum limit of {max_routines} routines."
+                )
+
             wd_list = None
             repeat = "daily"
             if weekdays:
@@ -297,6 +416,7 @@ class AutoSchedule(commands.Cog):
                 deadline_time_str=deadline_time,
                 weekdays=wd_list,
                 priority=priority,
+                break_duration_min=break_duration_min,
                 depends_on=depends_on,
                 user_id=inter.author.id,
             )
@@ -305,8 +425,14 @@ class AutoSchedule(commands.Cog):
         except Exception as e:
             await inter.edit_original_response(f"Error: {str(e)}")
 
-    @routine.sub_command(name="info", description="View detailed information about a routine")
-    async def routine_info(self, inter: disnake.ApplicationCommandInteraction, routine_id: int):
+    @routine.sub_command(
+        name="info", description=phrases_cmd.get("cmd_routine_info_desc", "View detailed information about a routine")
+    )
+    async def routine_info(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        routine_id: int = commands.Param(description=phrases_cmd.get("param_routine_id", "Routine ID")),
+    ):
         await inter.response.defer(ephemeral=True)
         routine = provider.get_routine(inter.author.id, routine_id)
         if not routine:
@@ -316,7 +442,7 @@ class AutoSchedule(commands.Cog):
         formatted = schd_item_formatters.format_routine_info(routine, use_markdown=True)
         await inter.edit_original_response(formatted)
 
-    @routine.sub_command(name="list", description="List all routines")
+    @routine.sub_command(name="list", description=phrases_cmd.get("cmd_routine_list_desc", "List all routines"))
     async def routine_list(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
         routines = provider.list_routines(inter.author.id)
@@ -327,8 +453,14 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Routines listed above.")
 
-    @routine.sub_command(name="remove", description="Remove a routine by ID")
-    async def routine_remove(self, inter: disnake.ApplicationCommandInteraction, routine_id: int):
+    @routine.sub_command(
+        name="remove", description=phrases_cmd.get("cmd_routine_remove_desc", "Remove a routine by ID")
+    )
+    async def routine_remove(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        routine_id: int = commands.Param(description=phrases_cmd.get("param_routine_id", "Routine ID")),
+    ):
         await inter.response.defer(ephemeral=True)
         removed = provider.remove_routine(inter.author.id, routine_id)
         if removed:
@@ -336,20 +468,35 @@ class AutoSchedule(commands.Cog):
         else:
             await inter.edit_original_response(f"Routine {routine_id} not found.")
 
-    @routine.sub_command(name="edit", description="Edit specific fields of an existing routine")
+    @routine.sub_command(
+        name="edit", description=phrases_cmd.get("cmd_routine_edit_desc", "Edit specific fields of an existing routine")
+    )
     async def routine_edit(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        routine_id: int,
-        name: str = None,
-        routine_type: str = commands.Param(default=None, choices=["fixed", "flexible"]),
-        repeat: str = commands.Param(default=None, choices=["daily", "weekly"]),
-        duration_min: int = None,
-        time: str = None,
-        deadline_time: str = None,
-        weekdays: str = None,
-        priority: int = None,
-        depends_on: str = None,
+        routine_id: int = commands.Param(description=phrases_cmd.get("param_routine_id", "Routine ID")),
+        name: str = commands.Param(default=None, description=phrases_cmd.get("param_name", "Name")),
+        routine_type: str = commands.Param(
+            default=None, choices=["fixed", "flexible"], description=phrases_cmd.get("param_routine_type", "Type")
+        ),
+        repeat: str = commands.Param(
+            default=None, choices=["daily", "weekly"], description=phrases_cmd.get("param_repeat", "Repeat")
+        ),
+        duration_min: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_duration_min", "Duration (min)")
+        ),
+        time: str = commands.Param(default=None, description=phrases_cmd.get("param_time", "Time (HH:MM)")),
+        deadline_time: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_deadline_time", "Deadline time (HH:MM)")
+        ),
+        weekdays: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_weekdays", "Weekdays (0=Mon..6=Sun, e.g. 0,2,4)")
+        ),
+        priority: int = commands.Param(default=None, description=phrases_cmd.get("param_priority", "Priority")),
+        break_duration_min: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_break", "Break between sessions (min)")
+        ),
+        depends_on: str = commands.Param(default=None, description=phrases_cmd.get("param_depends", "Dependencies")),
     ):
         await inter.response.defer(ephemeral=True)
         try:
@@ -366,6 +513,7 @@ class AutoSchedule(commands.Cog):
                 deadline_time_str=deadline_time,
                 weekdays=wd_list,
                 priority=priority,
+                break_duration_min=break_duration_min,
                 depends_on=depends_on,
                 user_id=inter.author.id,
                 self_id=routine_id,
@@ -382,12 +530,17 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response(f"Error: {str(e)}")
 
     @commands.slash_command(
-        name="schedule_channel", description="Manage personal schedule channels", test_guilds=settings.guilds
+        name="schedule_channel",
+        description=phrases_cmd.get("cmd_schedule_channel_desc", "Manage personal schedule channels"),
+        test_guilds=settings.guilds,
     )
     async def schedule_channel(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
-    @schedule_channel.sub_command(name="create", description="Create a personal schedule channel")
+    @schedule_channel.sub_command(
+        name="create",
+        description=phrases_cmd.get("cmd_schedule_channel_create_desc", "Create a personal schedule channels"),
+    )
     async def schedule_channel_create(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
 
@@ -417,9 +570,10 @@ class AutoSchedule(commands.Cog):
 
         # Check limit per server
         channels_in_guild = sum(1 for d in data.values() if d.get("guild_id") == inter.guild.id)
-        if channels_in_guild >= 3:
+        max_channels = getattr(settings, "schedule_max_channels_per_guild", 3)
+        if channels_in_guild >= max_channels:
             await inter.edit_original_response(
-                phrases.get("limit_exceeded", "Schedule channel limit exceeded for this server (max 3).")
+                phrases.get("limit_exceeded", f"Schedule channel limit exceeded for this server (max {max_channels}).")
             )
             return
 
@@ -464,9 +618,16 @@ class AutoSchedule(commands.Cog):
             self.bot.dispatch("schedule_init", schedule_channel, inter.author.id)
 
             msg_created = phrases.get(
-                "channel_created", "Channels successfully created: Schedule {schedule_channel}, Tasks {tasks_channel}"
+                "channel_created",
+                "Channels successfully created:\n- Schedule {schedule_channel}\n- Tasks {tasks_channel}",
             ).format(schedule_channel=schedule_channel.mention, tasks_channel=tasks_channel.mention)
             await inter.edit_original_response(msg_created)
+
+            warning_msg = phrases.get(
+                "privacy_warning",
+                "{user_mention}, please note: view commands (such as `/task list` or `/routine list`) are not ephemeral (private). Their results will be visible to all participants in the channel where you use them. If privacy is important to you, use them only in this private channel.",
+            ).format(user_mention=f"<@{inter.author.id}>")
+            await tasks_channel.send(warning_msg)
 
         except Exception as e:
             print(f"Error creating channel: {e}")
@@ -474,17 +635,30 @@ class AutoSchedule(commands.Cog):
                 phrases.get("creation_error", "An error occurred while creating the channel.")
             )
 
-    @schedule_channel.sub_command(name="settings", description="Set personal schedule configuration")
+    @schedule_channel.sub_command(
+        name="settings",
+        description=phrases_cmd.get("cmd_schedule_channel_settings_desc", "Set personal schedule configuration"),
+    )
     async def schedule_channel_settings(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        planning_days: int = None,
-        priority_threshold: int = None,
-        packer_timeout: float = None,
-        gravity_timeout: float = None,
+        planning_days: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_planning_days", "Planning horizon (days)")
+        ),
+        priority_threshold: int = commands.Param(
+            default=None, description=phrases_cmd.get("param_priority_threshold", "Priority threshold")
+        ),
+        packer_timeout: float = commands.Param(
+            default=None, description=phrases_cmd.get("param_packer_timeout", "Packer timeout")
+        ),
+        gravity_timeout: float = commands.Param(
+            default=None, description=phrases_cmd.get("param_gravity_timeout", "Gravity timeout")
+        ),
         step_minutes: int = commands.Param(
             default=None,
-            description="Time step in minutes (higher values increase probability of errors/inaccuracy)",
+            description=phrases_cmd.get(
+                "param_step_minutes", "Time step in minutes (higher values increase probability of errors/inaccuracy)"
+            ),
             choices=getattr(settings, "schedule_allowed_step_minutes", [1, 5, 15]),
         ),
     ):
@@ -515,7 +689,13 @@ class AutoSchedule(commands.Cog):
         if step_minutes is not None and step_minutes not in allowed_steps:
             return await inter.edit_original_response(f"Step minutes must be one of {allowed_steps}.")
 
-        if planning_days is None and priority_threshold is None and packer_timeout is None and gravity_timeout is None and step_minutes is None:
+        if (
+            planning_days is None
+            and priority_threshold is None
+            and packer_timeout is None
+            and gravity_timeout is None
+            and step_minutes is None
+        ):
             return await inter.edit_original_response("Please provide at least one setting to update.")
 
         success = provider.update_schedule_settings(

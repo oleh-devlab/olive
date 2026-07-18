@@ -116,21 +116,33 @@ def validate_task_creation_data(
     )
 
 
-def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, daily: bool) -> TimeBlock:
+def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, daily: bool, name: str = "") -> TimeBlock:
     try:
         now = datetime.datetime.now(tz)
-        sh, sm = map(int, start_time_str.split(":"))
-        eh, em = map(int, end_time_str.split(":"))
-        start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
-        end_dt = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+        
+        def parse_tb_time(time_str: str) -> datetime.datetime:
+            if " " in time_str:
+                dt = datetime.datetime.strptime(time_str, "%d.%m.%Y %H:%M")
+                return dt.replace(tzinfo=tz)
+            else:
+                h, m = map(int, time_str.split(":"))
+                return now.replace(hour=h, minute=m, second=0, microsecond=0)
 
-        # If end is before or exactly equal to start, it crosses midnight
+        start_dt = parse_tb_time(start_time_str)
+        end_dt = parse_tb_time(end_time_str)
+
+        # If it crosses midnight and the dates are the same (e.g. both used HH:MM for today)
         if end_dt <= start_dt:
-            end_dt += datetime.timedelta(days=1)
+            if start_dt.date() == end_dt.date():
+                end_dt += datetime.timedelta(days=1)
+            else:
+                raise ValueError("End time must be after start time.")
 
-        return TimeBlock(start=start_dt, end=end_dt, daily=daily)
-    except Exception:
-        raise ScheduleValidationError("Invalid time format. Use HH:MM (e.g. 10:30).")
+        return TimeBlock(start=start_dt, end=end_dt, daily=daily, name=name)
+    except Exception as e:
+        if isinstance(e, ValueError) and str(e) == "End time must be after start time.":
+            raise ScheduleValidationError(str(e))
+        raise ScheduleValidationError("Invalid time format. Use 'HH:MM' or 'DD.MM.YYYY HH:MM'.")
 
 
 def validate_task_update_data(

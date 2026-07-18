@@ -71,11 +71,11 @@ class MessageLoop(commands.Cog):
                 .get("statistic_message_loop", {})
                 .get("welcome_message", "Error with getting message for statistic channel.")
             )
-            
+
             await em.update(
-                fallback_kwargs={"content": fallback_text, "embeds": self.channels_valid_embeds[channel_id]}, 
-                content=content, 
-                embeds=self.channels_valid_embeds[channel_id]
+                fallback_kwargs={"content": fallback_text, "embeds": self.channels_valid_embeds[channel_id]},
+                content=content,
+                embeds=self.channels_valid_embeds[channel_id],
             )
 
         self.last_embeds_dicts = new_embeds_dicts
@@ -109,13 +109,15 @@ class MessageLoop(commands.Cog):
                         .get("statistic_message_loop", {})
                         .get("welcome_message", "Error with getting message for statistic channel.")
                     )
-                    
+
                     em = self.eternal_messages[channel.id]
                     success = await em.init_message({"content": text}, purge_on_recreate=True)
                     if success:
                         logger.info(f"Eternal message initialized in channel {channel.id}")
                     else:
-                        logger.error(f"Failed to initialize eternal message in channel {channel.id}. Removing from loop.")
+                        logger.error(
+                            f"Failed to initialize eternal message in channel {channel.id}. Removing from loop."
+                        )
                         self.eternal_messages.pop(channel.id, None)
                 except Exception as e:
                     logger.error(f"Error processing channel {channel.id}: {e}")
