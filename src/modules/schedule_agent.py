@@ -2,6 +2,7 @@ import logging
 import inspect
 import disnake
 from google.genai import types
+import asyncio
 import time
 
 import core.cache as cache
@@ -194,140 +195,165 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
     max_iterations = 7
     iteration = 0
 
-    async with message.channel.typing():
-        # I knew even as I was writing it that this loop wasn't working;
-        # I just hadn't gotten around to rewriting it and passing the responsibility to the SDK yet.
-        # "If it's working, don't touch it."
-        while iteration < max_iterations:
-            iteration += 1
+    llm_len_before = len(schedule_context_manager.llm_context.get(channel_id_str, []))
+    db_len_before = len(schedule_context_manager.database_context.get(channel_id_str, []))
 
-            # Fetch fresh context before each API call
-            context = schedule_context_manager.get_interaction_context(channel_id_str)
-            anticipated_tokens = (len(system_instruction) // 2) + schedule_context_manager.get_total_tokens(
-                channel_id_str
-            )
+    try:
+        async with message.channel.typing():
+            # I knew even as I was writing it that this loop wasn't working;
+            # I just hadn't gotten around to rewriting it and passing the responsibility to the SDK yet.
+            # "If it's working, don't touch it."
+            while iteration < max_iterations:
+                iteration += 1
 
-            try:
-                response = await cache.llm_client.get_interaction(
-                    context,
-                    system_instruction=system_instruction,
-                    max_output_tokens=2500,
-                    tools=agent_tools_schema,
-                    model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
-                    anticipated_tokens=anticipated_tokens,
+                # Fetch fresh context before each API call
+                context = schedule_context_manager.get_interaction_context(channel_id_str)
+                anticipated_tokens = (len(system_instruction) // 2) + schedule_context_manager.get_total_tokens(
+                    channel_id_str
                 )
-            except Exception as e:
-                logger.error("Error in schedule agent get_interaction: %s", e)
-                await message.reply(f"An error occurred while communicating with the model: {e}")
-                return
 
-            candidate_tokens = 0
-            if hasattr(response, "usage") and response.usage is not None:
-                prompt_tokens = getattr(response.usage, "total_input_tokens", 0)
-                candidate_tokens = getattr(response.usage, "total_output_tokens", 0)
-                if prompt_tokens > 0:
-                    schedule_context_manager.update_latest_user_message_tokens(channel_id_str, prompt_tokens)
+                try:
+                    response = await cache.llm_client.get_interaction(
+                        context,
+                        system_instruction=system_instruction,
+                        max_output_tokens=2500,
+                        tools=agent_tools_schema,
+                        model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
+                        anticipated_tokens=anticipated_tokens,
+                    )
+                except Exception as e:
+                    logger.error("Error in schedule agent get_interaction: %s", e)
+                    await message.reply(f"An error occurred while communicating with the model: {e}")
+                    return
 
-            # Save the model's steps to context
-            if getattr(response, "steps", None):
-                schedule_context_manager.add_interaction_steps(channel_id_str, response.steps, tokens=candidate_tokens)
+                candidate_tokens = 0
+                if hasattr(response, "usage") and response.usage is not None:
+                    prompt_tokens = getattr(response.usage, "total_input_tokens", 0)
+                    candidate_tokens = getattr(response.usage, "total_output_tokens", 0)
+                    if prompt_tokens > 0:
+                        schedule_context_manager.update_latest_user_message_tokens(channel_id_str, prompt_tokens)
 
-            # Check if there are function calls
-            function_calls = []
-            for step in getattr(response, "steps", []):
-                if getattr(step, "type", "") == "function_call":
-                    function_calls.append(step)
+                # Save the model's steps to context
+                if getattr(response, "steps", None):
+                    schedule_context_manager.add_interaction_steps(channel_id_str, response.steps, tokens=candidate_tokens)
 
-            if not function_calls:
-                # No function calls, the model responded with text.
-                text_response = getattr(response, "output_text", "")
-                if not text_response:
-                    if tools_instance.used_tools:
-                        text_response = "The action was completed (the model did not provide a text response)."
-                    else:
-                        logger.warning("Agent returned empty response")
-                        break
+                # Check if there are function calls
+                function_calls = []
+                for step in getattr(response, "steps", []):
+                    if getattr(step, "type", "") == "function_call":
+                        function_calls.append(step)
 
-                if tools_instance.used_tools:
-                    # Deduplicate in case SDK auto-retried
-                    unique_tools = []
-                    for t in tools_instance.used_tools:
-                        if t not in unique_tools:
-                            unique_tools.append(t)
-
-                    iters_str = f" ({iteration} iteration{'s' if iteration != 1 else ''})"
-                    text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(f"- {t}" for t in unique_tools)
-
-                kwargs = {}
-                if tools_instance.schedule_modified:
-                    post_run_data = provider.create_backup(user_id)
-                    kwargs["view"] = UndoScheduleView(bot, user_id, backup_data, post_run_data)
-
-                await send_long_message(message.channel, text_response, **kwargs)
-                break
-
-            # Execute all function calls
-            function_responses = []
-            schedule_modified = False
-
-            for fc in function_calls:
-                func_name = getattr(fc, "name", "")
-                args = fc.arguments if hasattr(fc, "arguments") and fc.arguments is not None else {}
-                # Sometimes arguments might be passed as dictionary, but let's make sure it's dict
-                if not isinstance(args, dict):
-                    args = dict(args) if hasattr(args, "keys") else {}
-                call_id = getattr(fc, "id", "")
-
-                func_to_call = next((f for f in agent_tools if getattr(f, "__name__", "") == func_name), None)
-
-                if not func_to_call:
-                    result = {"error": f"Unknown function {func_name}"}
-                else:
-                    try:
-                        if inspect.iscoroutinefunction(func_to_call):
-                            res = await func_to_call(**args)
+                if not function_calls:
+                    # No function calls, the model responded with text.
+                    text_response = getattr(response, "output_text", "")
+                    if not text_response:
+                        if tools_instance.used_tools:
+                            text_response = "The action was completed (the model did not provide a text response)."
                         else:
-                            res = func_to_call(**args)
+                            logger.warning("Agent returned empty response")
+                            break
 
-                        # Must return strings for result texts
-                        result = {"result": str(res)}
-                        if func_name in [
-                            "add_task",
-                            "remove_task",
-                            "edit_task",
-                            "spend_task_time",
-                            "add_routine",
-                            "remove_routine",
-                            "edit_routine",
-                            "skip_routine",
-                            "add_time_block",
-                            "remove_time_block",
-                        ]:
-                            schedule_modified = True
+                    if tools_instance.used_tools:
+                        # Deduplicate in case SDK auto-retried
+                        unique_tools = []
+                        for t in tools_instance.used_tools:
+                            if t not in unique_tools:
+                                unique_tools.append(t)
 
-                    except Exception as e:
-                        logger.warning("Tool execution error for %s: %s", func_name, str(e))
-                        result = {"error": str(e)}
+                        iters_str = f" ({iteration} iteration{'s' if iteration != 1 else ''})"
+                        text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(f"- {t}" for t in unique_tools)
 
-                function_responses.append(
-                    {
-                        "type": "function_result",
-                        "call_id": call_id,
-                        "name": func_name,
-                        "result": [{"type": "text", "text": str(result.get("result", result.get("error")))}],
-                    }
-                )
+                    kwargs = {}
+                    if tools_instance.schedule_modified:
+                        post_run_data = provider.create_backup(user_id)
+                        kwargs["view"] = UndoScheduleView(bot, user_id, backup_data, post_run_data)
 
-            # Append the function responses to the context
-            schedule_context_manager.add_function_results(channel_id_str, function_responses)
+                    await send_long_message(message.channel, text_response, **kwargs)
+                    break
 
-            if schedule_modified:
-                bot.dispatch("schedule_update", message.channel.id)
+                # Execute all function calls
+                function_responses = []
+                schedule_modified = False
 
-        else:
-            # Reached max iterations
-            await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
+                for fc in function_calls:
+                    func_name = getattr(fc, "name", "")
+                    args = fc.arguments if hasattr(fc, "arguments") and fc.arguments is not None else {}
+                    # Sometimes arguments might be passed as dictionary, but let's make sure it's dict
+                    if not isinstance(args, dict):
+                        args = dict(args) if hasattr(args, "keys") else {}
+                    call_id = getattr(fc, "id", "")
 
-    # Apply clipping and save context
-    schedule_context_manager.apply_restrictions()
-    await schedule_context_manager.write_to_file()
+                    func_to_call = next((f for f in agent_tools if getattr(f, "__name__", "") == func_name), None)
+
+                    if not func_to_call:
+                        result = {"error": f"Unknown function {func_name}"}
+                    else:
+                        try:
+                            if inspect.iscoroutinefunction(func_to_call):
+                                res = await func_to_call(**args)
+                            else:
+                                res = func_to_call(**args)
+
+                            # Must return strings for result texts
+                            result = {"result": str(res)}
+                            if func_name in [
+                                "add_task",
+                                "remove_task",
+                                "edit_task",
+                                "spend_task_time",
+                                "add_routine",
+                                "remove_routine",
+                                "edit_routine",
+                                "skip_routine",
+                                "add_time_block",
+                                "remove_time_block",
+                            ]:
+                                schedule_modified = True
+
+                        except Exception as e:
+                            logger.warning("Tool execution error for %s: %s", func_name, str(e))
+                            result = {"error": str(e)}
+
+                    function_responses.append(
+                        {
+                            "type": "function_result",
+                            "call_id": call_id,
+                            "name": func_name,
+                            "result": [{"type": "text", "text": str(result.get("result", result.get("error")))}],
+                        }
+                    )
+
+                # Append the function responses to the context
+                schedule_context_manager.add_function_results(channel_id_str, function_responses)
+
+                if schedule_modified:
+                    bot.dispatch("schedule_update", message.channel.id)
+
+            else:
+                # Reached max iterations
+                await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
+
+    except asyncio.CancelledError:
+        def clean_context(ctx_dict, original_len):
+            if channel_id_str not in ctx_dict: return
+            original_items = ctx_dict[channel_id_str][:original_len]
+            new_items = ctx_dict[channel_id_str][original_len:]
+            real_user_messages = [item for item in new_items if item.get("role") == "user" and "parts" in item]
+            ctx_dict[channel_id_str] = original_items + real_user_messages
+
+        clean_context(schedule_context_manager.llm_context, llm_len_before)
+        clean_context(schedule_context_manager.database_context, db_len_before)
+
+        if tools_instance.schedule_modified:
+            provider.restore_backup(user_id, backup_data)
+            bot.dispatch("schedule_update", message.channel.id)
+            logger.info("Schedule agent for user %s was cancelled during execution, backup automatically restored.", user_id)
+        raise
+
+    finally:
+        # Apply clipping and save context
+        schedule_context_manager.apply_restrictions()
+        
+        # If cancelled, await inside finally might raise CancelledError again, but typically the first await handles it
+        # However, to be completely safe, we can spawn a task
+        bot.loop.create_task(schedule_context_manager.write_to_file())

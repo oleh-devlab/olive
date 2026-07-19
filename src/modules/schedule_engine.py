@@ -44,7 +44,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
     result = scheduler.solve(start_time=now_tz, timeouts=timeouts, num_search_workers=workers)
     solve_time = time.perf_counter() - start_perf
 
-    if result.status == "UNKNOWN":
+    if result.packer_status == "UNKNOWN":
         raise TimeoutError(
             f"CP-SAT solver timed out after {solve_time:.2f}s. Perhaps the planning horizon ({planning_days} days) is too long, or you've set a deadline that's too far in the future."
         )
