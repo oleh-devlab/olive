@@ -146,17 +146,11 @@ class UndoScheduleView(disnake.ui.View):
         )
 
 
-async def run_schedule_agent(bot, message: disnake.Message, user_id: int, new_text: str, meta: UserMessageMetadata):
+async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
     """
     Agentic loop that allows OLIVE to call tools.
     """
     channel_id_str = str(message.channel.id)
-
-    schedule_context_manager.add_user_message(
-        channel_id_str,
-        new_text,
-        meta,
-    )
 
     system_instruction = _get_schedule_instruction(message.guild.id)
 

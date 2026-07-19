@@ -10,9 +10,9 @@ from modules.llm_rate_limiter import RateLimitExceeded
 from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
 from modules.llm_message_formatter import format_user_message
 from modules.llm_response_gate import want_respond
-from modules.schedule_agent import load_schedule_context, run_schedule_agent
+from modules.schedule_agent import load_schedule_context, run_schedule_agent, schedule_context_manager
 import core.cache as cache
-from core.utils import get_phrases
+from core.utils import get_phrases, TaskDebouncer
 import settings
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,8 @@ class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.context_manager = LLMContextManager()
-        self.response_tasks = {}
+        self.response_debouncer = TaskDebouncer(self.bot.loop)
+        self.schedule_debouncer = TaskDebouncer(self.bot.loop)
 
         self.olive_enabled = True
 
@@ -93,7 +94,11 @@ class AIAssistantCog(commands.Cog):
 
         if message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
-            self.bot.loop.create_task(run_schedule_agent(self.bot, message, user_id, new_text, meta))
+            
+            # Immediately add the message to the schedule agent's context
+            schedule_context_manager.add_user_message(str(message.channel.id), new_text, meta)
+            
+            self.schedule_debouncer.submit(guild_id, 3, run_schedule_agent, self.bot, message, user_id)
             return
 
         self.context_manager.add_user_message(
@@ -102,21 +107,7 @@ class AIAssistantCog(commands.Cog):
             meta,
         )
 
-        if guild_id in self.response_tasks:
-            self.response_tasks[guild_id].cancel()
-
-        self.response_tasks[guild_id] = self.bot.loop.create_task(self.delayed_generate_answer(message))
-
-    async def delayed_generate_answer(self, message: disnake.Message):
-        try:
-            await asyncio.sleep(3)
-            await self.generate_answer(message)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            guild_id = str(message.guild.id)
-            if self.response_tasks.get(guild_id) == asyncio.current_task():
-                del self.response_tasks[guild_id]
+        self.response_debouncer.submit(guild_id, 5, self.generate_answer, message)
 
     @staticmethod
     def _resolve_system_instruction(guild_id) -> str:

@@ -126,3 +126,27 @@ def load_phrases():
 
     core.cache._phrases.clear()
     core.cache._phrases.update(new_phrases)
+
+
+class TaskDebouncer:
+    """A manager for scheduling tasks to run at a later time, with the ability to cancel previous ones."""
+    
+    def __init__(self, loop: asyncio.AbstractEventLoop):
+        self.loop = loop
+        self._tasks: dict[str, asyncio.Task] = {}
+
+    def submit(self, key: str, delay: float, coro_func, *args, **kwargs):
+        if key in self._tasks:
+            self._tasks[key].cancel()
+
+        async def wrapper():
+            try:
+                await asyncio.sleep(delay)
+                await coro_func(*args, **kwargs)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                if self._tasks.get(key) == asyncio.current_task():
+                    del self._tasks[key]
+
+        self._tasks[key] = self.loop.create_task(wrapper())
