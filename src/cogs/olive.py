@@ -69,7 +69,7 @@ class AIAssistantCog(commands.Cog):
             return
 
         guild_id = str(message.guild.id)
-        has_consent = cache.llm_consent.has_consent(message.author.id) if cache.llm_consent else False
+        has_consent = cache.llm_consent_manager.has_consent(message.author.id) if cache.llm_consent_manager else False
 
         meta = UserMessageMetadata.from_message(message)
 

@@ -1,16 +1,6 @@
 import sqlite3
 import logging
 from typing import Optional, List
-try:
-    from database.migrations import MigrationRunner  # noqa: E402
-    migration_imported = True
-except ImportError as e:
-    logger.error(f"Failed to import MigrationRunner: {e}")
-except Exception as e:
-    logger.error(f"Migration failed: {e}")
-else:
-    migration_imported = False
-
 logger = logging.getLogger(__name__)
 
 
@@ -27,8 +17,14 @@ class DatabaseManager:
         logger.info("SQLite connection established and optimized.")
 
     def _run_migrations(self):
-        runner = MigrationRunner(self.conn)
-        runner.migrate()
+        try:
+            from database.migrations import MigrationRunner
+            runner = MigrationRunner(self.conn)
+            runner.migrate()
+        except ImportError as e:
+            logger.error(f"Failed to import MigrationRunner: {e}")
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
 
     def _apply_pragmas(self):
         cursor = self.conn.cursor()

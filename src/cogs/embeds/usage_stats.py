@@ -30,8 +30,8 @@ class UsageStatsEmbed(commands.Cog):
 
         # Calculate LLM consented users
         llm_consented = 0
-        if hasattr(cache, "llm_consent") and cache.llm_consent:
-            llm_consented = cache.llm_consent.get_consented_users_count()
+        if hasattr(cache, "llm_consent_manager") and cache.llm_consent_manager:
+            llm_consented = cache.llm_consent_manager.get_consented_users_count()
 
         raw_embed_data = (
             get_phrases()

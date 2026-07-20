@@ -4,23 +4,13 @@ import os
 import asyncio
 from datetime import datetime, timezone
 import logging
-import configparser
-
+import core.log_setup
+from core.config import app_config as config
 from core.time_utils import tz
 import core.bot
 import core.cache
 from core.utils import get_phrases
 from settings import paths, guilds, channels, safe_seconds_before_start
-
-config = configparser.ConfigParser()
-config.read(paths["config_ini"])
-initial_debug_mode = config.getint("DEFAULT", "debug_mode", fallback=0)
-
-logging.basicConfig(
-    level=logging.DEBUG if initial_debug_mode else logging.WARNING,
-    format="[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 
 logging.getLogger("disnake").setLevel(logging.WARNING)
 logging.getLogger("google_genai").setLevel(logging.WARNING)

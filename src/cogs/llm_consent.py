@@ -4,6 +4,7 @@ import logging
 
 import core.cache as cache
 from core.utils import get_phrases
+import modules.llm_consent_manager as llm_consent_manager
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,11 @@ class ConsentView(disnake.ui.View):
 
 async def _handle_consent(interaction: disnake.MessageInteraction, consent: bool):
     """Processes a consent button press: updates the manager and edits the original message."""
-    if not cache.llm_consent:
+    if not cache.llm_consent_manager:
         await interaction.response.send_message("Consent system is currently unavailable.", ephemeral=True)
         return
 
-    cache.llm_consent.set_consent(interaction.author.id, consent)
+    cache.llm_consent_manager.set_consent(interaction.author.id, consent)
     logger.info("User %s (%s) set LLM data consent to %s", interaction.author.name, interaction.author.id, consent)
 
     embed = _build_consent_embed(consent)
@@ -69,6 +70,8 @@ def _build_consent_embed(current_consent: bool) -> disnake.Embed:
 class LLMConsentCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        if not hasattr(cache, "llm_consent_manager") or not cache.llm_consent_manager:
+            cache.llm_consent_manager = llm_consent_manager.LLMConsentManager()
 
     async def cog_load(self):
         self.bot.add_view(ConsentView())
@@ -77,11 +80,11 @@ class LLMConsentCog(commands.Cog):
         name="olive_data_consent", description="View and manage your OLIVE AI data processing consent."
     )
     async def olive_data_consent(self, ctx: disnake.ApplicationCommandInteraction):
-        if not cache.llm_consent:
+        if not cache.llm_consent_manager:
             await ctx.send("Consent system is currently unavailable.", ephemeral=True)
             return
 
-        current_consent = cache.llm_consent.has_consent(ctx.author.id)
+        current_consent = cache.llm_consent_manager.has_consent(ctx.author.id)
         embed = _build_consent_embed(current_consent)
         await ctx.send(embed=embed, view=ConsentView(), ephemeral=True)
 
