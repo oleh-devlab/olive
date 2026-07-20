@@ -14,8 +14,9 @@ class MigrationRunner:
             self.migrations_dir = Path(__file__).resolve().parent
         else:
             self.migrations_dir = Path(migrations_dir)
+            
+        self._migrations = None
         
-        self.schema_file = self.migrations_dir / "_schema.sql"
 
     def get_current_version(self) -> int:
         cursor = self.conn.cursor()
@@ -67,19 +68,41 @@ class MigrationRunner:
         if not pending_scripts:
             return
             
-        full_script = "BEGIN IMMEDIATE;\n" + "\n".join(pending_scripts) + "\nCOMMIT;"
+        # Store original FK state
+        cursor = self.conn.cursor()
+        cursor.execute("PRAGMA foreign_keys;")
+        fk_state = cursor.fetchone()[0]
+        
+        # Turn off FKs *before* starting the transaction
+        full_script = "PRAGMA foreign_keys = OFF;\nBEGIN IMMEDIATE;\n" + "\n".join(pending_scripts)
         
         try:
             self.conn.executescript(full_script)
+            
+            # Validate FKs before committing
+            cursor.execute("PRAGMA foreign_key_check;")
+            violations = cursor.fetchall()
+            if violations:
+                raise sqlite3.IntegrityError(f"Foreign key violations detected after migration: {violations}")
+                
+            self.conn.commit()
             logger.info(f"Successfully applied {len(applied_names)} migrations in a single transaction: {', '.join(applied_names)}")
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Failed to apply migrations: {e}")
             raise
+        finally:
+            # Restore FK state (must be done outside of transaction)
+            state_str = "ON" if fk_state else "OFF"
+            self.conn.execute(f"PRAGMA foreign_keys = {state_str};")
 
     def _load_migration_files(self) -> list[tuple[int, Path]]:
+        if self._migrations is not None:
+            return self._migrations
+            
         migrations = []
         if not self.migrations_dir.exists():
+            self._migrations = migrations
             return migrations
 
         for path in self.migrations_dir.glob("*.sql"):
@@ -95,6 +118,7 @@ class MigrationRunner:
                 
         migrations.sort(key=lambda x: x[0])
         self._validate_sequence(migrations)
+        self._migrations = migrations
         return migrations
 
     def _validate_sequence(self, migrations: list[tuple[int, Path]]) -> None:
