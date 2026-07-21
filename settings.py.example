@@ -5,12 +5,10 @@
 # --- Paths and modules(cogs) ---
 paths = {
     "cogs": "cogs",
-    "discord_token_file": ".ds_bot_token",
-    "genai_token_file": ".genai_token",
     "config_ini": "config.ini",
     "auto_schedule_executable": "app" # Regarding the "modules/automatic_timetable/build" folder
 }
-# The configurable path to the Google GenAI token and others has not yet been implemented.
+# API tokens (Discord, GenAI, etc.) are now stored in tokens.json. See tokens.json.example.
 
 # --- Channels and Guilds IDs settings ---
 channels = {

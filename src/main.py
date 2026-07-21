@@ -10,6 +10,7 @@ from core.time_utils import tz
 import core.bot
 import core.cache
 from core.utils import get_phrases
+from core.token_manager import token_registry
 from settings import paths, guilds, channels, safe_seconds_before_start
 
 logging.getLogger("disnake").setLevel(logging.WARNING)
@@ -25,7 +26,6 @@ intents.guilds = True
 
 
 cogs_directory = paths["cogs"]
-token_file_path = paths["discord_token_file"]
 config_ini_path = paths["config_ini"]
 
 test_guilds_list = guilds
@@ -109,17 +109,13 @@ if __name__ == "__main__":
 
     print("[INFO] bot.run() trying to start...")
 
-    if not os.path.exists(token_file_path):
+    token = token_registry.get_discord_token()
+    if not token:
         text = (
             get_phrases()
             .get("main", {})
-            .get("token_file_not_found", "[Error] Token file not found at {token_file_path}. Bot cannot start.")
-            .format(token_file_path=token_file_path)
+            .get("token_file_not_found", "[Error] Discord bot token not found in tokens.json or DISCORD_BOT_TOKEN env var. Bot cannot start.")
         )
         print(text)
     else:
-        with open(token_file_path, "r") as f:
-            token = f.read().strip()
-
-        if token is not None:
-            bot.run(token)
+        bot.run(token)

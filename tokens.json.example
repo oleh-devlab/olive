@@ -1,0 +1,7 @@
+{
+    "discord": "YOUR_DISCORD_BOT_TOKEN",
+    "genai": {
+        "default": "AIzaSy_DEFAULT_KEY_HERE",
+        "private": ""
+    }
+}

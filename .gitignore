@@ -11,6 +11,7 @@ cogs/*.pyc
 .venv
 
 .genai_token
+tokens.json
 phrases.json
 context.txt
 currency_cache.json
@@ -27,3 +28,4 @@ schedule_agent_context.json
 *.sqlite3
 webhooks_config.json
 llm_token_budget.json
+*_api

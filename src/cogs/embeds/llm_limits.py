@@ -40,22 +40,26 @@ class LLMLimitsEmbed(commands.Cog):
         )
         embed.set_footer(text=footer_text)
 
-        if getattr(core.cache, "llm_client", None):
-            status_list = core.cache.llm_client.get_limits_status()
-            for status in status_list:
-                model_name = status["model"]
-                is_available = status["available"]
-                field_name = f"- {model_name}" if is_available else f"- ~~{model_name}~~"
-                status_text = "Ready" if is_available else "Unavailable"
+        # TODO: check 25 fields limit per embed
+        if getattr(core.cache, "llm_pool", None):
+            unique_clients_data = core.cache.llm_pool.get_unique_clients_status()
+            for client_data in unique_clients_data:
+                roles_str = ", ".join(client_data["roles"])
+                for status in client_data["status_list"]:
+                    model_name = status["model"]
+                    is_available = status["available"]
+                    field_name = f"- {model_name}" if is_available else f"- ~~{model_name}~~"
+                    status_text = "Ready" if is_available else "Unavailable"
 
-                field_value = (
-                    f"`Status: {status_text}`\n"
-                    f"`Req/Min: {status['minute_req']}`\n"
-                    f"`Req/Day: {status['day_req']}`\n"
-                    f"`Tok/Min: {status['minute_tokens']}`\n"
-                    f"`Tok/Day: {status['day_tokens']}`"
-                )
-                embed.add_field(name=field_name, value=field_value, inline=False)
+                    field_value = (
+                        f"`Roles: {roles_str}`\n"
+                        f"`Status: {status_text}`\n"
+                        f"`Req/Min: {status['minute_req']}`\n"
+                        f"`Req/Day: {status['day_req']}`\n"
+                        f"`Tok/Min: {status['minute_tokens']}`\n"
+                        f"`Tok/Day: {status['day_tokens']}`"
+                    )
+                    embed.add_field(name=field_name, value=field_value, inline=False)
         else:
             embed.description = "LLM Client is not initialized or disabled."
 

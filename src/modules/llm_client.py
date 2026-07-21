@@ -2,7 +2,6 @@ from google import genai
 from google.genai import types, errors
 from pathlib import Path
 import time
-import os
 import json
 import logging
 import copy
@@ -11,25 +10,25 @@ from typing import Any
 from core.utils import get_phrases
 from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
 
-import settings
-
 logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    def __init__(self):
-        self.client = get_new_client()
-        if not self.client:
-            raise ValueError("API token for Google GenAI not found")
+    def __init__(self, token: str, state_file_suffix: str = ""):
+        self.client = genai.Client(
+            api_key=token,
+            http_options=types.HttpOptions(retryOptions=types.HttpRetryOptions(attempts=2)),
+        )
 
         self.models: list[ModelConfig] = self._load_models_config()
         if not self.models:
             raise ValueError("No models configured in phrases.json")
 
-        self.state_file = Path("llm_limits_state.json")
+        suffix = f"_{state_file_suffix}" if state_file_suffix else ""
+        self.state_file = Path(f"llm_limits_state{suffix}.json")
         self._load_state()
 
-        logger.info("LLMClient initialized with models: %s", [m.name for m in self.models])
+        logger.info("LLMClient initialized (state: %s) with models: %s", self.state_file, [m.name for m in self.models])
 
     def _load_state(self):
         if self.state_file.exists():
@@ -217,17 +216,78 @@ class LLMClient:
         return [m.get_status(now) for m in self.models]
 
 
-def read_api_token():
-    token_path = Path(__file__).resolve().parent.parent / settings.paths["genai_token_file"]
-    if token_path.exists():
-        token = token_path.read_text(encoding="utf-8").strip()
-        if token:
-            return token
-    return os.environ.get("GENAI_API_KEY")
+class LLMClientPool:
+    """
+    Registry that deduplicates LLMClient instances by actual token value.
 
+    If two roles (e.g. 'default' and 'schedule_agent') resolve to the same API key,
+    they will share a single LLMClient and thus share rate limits.
+    We assume that the request limit applies to the token.
+    """
 
-def get_new_client():
-    token = read_api_token()
-    if not token:
-        return None
-    return genai.Client(api_key=token, http_options=types.HttpOptions(retryOptions=types.HttpRetryOptions(attempts=2)))
+    def __init__(self):
+        self._clients_by_token: dict[str, LLMClient] = {}  # token_value -> LLMClient
+        self._role_to_token: dict[str, str] = {}            # role -> token_value
+
+    def register(self, role: str, token: str) -> LLMClient:
+        """
+        Register a role with its token. If a client for this token already exists,
+        reuse it. Otherwise, create a new one.
+        """
+        self._role_to_token[role] = token
+
+        if token in self._clients_by_token:
+            logger.info("Role '%s' shares LLMClient with an existing role (same token)", role)
+            return self._clients_by_token[token]
+
+        client = LLMClient(token=token, state_file_suffix=role)
+        self._clients_by_token[token] = client
+        logger.info("Created new LLMClient for role '%s'", role)
+        return client
+
+    def get(self, role: str = "default") -> LLMClient | None:
+        """Get the LLMClient for a given role."""
+        token = self._role_to_token.get(role)
+        if token is None:
+            return None
+        return self._clients_by_token.get(token)
+
+    @property
+    def default(self) -> LLMClient | None:
+        """Shortcut for the default client."""
+        return self.get("default")
+
+    @property
+    def is_available(self) -> bool:
+        """Check if the default client is available (backward compat)."""
+        client = self.default
+        return client.is_available if client else False
+
+    async def shutdown_all(self):
+        """Shutdown all unique clients."""
+        for client in self._clients_by_token.values():
+            await client.shutdown()
+
+    def get_limits_by_role(self, role: str) -> list[dict] | None:
+        """Return limits status for a specific role."""
+        client = self.get(role)
+        return client.get_limits_status() if client else None
+
+    def get_unique_clients_status(self) -> list[dict]:
+        """
+        Returns status for unique clients along with the list of roles that use them.
+        This is useful for displaying limits in UI (e.g. embeds) without duplicating shared limits.
+        """
+        token_to_roles = {}
+        for role, token in self._role_to_token.items():
+            token_to_roles.setdefault(token, []).append(role)
+
+        result = []
+        for token, roles in token_to_roles.items():
+            client = self._clients_by_token.get(token)
+            if client:
+                result.append({
+                    "roles": roles,
+                    "status_list": client.get_limits_status()
+                })
+        return result

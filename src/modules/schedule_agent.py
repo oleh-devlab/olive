@@ -180,10 +180,12 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
         tools_instance.skip_routine,
     ]
 
+    llm_client = cache.llm_pool.get("private") or cache.llm_pool.default
+
     agent_tools_schema = []
     for f in agent_tools:
         decl = types.FunctionDeclaration.from_callable(
-            client=cache.llm_client.client._api_client, callable=f
+            client=llm_client.client._api_client, callable=f
         ).model_dump(exclude_unset=True, exclude_none=True)
 
         # Interactions API requires parameters to be an object
@@ -213,7 +215,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                 )
 
                 try:
-                    response = await cache.llm_client.get_interaction(
+                    response = await llm_client.get_interaction(
                         context,
                         system_instruction=system_instruction,
                         max_output_tokens=2500,

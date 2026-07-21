@@ -5,14 +5,15 @@ from google.genai import types
 import logging
 import time
 
-from modules.llm_client import LLMClient
+from modules.llm_client import LLMClientPool
 from modules.llm_rate_limiter import RateLimitExceeded
 from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
-from modules.llm_message_formatter import format_user_message
+from modules.llm_message_formatter import format_user_message, FormattingProfile
 from modules.llm_response_gate import want_respond
 from modules.schedule_agent import load_schedule_context, run_schedule_agent, schedule_context_manager
 import core.cache as cache
 from core.utils import get_phrases, TaskDebouncer
+from core.token_manager import token_registry
 import settings
 
 logger = logging.getLogger(__name__)
@@ -29,24 +30,36 @@ class AIAssistantCog(commands.Cog):
 
     async def cog_load(self):
         try:
-            cache.llm_client = LLMClient()
+            pool = LLMClientPool()
+
+            default_token = token_registry.get_genai_token("default")
+            if not default_token:
+                raise ValueError("GenAI API token not found in tokens.json or GENAI_API_KEY env var")
+            pool.register("default", default_token)
+
+            # Register private role (for agent and private messages)
+            private_token = token_registry.get_genai_token("private")
+            if private_token:
+                pool.register("private", private_token)
+
+            cache.llm_pool = pool
             logger.info(get_phrases().get("olive", {}).get("api_client_loaded", "API Google is loaded."))
 
-            error = self.context_manager.token_budget.validate(cache.llm_client.min_context_tokens)
+            error = self.context_manager.token_budget.validate(pool.default.min_context_tokens)
             if error:
                 logger.error(error + " LLM responses are disabled.")
-                cache.llm_client = None
+                cache.llm_pool = None
         except ValueError as e:
             logger.error("Error initializing LLMClient: %s", e)
-            cache.llm_client = None
+            cache.llm_pool = None
 
         await self.context_manager.load_from_file()
         await load_schedule_context()
 
     def cog_unload(self):
-        if cache.llm_client:
-            self.bot.loop.create_task(cache.llm_client.shutdown())
-            cache.llm_client = None
+        if cache.llm_pool:
+            self.bot.loop.create_task(cache.llm_pool.shutdown_all())
+            cache.llm_pool = None
 
             text = (
                 get_phrases().get("olive", {}).get("api_client_closed", "Connection with Google GenAI is being closed.")
@@ -61,9 +74,9 @@ class AIAssistantCog(commands.Cog):
         if (
             not self.olive_enabled
             or (message.author.bot and not is_whitelisted_bot)
-            or not cache.llm_client
+            or not cache.llm_pool
             or not message.content
-            or not cache.llm_client.is_available
+            or not cache.llm_pool.is_available
             or not isinstance(message.channel, disnake.TextChannel)
         ):
             return
@@ -94,10 +107,11 @@ class AIAssistantCog(commands.Cog):
 
         if message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
-            
-            # Immediately add the message to the schedule agent's context
-            schedule_context_manager.add_user_message(str(message.channel.id), new_text, meta)
-            
+
+            # Format with AGENT profile (minimal: time + text only)
+            agent_text = await format_user_message(message, meta, has_consent=has_consent, profile=FormattingProfile.AGENT)
+            schedule_context_manager.add_user_message(str(message.channel.id), agent_text, meta)
+
             self.schedule_debouncer.submit(guild_id, 3, run_schedule_agent, self.bot, message, user_id)
             return
 
@@ -138,13 +152,14 @@ class AIAssistantCog(commands.Cog):
         context = self.context_manager.get_interaction_context(guild_id)
 
         try:
+            llm_client = cache.llm_pool.default
             if not await want_respond(
-                cache.llm_client, context, system_instruction, message.guild.id, anticipated_tokens=anticipated_tokens
+                llm_client, context, system_instruction, message.guild.id, anticipated_tokens=anticipated_tokens
             ):
                 return
 
             async with message.channel.typing():
-                response = await cache.llm_client.get_interaction(
+                response = await llm_client.get_interaction(
                     context,
                     system_instruction=system_instruction,
                     max_output_tokens=self.context_manager.token_budget.reserved_response_tokens,
@@ -214,8 +229,8 @@ class AIAssistantCog(commands.Cog):
         old_value = getattr(budget, field)
         setattr(budget, field, value)
 
-        if cache.llm_client:
-            error = budget.validate(cache.llm_client.min_context_tokens)
+        if cache.llm_pool and cache.llm_pool.default:
+            error = budget.validate(cache.llm_pool.default.min_context_tokens)
             if error:
                 setattr(budget, field, old_value)
                 await ctx.send(f"Error: {error}", ephemeral=True)
