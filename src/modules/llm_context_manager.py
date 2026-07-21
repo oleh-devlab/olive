@@ -182,8 +182,13 @@ class LLMContextManager:
 
             # TODO: If we consider the incompatibility of Gemini signatures in Gemma
             # and take additional tokens into account.
-            if step_dict.get("type") == "thought":
-                continue
+            if isinstance(step_dict, dict):
+                step_dict = step_dict.copy()
+                # Skip thought blocks for compatibility (Gemma and others may not support them).
+                # Gemini requires the "signature" field from "function_call" for history validation.
+                # The incompatibility with Gemma is handled dynamically per-request in llm_client.py -> get_interaction().
+                if step_dict.get("type") == "thought":
+                    continue
 
             entry = {
                 "role": "model",
