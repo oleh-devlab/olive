@@ -136,6 +136,13 @@ class LLMClient:
                 if max_output_tokens:
                     generation_config["max_output_tokens"] = max_output_tokens
 
+                # Gemini models (e.g. gemini-3.5-flash) require the "signature" field in function_call steps 
+                # If it is missing, Gemini throws a 400 invalid_request error.
+                # However, Gemma models (e.g. gemma-4-31b-it) do not support the "signature" field 
+                # and will throw a 400 error if it is present in the interaction history.
+                # Therefore, we must keep signatures in the global context/database, but dynamically strip them 
+                # "on the fly" right before sending the payload *only* if the target model is Gemma.
+                # ...it's just that I haven't found or come up with a better way to solve this yet...
                 model_input = []
                 for step in input_data:
                     if isinstance(step, dict) and "gemma" in model.name.lower() and step.get("type") == "function_call" and "signature" in step:
@@ -182,28 +189,31 @@ class LLMClient:
                 model.record_success()
                 return response
 
-            except errors.APIError as e:
+            except Exception as e:
                 model.refund_request()
-                code = getattr(e, "code", 0)
-                message = getattr(e, "message", str(e))
-                logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
+                code = getattr(e, "code", None)
+                
+                # Sometimes the code is only in the string representation
+                if code is None and "429" in str(e):
+                    code = 429
 
                 if code == 429:
+                    message = getattr(e, "message", str(e))
+                    logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
                     model.handle_429()
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning(
                         "Attempting fallback to next model due to 429 (Consecutive: %d)", model._consecutive_429s
                     )
                     continue
-                elif code >= 500:
+                elif isinstance(code, int) and code >= 500:
+                    message = getattr(e, "message", str(e))
+                    logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning("Attempting fallback to next model due to server error %s", code)
                     continue
-
-                raise
-
-            except Exception as e:
-                model.refund_request()
+                
+                # For 400 Bad Request or any other unexpected exceptions, we log and fallback to the next model.
                 logger.error("Exception on model '%s': %s", model.name, str(e))
                 attempted_errors.append(f"{model.name} (Exception: {type(e).__name__})")
                 logger.warning("Attempting fallback to next model due to generic exception")
