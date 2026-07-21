@@ -136,10 +136,19 @@ class LLMClient:
                 if max_output_tokens:
                     generation_config["max_output_tokens"] = max_output_tokens
 
+                model_input = []
+                for step in input_data:
+                    if isinstance(step, dict) and "gemma" in model.name.lower() and step.get("type") == "function_call" and "signature" in step:
+                        step_copy = step.copy()
+                        step_copy.pop("signature", None)
+                        model_input.append(step_copy)
+                    else:
+                        model_input.append(step)
+
                 kwargs = {
                     "model": model.name,
                     "store": False,
-                    "input": input_data,
+                    "input": model_input,
                 }
                 if generation_config:
                     kwargs["generation_config"] = generation_config

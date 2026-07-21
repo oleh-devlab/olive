@@ -154,11 +154,7 @@ class LLMContextManager:
     @staticmethod
     def _interaction_content(message: dict) -> dict:
         if "interaction_step" in message:
-            step = message["interaction_step"]
-            if isinstance(step, dict) and step.get("type") == "function_call" and "signature" in step:
-                step = step.copy()
-                step.pop("signature", None)
-            return step
+            return message["interaction_step"]
 
         step_type = "user_input" if message["role"] == "user" else "model_output"
         out = {"type": step_type}
@@ -188,11 +184,9 @@ class LLMContextManager:
             # and take additional tokens into account.
             if isinstance(step_dict, dict):
                 step_dict = step_dict.copy()
-                # Skip thought blocks and strip signatures for Gemma compatibility
+                # Skip thought blocks for compatibility
                 if step_dict.get("type") == "thought":
                     continue
-                if step_dict.get("type") == "function_call":
-                    step_dict.pop("signature", None)
 
             entry = {
                 "role": "model",
