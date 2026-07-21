@@ -40,26 +40,45 @@ class LLMLimitsEmbed(commands.Cog):
         )
         embed.set_footer(text=footer_text)
 
-        # TODO: check 25 fields limit per embed
         if getattr(core.cache, "llm_pool", None):
+            description_lines = [embed.description] if embed.description else []
+            
             unique_clients_data = core.cache.llm_pool.get_unique_clients_status()
+            
+            # Find max length of left column values to align everything perfectly
+            max_left_len = 0
+            for client_data in unique_clients_data:
+                for status in client_data["status_list"]:
+                    max_left_len = max(
+                        max_left_len,
+                        len(str(status['minute_req'])),
+                        len(str(status['minute_tokens']))
+                    )
+
             for client_data in unique_clients_data:
                 roles_str = ", ".join(client_data["roles"])
+                description_lines.append(f"\n## {roles_str.title()}")
+                
                 for status in client_data["status_list"]:
                     model_name = status["model"]
                     is_available = status["available"]
-                    field_name = f"- {model_name}" if is_available else f"- ~~{model_name}~~"
+                    
+                    header = f"### {model_name}" if is_available else f"### ~~{model_name}~~"
                     status_text = "Ready" if is_available else "Unavailable"
-
-                    field_value = (
-                        f"`Roles: {roles_str}`\n"
-                        f"`Status: {status_text}`\n"
-                        f"`Req/Min: {status['minute_req']}`\n"
-                        f"`Req/Day: {status['day_req']}`\n"
-                        f"`Tok/Min: {status['minute_tokens']}`\n"
-                        f"`Tok/Day: {status['day_tokens']}`"
-                    )
-                    embed.add_field(name=field_name, value=field_value, inline=False)
+                    
+                    rpm_str = str(status['minute_req']).ljust(max_left_len)
+                    tpm_str = str(status['minute_tokens']).ljust(max_left_len)
+                    
+                    description_lines.append(header)
+                    description_lines.append(f"> **Status:** {status_text}")
+                    description_lines.append(f"> **RPM:** `{rpm_str}` | **RPD:** `{status['day_req']}`")
+                    description_lines.append(f"> **TPM:** `{tpm_str}` | **TPD:** `{status['day_tokens']}`")
+            
+            final_description = "\n".join(description_lines)
+            if len(final_description) > 4000:
+                embed.description = "The models exceeded the Discord embed limit."
+            else:
+                embed.description = final_description
         else:
             embed.description = "LLM Client is not initialized or disabled."
 
