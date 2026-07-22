@@ -395,7 +395,7 @@ class ScheduleProvider:
     def list_time_blocks(self, user_id: int) -> List[TimeBlock]:
         data = self._load_data(user_id)
         blocks = data.get("time_blocks", [])
-        
+
         # Auto-assign IDs for legacy timeblocks
         changed = False
         max_id = max((b.get("id", 0) or 0 for b in blocks), default=0)
@@ -404,23 +404,23 @@ class ScheduleProvider:
                 max_id += 1
                 b["id"] = max_id
                 changed = True
-        
+
         if changed:
             self._save_data(user_id, data)
-            
+
         return [_dict_to_timeblock(b) for b in blocks]
 
     def remove_time_block(self, user_id: int, block_id: int) -> bool:
         data = self._load_data(user_id)
         blocks = data.get("time_blocks", [])
         initial_len = len(blocks)
-        
+
         data["time_blocks"] = [b for b in blocks if b.get("id") != block_id]
-        
+
         if len(data["time_blocks"]) != initial_len:
             self._save_data(user_id, data)
             return True
-            
+
         return False
 
     def add_routine(self, user_id: int, routine: Routine):

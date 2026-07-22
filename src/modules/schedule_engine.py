@@ -114,7 +114,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                     algo_notes="",
                 )
             )
-            
+
         for tb in getattr(result, "scheduled_timeblocks", []):
             items.append(
                 ScheduleItem(

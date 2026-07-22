@@ -184,9 +184,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
     agent_tools_schema = []
     for f in agent_tools:
-        decl = types.FunctionDeclaration.from_callable(
-            client=llm_client.client._api_client, callable=f
-        ).model_dump(exclude_unset=True, exclude_none=True)
+        decl = types.FunctionDeclaration.from_callable(client=llm_client.client._api_client, callable=f).model_dump(
+            exclude_unset=True, exclude_none=True
+        )
 
         # Interactions API requires parameters to be an object
         if "parameters" not in decl:
@@ -237,7 +237,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
                 # Save the model's steps to context
                 if getattr(response, "steps", None):
-                    schedule_context_manager.add_interaction_steps(channel_id_str, response.steps, tokens=candidate_tokens)
+                    schedule_context_manager.add_interaction_steps(
+                        channel_id_str, response.steps, tokens=candidate_tokens
+                    )
 
                 # Check if there are function calls
                 function_calls = []
@@ -263,7 +265,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                                 unique_tools.append(t)
 
                         iters_str = f" ({iteration} iteration{'s' if iteration != 1 else ''})"
-                        text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(f"- {t}" for t in unique_tools)
+                        text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(
+                            f"- {t}" for t in unique_tools
+                        )
 
                     kwargs = {}
                     if tools_instance.schedule_modified:
@@ -336,8 +340,10 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                 await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
 
     except asyncio.CancelledError:
+
         def clean_context(ctx_dict, original_len):
-            if channel_id_str not in ctx_dict: return
+            if channel_id_str not in ctx_dict:
+                return
             original_items = ctx_dict[channel_id_str][:original_len]
             new_items = ctx_dict[channel_id_str][original_len:]
             real_user_messages = [item for item in new_items if item.get("role") == "user" and "parts" in item]
@@ -349,13 +355,15 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
         if tools_instance.schedule_modified:
             provider.restore_backup(user_id, backup_data)
             bot.dispatch("schedule_update", message.channel.id)
-            logger.info("Schedule agent for user %s was cancelled during execution, backup automatically restored.", user_id)
+            logger.info(
+                "Schedule agent for user %s was cancelled during execution, backup automatically restored.", user_id
+            )
         raise
 
     finally:
         # Apply clipping and save context
         schedule_context_manager.apply_restrictions()
-        
+
         # If cancelled, await inside finally might raise CancelledError again, but typically the first await handles it
         # However, to be completely safe, we can spawn a task
         bot.loop.create_task(schedule_context_manager.write_to_file())

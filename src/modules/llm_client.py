@@ -136,16 +136,21 @@ class LLMClient:
                 if max_output_tokens:
                     generation_config["max_output_tokens"] = max_output_tokens
 
-                # Gemini models (e.g. gemini-3.5-flash) require the "signature" field in function_call steps 
+                # Gemini models (e.g. gemini-3.5-flash) require the "signature" field in function_call steps
                 # If it is missing, Gemini throws a 400 invalid_request error.
-                # However, Gemma models (e.g. gemma-4-31b-it) do not support the "signature" field 
+                # However, Gemma models (e.g. gemma-4-31b-it) do not support the "signature" field
                 # and will throw a 400 error if it is present in the interaction history.
-                # Therefore, we must keep signatures in the global context/database, but dynamically strip them 
+                # Therefore, we must keep signatures in the global context/database, but dynamically strip them
                 # "on the fly" right before sending the payload *only* if the target model is Gemma.
                 # ...it's just that I haven't found or come up with a better way to solve this yet...
                 model_input = []
                 for step in input_data:
-                    if isinstance(step, dict) and "gemma" in model.name.lower() and step.get("type") == "function_call" and "signature" in step:
+                    if (
+                        isinstance(step, dict)
+                        and "gemma" in model.name.lower()
+                        and step.get("type") == "function_call"
+                        and "signature" in step
+                    ):
                         step_copy = step.copy()
                         step_copy.pop("signature", None)
                         model_input.append(step_copy)
@@ -192,7 +197,7 @@ class LLMClient:
             except Exception as e:
                 model.refund_request()
                 code = getattr(e, "code", None)
-                
+
                 # Sometimes the code is only in the string representation
                 if code is None and "429" in str(e):
                     code = 429
@@ -212,7 +217,7 @@ class LLMClient:
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning("Attempting fallback to next model due to server error %s", code)
                     continue
-                
+
                 # For 400 Bad Request or any other unexpected exceptions, we log and fallback to the next model.
                 logger.error("Exception on model '%s': %s", model.name, str(e))
                 attempted_errors.append(f"{model.name} (Exception: {type(e).__name__})")
@@ -246,7 +251,7 @@ class LLMClientPool:
 
     def __init__(self):
         self._clients_by_token: dict[str, LLMClient] = {}  # token_value -> LLMClient
-        self._role_to_token: dict[str, str] = {}            # role -> token_value
+        self._role_to_token: dict[str, str] = {}  # role -> token_value
 
     def register(self, role: str, token: str) -> LLMClient:
         """
@@ -305,8 +310,5 @@ class LLMClientPool:
         for token, roles in token_to_roles.items():
             client = self._clients_by_token.get(token)
             if client:
-                result.append({
-                    "roles": roles,
-                    "status_list": client.get_limits_status()
-                })
+                result.append({"roles": roles, "status_list": client.get_limits_status()})
         return result

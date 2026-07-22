@@ -130,7 +130,7 @@ def load_phrases():
 
 class TaskDebouncer:
     """A manager for scheduling tasks to run at a later time, with the ability to cancel previous ones."""
-    
+
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.loop = loop
         self._tasks: dict[str, asyncio.Task] = {}
