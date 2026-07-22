@@ -16,8 +16,9 @@ _NO_CONSENT_FALLBACK = "*This message is hidden.*"
 
 class FormattingProfile(Enum):
     """Controls how much metadata is included in the formatted message for LLM context."""
-    FULL = "full"      # Full format: [day, date time][display_name][username]: "text" + reply prefix
-    AGENT = "agent"    # Minimal format for agents: [day, date time]: "text" (no author, no reply)
+
+    FULL = "full"  # Full format: [day, date time][display_name][username]: "text" + reply prefix
+    AGENT = "agent"  # Minimal format for agents: [day, date time]: "text" (no author, no reply)
 
 
 def _get_no_consent_placeholder() -> str:

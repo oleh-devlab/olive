@@ -5,6 +5,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
+
 class MigrationRunner:
     """SQLite schema migration runner using PRAGMA user_version."""
 
@@ -14,9 +15,8 @@ class MigrationRunner:
             self.migrations_dir = Path(__file__).resolve().parent
         else:
             self.migrations_dir = Path(migrations_dir)
-            
+
         self._migrations = None
-        
 
     def get_current_version(self) -> int:
         cursor = self.conn.cursor()
@@ -51,11 +51,9 @@ class MigrationRunner:
         else:
             logger.debug(f"Database is up to date (version {current}).")
 
-
-
     def _apply_pending(self, current: int, latest: int) -> None:
         migrations = self._load_migration_files()
-        
+
         pending_scripts = []
         applied_names = []
         for version, path in migrations:
@@ -64,29 +62,31 @@ class MigrationRunner:
                 sql = path.read_text(encoding="utf-8")
                 pending_scripts.append(f"-- Migration {version}\n{sql}\nPRAGMA user_version = {version};")
                 applied_names.append(path.name)
-                
+
         if not pending_scripts:
             return
-            
+
         # Store original FK state
         cursor = self.conn.cursor()
         cursor.execute("PRAGMA foreign_keys;")
         fk_state = cursor.fetchone()[0]
-        
+
         # Turn off FKs *before* starting the transaction
         full_script = "PRAGMA foreign_keys = OFF;\nBEGIN IMMEDIATE;\n" + "\n".join(pending_scripts)
-        
+
         try:
             self.conn.executescript(full_script)
-            
+
             # Validate FKs before committing
             cursor.execute("PRAGMA foreign_key_check;")
             violations = cursor.fetchall()
             if violations:
                 raise sqlite3.IntegrityError(f"Foreign key violations detected after migration: {violations}")
-                
+
             self.conn.commit()
-            logger.info(f"Successfully applied {len(applied_names)} migrations in a single transaction: {', '.join(applied_names)}")
+            logger.info(
+                f"Successfully applied {len(applied_names)} migrations in a single transaction: {', '.join(applied_names)}"
+            )
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Failed to apply migrations: {e}")
@@ -99,7 +99,7 @@ class MigrationRunner:
     def _load_migration_files(self) -> list[tuple[int, Path]]:
         if self._migrations is not None:
             return self._migrations
-            
+
         migrations = []
         if not self.migrations_dir.exists():
             self._migrations = migrations
@@ -108,14 +108,14 @@ class MigrationRunner:
         for path in self.migrations_dir.glob("*.sql"):
             if path.name.startswith("_"):
                 continue
-                
+
             match = re.match(r"^(\d+)_.*\.sql$", path.name)
             if match:
                 version = int(match.group(1))
                 migrations.append((version, path))
             else:
                 logger.warning(f"Ignoring non-conforming SQL file: {path.name}")
-                
+
         migrations.sort(key=lambda x: x[0])
         self._validate_sequence(migrations)
         self._migrations = migrations
@@ -128,5 +128,3 @@ class MigrationRunner:
         expected = list(range(1, max(versions) + 1)) if versions else []
         if versions != expected:
             raise ValueError(f"Migration sequence has gaps: found {versions}, expected {expected}")
-
-

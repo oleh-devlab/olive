@@ -70,7 +70,7 @@ class AIAssistantCog(commands.Cog):
     async def on_message(self, message: disnake.Message):
         bot_whitelist = getattr(settings, "olive_bot_whitelist", [])
         is_whitelisted_bot = message.author.bot and message.author.id in bot_whitelist
-        
+
         if (
             not self.olive_enabled
             or (message.author.bot and not is_whitelisted_bot)
@@ -109,7 +109,9 @@ class AIAssistantCog(commands.Cog):
             user_id = cache.tasks_channels[message.channel.id]
 
             # Format with AGENT profile (minimal: time + text only)
-            agent_text = await format_user_message(message, meta, has_consent=has_consent, profile=FormattingProfile.AGENT)
+            agent_text = await format_user_message(
+                message, meta, has_consent=has_consent, profile=FormattingProfile.AGENT
+            )
             schedule_context_manager.add_user_message(str(message.channel.id), agent_text, meta)
 
             self.schedule_debouncer.submit(guild_id, 3, run_schedule_agent, self.bot, message, user_id)
