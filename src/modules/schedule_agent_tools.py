@@ -400,7 +400,7 @@ class ScheduleAgentTools:
 
         success = self.provider.skip_routine(self.user_id, routine_id, resume_date)
         if success:
-            return f"Routine {routine_id} will be skipped and will resume on {resume_date.strftime('%d.%m.%Y')}."
+            return f"Routine {routine_id} will be skipped and will resume after {resume_date.strftime('%d.%m.%Y')}."
         else:
             raise ValueError(f"Routine {routine_id} not found.")
 
