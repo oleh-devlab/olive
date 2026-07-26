@@ -87,6 +87,23 @@ async def send_long_message(target, text, max_length=2000, **kwargs):
     return sent_messages
 
 
+async def send_long_reply(message, text, max_length=2000, delay=0.5, **kwargs):
+    """
+    Replies to a message. If text exceeds max_length, splits it into chunks
+    and sends each subsequent chunk as a chained reply to the previous one with a delay.
+    """
+    chunks = _split_text(text, max_length)
+    current = message
+    sent_messages = []
+    for chunk in chunks:
+        msg = await current.reply(chunk, **kwargs)
+        sent_messages.append(msg)
+        current = msg
+        if len(chunks) > 1:
+            await asyncio.sleep(delay)
+    return sent_messages
+
+
 def _deep_merge(base: dict, override: dict) -> dict:
     merged = base.copy()
     for k, v in override.items():

@@ -12,7 +12,7 @@ from modules.llm_message_formatter import format_user_message, FormattingProfile
 from modules.llm_response_gate import want_respond
 from modules.schedule_agent import load_schedule_context, run_schedule_agent, schedule_context_manager
 import core.cache as cache
-from core.utils import get_phrases, TaskDebouncer
+from core.utils import get_phrases, TaskDebouncer, send_long_reply
 from core.token_manager import token_registry
 import settings
 
@@ -185,7 +185,7 @@ class AIAssistantCog(commands.Cog):
                     tokens=candidate_tokens,
                     timestamp_ms=int(time.time() * 1000),
                 )
-                await message.reply(out_text, fail_if_not_exists=False, mention_author=False)
+                await send_long_reply(message, out_text, fail_if_not_exists=False, mention_author=False)
 
         except RateLimitExceeded:
             return
