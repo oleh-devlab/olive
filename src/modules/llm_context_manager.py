@@ -255,6 +255,22 @@ class LLMContextManager:
         messages = self.llm_context.get(discord_id, [])
         return sum(self.get_message_tokens(m) for m in messages)
 
+    @staticmethod
+    def is_valid_first_message(msg: dict) -> bool:
+        """
+        Determines if a message is valid to be at the very start of the LLM context.
+        The context must always start with a regular user message.
+        """
+        if msg.get("role") not in ["user"]:
+            return False
+
+        # Check if it's a function result
+        step = msg.get("interaction_step", {})
+        if isinstance(step, dict) and step.get("type") == "function_result":
+            return False
+
+        return True
+
     def apply_restrictions(self):
         """
         Maintains the context size within the configured token budget.
@@ -269,7 +285,7 @@ class LLMContextManager:
                 removed_msg = messages.pop(0)
                 total_tokens -= self.get_message_tokens(removed_msg)
 
-                # Remove leading model messages so the context always starts with a user message
-                while messages and messages[0].get("role") in ["assistant", "model"]:
+                # Remove leading messages until we find a valid first message
+                while messages and not self.is_valid_first_message(messages[0]):
                     removed_msg = messages.pop(0)
                     total_tokens -= self.get_message_tokens(removed_msg)
