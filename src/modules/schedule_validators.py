@@ -119,7 +119,7 @@ def validate_task_creation_data(
 def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, daily: bool, name: str = "") -> TimeBlock:
     try:
         now = datetime.datetime.now(tz)
-        
+
         def parse_tb_time(time_str: str) -> datetime.datetime:
             if " " in time_str:
                 dt = datetime.datetime.strptime(time_str, "%d.%m.%Y %H:%M")

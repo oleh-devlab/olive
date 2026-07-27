@@ -98,9 +98,7 @@ class MigrationRunner:
         """Raise if any FK violations exist; *context* is used in the message."""
         violations = self.conn.execute("PRAGMA foreign_key_check;").fetchall()
         if violations:
-            raise sqlite3.IntegrityError(
-                f"Foreign key violations after {context}: {violations}"
-            )
+            raise sqlite3.IntegrityError(f"Foreign key violations after {context}: {violations}")
 
     # ------------------------------------------------------------------
     # Applying migrations
@@ -167,8 +165,7 @@ class MigrationRunner:
         upgrade_fn = getattr(module, "upgrade", None)
         if upgrade_fn is None:
             raise ValueError(
-                f"Python migration {path.name} must define an "
-                f"'upgrade(conn: sqlite3.Connection) -> None' function."
+                f"Python migration {path.name} must define an " f"'upgrade(conn: sqlite3.Connection) -> None' function."
             )
 
         try:

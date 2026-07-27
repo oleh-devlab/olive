@@ -1,6 +1,7 @@
 import sqlite3
 import logging
 from typing import Optional, List
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,6 +20,7 @@ class DatabaseManager:
     def _run_migrations(self):
         try:
             from database.migrations import MigrationRunner
+
             runner = MigrationRunner(self.conn)
             runner.migrate()
         except ImportError as e:

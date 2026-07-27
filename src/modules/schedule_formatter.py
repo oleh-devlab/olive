@@ -47,9 +47,9 @@ def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem]
             prefix = " ├──- "
             if is_spill:
                 prefix += "[From yesterday] "
-            
+
             note = item.task_name if item.task_name else "Break"
-            
+
             if item.algo_notes:
                 lines.append(f" │      !!! {item.algo_notes}")
             lines.append(f"{prefix}{note} ({item.duration_min}m)")
