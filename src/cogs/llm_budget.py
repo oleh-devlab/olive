@@ -4,6 +4,7 @@ import logging
 
 import core.cache as cache
 from modules.llm_context_manager import LLMContextManager
+from modules.llm_token_budget import BudgetRepository
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +51,12 @@ class LLMBudgetCog(commands.Cog):
                 return
 
         try:
-            budget.save_to_db()
-        except Exception:
-            logger.warning("Failed to save token budget to DB, falling back to file.")
-            budget.save_to_file()
+            BudgetRepository.save_to_db(name, budget)
+        except Exception as e:
+            logger.error("Failed to save token budget to DB: %s", e)
+            setattr(budget, field, old_value)
+            await ctx.send("Error: failed to save the new budget to the database. Changes reverted.", ephemeral=True)
+            return
 
         ctx_mgr.apply_restrictions()
         await ctx_mgr.write_to_file()
