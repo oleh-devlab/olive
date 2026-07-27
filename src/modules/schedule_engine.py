@@ -112,6 +112,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                     session_index="1",
                     total_sessions=1,
                     algo_notes="",
+                    routine_id=getattr(sr, "routine_id", None),
                 )
             )
 

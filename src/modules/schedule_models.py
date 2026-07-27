@@ -47,6 +47,7 @@ class ScheduleItem:
     session_index: str
     total_sessions: int
     algo_notes: str
+    routine_id: Optional[int] = None
 
     @property
     def duration_min(self) -> int:

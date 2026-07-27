@@ -94,6 +94,11 @@ async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, 
             "date_str": date_obj.strftime("%d.%m.%Y"),
             "weekday": date_obj.strftime("%A"),
             "blocks": _format_day_blocks(data["items"], data["spillovers"]),
+            "routine_ids": {
+                item.routine_id
+                for item in data["items"] + data["spillovers"]
+                if item.routine_id is not None
+            },
         }
 
     return (
