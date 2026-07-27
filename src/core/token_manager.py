@@ -65,4 +65,3 @@ class TokenRegistry:
 
 # Global singleton
 token_registry = TokenRegistry()
-
