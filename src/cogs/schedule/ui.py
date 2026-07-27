@@ -218,6 +218,7 @@ async def update_schedule_message(
 
             state["last_content"] = schedule_content
             state["last_view_state"] = view_state
+            state["current_view"] = view
         except Exception as e:
             logger.error(f"Error editing message: {e}")
 
@@ -345,14 +346,21 @@ class ScheduleUI(commands.Cog):
 
         provider.skip_routine(user_id, routine_id, resume_after_date)
 
-        view = disnake.ui.View.from_message(interaction.message)
-        for child in view.children:
+        current_view = state.get("current_view")
+        if not current_view:
+            try:
+                await interaction.followup.send("View state not found, wait for update.", ephemeral=True)
+            except Exception:
+                pass
+            return
+
+        for child in current_view.children:
             if getattr(child, "custom_id", None) == custom_id:
                 child.disabled = True
                 break
 
         try:
-            await interaction.edit_original_response(view=view)
+            await interaction.edit_original_response(view=current_view)
             await interaction.followup.send(f"Routine {routine_id} skipped. The schedule will recalculate shortly.", ephemeral=True)
         except Exception:
             pass
