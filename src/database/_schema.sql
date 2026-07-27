@@ -22,3 +22,12 @@ CREATE TABLE IF NOT EXISTS users (
     schedule_id INTEGER DEFAULT NULL,
     FOREIGN KEY(schedule_id) REFERENCES schedules(id) ON DELETE SET NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS llm_token_budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    context_tokens INTEGER NOT NULL DEFAULT 64000,
+    reserved_system_tokens INTEGER NOT NULL DEFAULT 6000,
+    reserved_memory_tokens INTEGER NOT NULL DEFAULT 32000,
+    reserved_response_tokens INTEGER NOT NULL DEFAULT 5000
+) STRICT;

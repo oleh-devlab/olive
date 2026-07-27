@@ -223,8 +223,18 @@ class AIAssistantCog(commands.Cog):
             choices=["context_tokens", "reserved_system_tokens", "reserved_memory_tokens", "reserved_response_tokens"],
         ),
         value: int = commands.Param(description="New value (tokens)", gt=0),
+        name: str = commands.Param(
+            description="Which token budget to update",
+            choices=["default", "private"],
+            default="default",
+        ),
     ):
-        budget = self.context_manager.token_budget
+        ctx_mgr = LLMContextManager.get_by_budget(name)
+        if ctx_mgr is None:
+            await ctx.send(f"Unknown budget name: `{name}` (no context manager registered for it)", ephemeral=True)
+            return
+
+        budget = ctx_mgr.token_budget
 
         old_value = getattr(budget, field)
         setattr(budget, field, value)
@@ -236,13 +246,17 @@ class AIAssistantCog(commands.Cog):
                 await ctx.send(f"Error: {error}", ephemeral=True)
                 return
 
-        budget.save_to_file()
+        try:
+            budget.save_to_db()
+        except Exception:
+            logger.warning("Failed to save token budget to DB, falling back to file.")
+            budget.save_to_file()
 
-        self.context_manager.apply_restrictions()
-        await self.context_manager.write_to_file()
+        ctx_mgr.apply_restrictions()
+        await ctx_mgr.write_to_file()
 
         await ctx.send(
-            f"`{field}`: {old_value:,} → {value:,} (total: {budget.total:,})",
+            f"**{name}** `{field}`: {old_value:,} → {value:,} (total: {budget.total:,})",
             ephemeral=True,
         )
 

@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 import disnake
 
+from core.database import db
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BUDGET_PATH = "llm_token_budget.json"
@@ -15,6 +17,7 @@ class LLMTokenBudget:
     reserved_system_tokens: int = 6000
     reserved_memory_tokens: int = 32000
     reserved_response_tokens: int = 5000
+    _db_name: str | None = None  # Name in llm_token_budgets table (None = not loaded from DB)
 
     @property
     def total(self) -> int:
@@ -32,11 +35,67 @@ class LLMTokenBudget:
         Returns None if valid, or an error message string if not.
         """
         if min_model_tokens < self.total:
+            source = f"budget '{self._db_name}'" if self._db_name else "token budget"
             return (
                 f"Token budget total ({self.total:,}) exceeds the smallest model context window ({min_model_tokens:,}). "
-                f"Adjust data/llm_token_budget.json or model configuration."
+                f"Adjust {source} or model configuration."
             )
         return None
+
+    # ------------------------------------------------------------------
+    # Database persistence (primary)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_db(cls, name: str = "default") -> "LLMTokenBudget":
+        """Load a named budget from the llm_token_budgets table.
+
+        Falls back to defaults if the row doesn't exist.
+        """
+
+        rows = db.execute(
+            "SELECT context_tokens, reserved_system_tokens, reserved_memory_tokens, reserved_response_tokens "
+            "FROM llm_token_budgets WHERE name = ?",
+            (name,),
+        )
+        if rows:
+            row = rows[0]
+            budget = cls(
+                context_tokens=row["context_tokens"],
+                reserved_system_tokens=row["reserved_system_tokens"],
+                reserved_memory_tokens=row["reserved_memory_tokens"],
+                reserved_response_tokens=row["reserved_response_tokens"],
+                _db_name=name,
+            )
+            logger.info("Loaded LLM token budget '%s' from DB: %s", name, budget)
+            return budget
+
+        logger.warning("Token budget '%s' not found in DB, using defaults.", name)
+        return cls(_db_name=name)
+
+    def save_to_db(self) -> None:
+        """Persist the current budget to the llm_token_budgets table.
+
+        Creates the row if it doesn't exist (upsert).
+        """
+        if self._db_name is None:
+            raise ValueError("Cannot save budget to DB: no name assigned (_db_name is None).")
+
+        db.execute(
+            "INSERT INTO llm_token_budgets (name, context_tokens, reserved_system_tokens, reserved_memory_tokens, reserved_response_tokens) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET "
+            "context_tokens=excluded.context_tokens, "
+            "reserved_system_tokens=excluded.reserved_system_tokens, "
+            "reserved_memory_tokens=excluded.reserved_memory_tokens, "
+            "reserved_response_tokens=excluded.reserved_response_tokens",
+            (self._db_name, self.context_tokens, self.reserved_system_tokens,
+             self.reserved_memory_tokens, self.reserved_response_tokens),
+        )
+
+    # ------------------------------------------------------------------
+    # JSON persistence (legacy fallback)
+    # ------------------------------------------------------------------
 
     @classmethod
     def from_file(cls, path: str = _DEFAULT_BUDGET_PATH) -> "LLMTokenBudget":
@@ -68,6 +127,7 @@ class LLMTokenBudget:
             )
 
 
+
 @dataclass
 class UserMessageMetadata:
     timestamp_ms: int
@@ -88,17 +148,33 @@ class UserMessageMetadata:
 
 
 class LLMContextManager:
+    _registry: dict[str, "LLMContextManager"] = {}
+
     def __init__(
         self,
         context_file_name="llm_context.json",
         max_messages_in_context=26,
         token_budget: LLMTokenBudget | None = None,
+        budget_name: str = "default",
     ):
         self.context_file_name = context_file_name
         self.max_messages_in_context = max_messages_in_context
-        self.token_budget = token_budget or LLMTokenBudget.from_file()
+        if token_budget is not None:
+            self.token_budget = token_budget
+        else:
+            try:
+                self.token_budget = LLMTokenBudget.from_db(budget_name)
+            except Exception:
+                logger.warning("Failed to load token budget '%s' from DB, falling back to file.", budget_name)
+                self.token_budget = LLMTokenBudget.from_file()
         self.llm_context = {}  # {"guild_id": [...]} (trimmed cache)
         self.database_context = {}  # {"guild_id": [...]} (full database)
+
+        LLMContextManager._registry[budget_name] = self
+
+    @classmethod
+    def get_by_budget(cls, name: str) -> "LLMContextManager | None":
+        return cls._registry.get(name)
 
     async def load_from_file(self):
         try:

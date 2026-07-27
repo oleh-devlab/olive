@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Dedicated context manager for schedule channels so it doesn't pollute the main guild context.
 # This ensures it uses the same robust clipping (apply_restrictions) as the main bot.
-schedule_context_manager = LLMContextManager(context_file_name="schedule_agent_context.json")
+schedule_context_manager = LLMContextManager(context_file_name="schedule_agent_context.json", budget_name="private")
 
 UNDO_TIMEOUT_MINUTES = 15
 UNDO_TIMEOUT_SECONDS = UNDO_TIMEOUT_MINUTES * 60
@@ -218,7 +218,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                     response = await llm_client.get_interaction(
                         context,
                         system_instruction=system_instruction,
-                        max_output_tokens=2500,
+                        max_output_tokens=schedule_context_manager.token_budget.reserved_response_tokens,
                         tools=agent_tools_schema,
                         model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
                         anticipated_tokens=anticipated_tokens,
