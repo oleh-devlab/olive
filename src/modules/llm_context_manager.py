@@ -1,150 +1,11 @@
 import json
 import logging
 import os
-from dataclasses import dataclass
-import disnake
 
-from core.database import db
+from modules.llm_token_budget import LLMTokenBudget
+from modules.message_metadata import UserMessageMetadata
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_BUDGET_PATH = "llm_token_budget.json"
-
-
-@dataclass
-class LLMTokenBudget:
-    context_tokens: int = 64000
-    reserved_system_tokens: int = 6000
-    reserved_memory_tokens: int = 32000
-    reserved_response_tokens: int = 5000
-    _db_name: str | None = None  # Name in llm_token_budgets table (None = not loaded from DB)
-
-    @property
-    def total(self) -> int:
-        """Total tokens required: dialogue + all reservations."""
-        return (
-            self.context_tokens
-            + self.reserved_system_tokens
-            + self.reserved_memory_tokens
-            + self.reserved_response_tokens
-        )
-
-    def validate(self, min_model_tokens: int) -> str | None:
-        """Check if the budget fits within the smallest model's context window.
-
-        Returns None if valid, or an error message string if not.
-        """
-        if min_model_tokens < self.total:
-            source = f"budget '{self._db_name}'" if self._db_name else "token budget"
-            return (
-                f"Token budget total ({self.total:,}) exceeds the smallest model context window ({min_model_tokens:,}). "
-                f"Adjust {source} or model configuration."
-            )
-        return None
-
-    # ------------------------------------------------------------------
-    # Database persistence (primary)
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def from_db(cls, name: str = "default") -> "LLMTokenBudget":
-        """Load a named budget from the llm_token_budgets table.
-
-        Falls back to defaults if the row doesn't exist.
-        """
-
-        rows = db.execute(
-            "SELECT context_tokens, reserved_system_tokens, reserved_memory_tokens, reserved_response_tokens "
-            "FROM llm_token_budgets WHERE name = ?",
-            (name,),
-        )
-        if rows:
-            row = rows[0]
-            budget = cls(
-                context_tokens=row["context_tokens"],
-                reserved_system_tokens=row["reserved_system_tokens"],
-                reserved_memory_tokens=row["reserved_memory_tokens"],
-                reserved_response_tokens=row["reserved_response_tokens"],
-                _db_name=name,
-            )
-            logger.info("Loaded LLM token budget '%s' from DB: %s", name, budget)
-            return budget
-
-        logger.warning("Token budget '%s' not found in DB, using defaults.", name)
-        return cls(_db_name=name)
-
-    def save_to_db(self) -> None:
-        """Persist the current budget to the llm_token_budgets table.
-
-        Creates the row if it doesn't exist (upsert).
-        """
-        if self._db_name is None:
-            raise ValueError("Cannot save budget to DB: no name assigned (_db_name is None).")
-
-        db.execute(
-            "INSERT INTO llm_token_budgets (name, context_tokens, reserved_system_tokens, reserved_memory_tokens, reserved_response_tokens) "
-            "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(name) DO UPDATE SET "
-            "context_tokens=excluded.context_tokens, "
-            "reserved_system_tokens=excluded.reserved_system_tokens, "
-            "reserved_memory_tokens=excluded.reserved_memory_tokens, "
-            "reserved_response_tokens=excluded.reserved_response_tokens",
-            (self._db_name, self.context_tokens, self.reserved_system_tokens,
-             self.reserved_memory_tokens, self.reserved_response_tokens),
-        )
-
-    # ------------------------------------------------------------------
-    # JSON persistence (legacy fallback)
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def from_file(cls, path: str = _DEFAULT_BUDGET_PATH) -> "LLMTokenBudget":
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            budget = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-            logger.info("Loaded LLM token budget from %s: %s", path, budget)
-            return budget
-        except FileNotFoundError:
-            logger.warning("Token budget file not found at %s, using defaults.", path)
-            return cls()
-        except Exception as e:
-            logger.error("Error loading token budget from %s: %s. Using defaults.", path, e)
-            return cls()
-
-    def save_to_file(self, path: str = _DEFAULT_BUDGET_PATH):
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "context_tokens": self.context_tokens,
-                    "reserved_system_tokens": self.reserved_system_tokens,
-                    "reserved_memory_tokens": self.reserved_memory_tokens,
-                    "reserved_response_tokens": self.reserved_response_tokens,
-                },
-                f,
-                indent=4,
-            )
-
-
-
-@dataclass
-class UserMessageMetadata:
-    timestamp_ms: int
-    author_id: int
-    author_name: str
-    author_display_name: str
-    message_id: int
-
-    @classmethod
-    def from_message(cls, message: disnake.Message) -> "UserMessageMetadata":
-        return cls(
-            timestamp_ms=int(message.created_at.timestamp() * 1000),
-            author_id=message.author.id,
-            author_name=message.author.name,
-            author_display_name=getattr(message.author, "display_name", message.author.name),
-            message_id=message.id,
-        )
 
 
 class LLMContextManager:
@@ -152,23 +13,15 @@ class LLMContextManager:
 
     def __init__(
         self,
+        token_budget: LLMTokenBudget,
         context_file_name="llm_context.json",
-        max_messages_in_context=26,
-        token_budget: LLMTokenBudget | None = None,
         budget_name: str = "default",
     ):
+        self.token_budget = token_budget
         self.context_file_name = context_file_name
-        self.max_messages_in_context = max_messages_in_context
-        if token_budget is not None:
-            self.token_budget = token_budget
-        else:
-            try:
-                self.token_budget = LLMTokenBudget.from_db(budget_name)
-            except Exception:
-                logger.warning("Failed to load token budget '%s' from DB, falling back to file.", budget_name)
-                self.token_budget = LLMTokenBudget.from_file()
-        self.llm_context = {}  # {"guild_id": [...]} (trimmed cache)
-        self.database_context = {}  # {"guild_id": [...]} (full database)
+
+        self.llm_context = {}  # {"discord_id": [...]} (trimmed cache)
+        self.database_context = {}  # {"discord_id": [...]} (full database)
 
         LLMContextManager._registry[budget_name] = self
 
@@ -181,7 +34,7 @@ class LLMContextManager:
             with open(self.context_file_name, "r", encoding="utf-8") as f:
                 self.database_context = json.load(f)
 
-            self.llm_context = {guild_id: list(messages) for guild_id, messages in self.database_context.items()}
+            self.llm_context = {discord_id: list(messages) for discord_id, messages in self.database_context.items()}
             # Trim the loaded cache so we don't blow up memory/limits on startup
             self.apply_restrictions()
             logger.info("LLM context is loaded from file.")
@@ -216,16 +69,16 @@ class LLMContextManager:
             except OSError:
                 pass
 
-    def get_interaction_context(self, guild_id: str) -> list:
+    def get_interaction_context(self, discord_id: str) -> list:
         """
         Retrieves context formatted for the new Interactions API.
         The underlying JSON storage (`role` and `parts` fields) is kept in the older generateContent format
         for backward compatibility with existing saved conversation files on disk. This method dynamically
         translates them into `user_input` and `model_output` objects.
         """
-        if guild_id not in self.llm_context:
-            self.llm_context[guild_id] = []
-        return [self._interaction_content(m) for m in self.llm_context[guild_id]]
+        if discord_id not in self.llm_context:
+            self.llm_context[discord_id] = []
+        return [self._interaction_content(m) for m in self.llm_context[discord_id]]
 
     @staticmethod
     def _interaction_content(message: dict) -> dict:
@@ -244,11 +97,11 @@ class LLMContextManager:
             out["content"] = content
         return out
 
-    def add_interaction_steps(self, guild_id: str, steps: list, tokens: int = 0, timestamp_ms: int = 0):
-        if guild_id not in self.llm_context:
-            self.llm_context[guild_id] = []
-        if guild_id not in self.database_context:
-            self.database_context[guild_id] = []
+    def add_interaction_steps(self, discord_id: str, steps: list, tokens: int = 0, timestamp_ms: int = 0):
+        if discord_id not in self.llm_context:
+            self.llm_context[discord_id] = []
+        if discord_id not in self.database_context:
+            self.database_context[discord_id] = []
 
         for step in steps:
             # Support both Pydantic models (from SDK) and raw dicts
@@ -276,20 +129,20 @@ class LLMContextManager:
             if isinstance(step_dict, dict) and step_dict.get("type") == "model_output":
                 entry["tokens"] = tokens
 
-            self.llm_context[guild_id].append(entry)
-            self.database_context[guild_id].append(entry)
+            self.llm_context[discord_id].append(entry)
+            self.database_context[discord_id].append(entry)
 
     def add_user_message(
         self,
-        guild_id: str,
+        discord_id: str,
         formatted_text: str,
         meta: UserMessageMetadata,
         no_consent: bool = False,
     ):
-        if guild_id not in self.llm_context:
-            self.llm_context[guild_id] = []
-        if guild_id not in self.database_context:
-            self.database_context[guild_id] = []
+        if discord_id not in self.llm_context:
+            self.llm_context[discord_id] = []
+        if discord_id not in self.database_context:
+            self.database_context[discord_id] = []
 
         # We store "role" and "parts" for backward compatibility with older context files,
         # but these get mapped dynamically when passed to Interactions API via get_interaction_context.
@@ -305,19 +158,19 @@ class LLMContextManager:
         if no_consent:
             entry["no_consent"] = True
 
-        self.llm_context[guild_id].append(entry)
-        self.database_context[guild_id].append(entry)
+        self.llm_context[discord_id].append(entry)
+        self.database_context[discord_id].append(entry)
 
     def add_function_results(
         self,
-        guild_id: str,
+        discord_id: str,
         results: list[dict],
         timestamp_ms: int = 0,
     ):
-        if guild_id not in self.llm_context:
-            self.llm_context[guild_id] = []
-        if guild_id not in self.database_context:
-            self.database_context[guild_id] = []
+        if discord_id not in self.llm_context:
+            self.llm_context[discord_id] = []
+        if discord_id not in self.database_context:
+            self.database_context[discord_id] = []
 
         for res in results:
             entry = {
@@ -326,16 +179,16 @@ class LLMContextManager:
                 "timestamp_ms": timestamp_ms,
             }
             # For backward compatibility we used to add 'parts' here, but it's redundant.
-            self.llm_context[guild_id].append(entry)
-            self.database_context[guild_id].append(entry)
+            self.llm_context[discord_id].append(entry)
+            self.database_context[discord_id].append(entry)
 
-    def is_duplicate_no_consent(self, guild_id: str, author_name: str) -> bool:
+    def is_duplicate_no_consent(self, discord_id: str, author_name: str) -> bool:
         """
         Checks whether there's already a no-consent stub from the given author in the
         current unconsented block. The block is broken by a model message or a user message
         with consent. Used to prevent consecutive stub messages from the same user.
         """
-        messages = self.llm_context.get(guild_id, [])
+        messages = self.llm_context.get(discord_id, [])
         if not messages:
             return False
 
@@ -363,11 +216,11 @@ class LLMContextManager:
         # Fallback approximation
         return sum(len(str(p.get("text") or "")) for p in message.get("parts", [])) // 2
 
-    def add_model_message(self, guild_id: str, text: str, tokens: int = 0, timestamp_ms: int = 0):
-        if guild_id not in self.llm_context:
-            self.llm_context[guild_id] = []
-        if guild_id not in self.database_context:
-            self.database_context[guild_id] = []
+    def add_model_message(self, discord_id: str, text: str, tokens: int = 0, timestamp_ms: int = 0):
+        if discord_id not in self.llm_context:
+            self.llm_context[discord_id] = []
+        if discord_id not in self.database_context:
+            self.database_context[discord_id] = []
 
         entry = {
             "role": "model",
@@ -375,14 +228,14 @@ class LLMContextManager:
             "tokens": tokens,
             "timestamp_ms": timestamp_ms,
         }
-        self.llm_context[guild_id].append(entry)
-        self.database_context[guild_id].append(entry)
+        self.llm_context[discord_id].append(entry)
+        self.database_context[discord_id].append(entry)
 
-    def update_latest_user_message_tokens(self, guild_id: str, prompt_token_count: int):
-        if guild_id not in self.llm_context or not self.llm_context[guild_id]:
+    def update_latest_user_message_tokens(self, discord_id: str, prompt_token_count: int):
+        if discord_id not in self.llm_context or not self.llm_context[discord_id]:
             return
 
-        messages = self.llm_context[guild_id]
+        messages = self.llm_context[discord_id]
         if messages[-1].get("role") == "user":
             previous_tokens = sum(self.get_message_tokens(m) for m in messages[:-1])
             new_user_tokens = prompt_token_count - previous_tokens
@@ -391,15 +244,15 @@ class LLMContextManager:
                     "Token math yielded %d for guild %s (prompt=%d, previous_sum=%d). "
                     "This likely means fallback approximations for older messages are too high.",
                     new_user_tokens,
-                    guild_id,
+                    discord_id,
                     prompt_token_count,
                     previous_tokens,
                 )
             messages[-1]["tokens"] = max(1, new_user_tokens)
 
-    def get_total_tokens(self, guild_id: str) -> int:
+    def get_total_tokens(self, discord_id: str) -> int:
         """Returns the total tokens for a guild's context in O(M)."""
-        messages = self.llm_context.get(guild_id, [])
+        messages = self.llm_context.get(discord_id, [])
         return sum(self.get_message_tokens(m) for m in messages)
 
     def apply_restrictions(self):
@@ -409,7 +262,7 @@ class LLMContextManager:
         """
         effective_limit = self.token_budget.context_tokens
 
-        for guild_id, messages in self.llm_context.items():
+        for discord_id, messages in self.llm_context.items():
             total_tokens = sum(self.get_message_tokens(m) for m in messages)
 
             while messages and total_tokens > effective_limit:
