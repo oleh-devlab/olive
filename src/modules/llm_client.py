@@ -136,21 +136,13 @@ class LLMClient:
                 if max_output_tokens:
                     generation_config["max_output_tokens"] = max_output_tokens
 
-                # Gemini models (e.g. gemini-3.5-flash) require the "signature" field in function_call steps
-                # If it is missing, Gemini throws a 400 invalid_request error.
-                # However, Gemma models (e.g. gemma-4-31b-it) do not support the "signature" field
-                # and will throw a 400 error if it is present in the interaction history.
-                # Therefore, we must keep signatures in the global context/database, but dynamically strip them
-                # "on the fly" right before sending the payload *only* if the target model is Gemma.
-                # ...it's just that I haven't found or come up with a better way to solve this yet...
+                # The Google GenAI SDK and API no longer return or require the "signature" field.
+                # However, older saved contexts (prior to late July 2026) might still contain it.
+                # We strip it here unconditionally for ALL models to prevent BadRequestError
+                # during context history validation.
                 model_input = []
                 for step in input_data:
-                    if (
-                        isinstance(step, dict)
-                        and "gemma" in model.name.lower()
-                        and step.get("type") == "function_call"
-                        and "signature" in step
-                    ):
+                    if isinstance(step, dict) and "signature" in step:
                         step_copy = step.copy()
                         step_copy.pop("signature", None)
                         model_input.append(step_copy)

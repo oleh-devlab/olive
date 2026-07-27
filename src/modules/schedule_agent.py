@@ -202,6 +202,18 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
     llm_len_before = len(schedule_context_manager.llm_context.get(channel_id_str, []))
     db_len_before = len(schedule_context_manager.database_context.get(channel_id_str, []))
 
+    def clean_context_from_partial_steps():
+        def _clean(ctx_dict, original_len):
+            if channel_id_str not in ctx_dict:
+                return
+            original_items = ctx_dict[channel_id_str][:original_len]
+            new_items = ctx_dict[channel_id_str][original_len:]
+            real_user_messages = [item for item in new_items if item.get("role") == "user" and "parts" in item]
+            ctx_dict[channel_id_str] = original_items + real_user_messages
+
+        _clean(schedule_context_manager.llm_context, llm_len_before)
+        _clean(schedule_context_manager.database_context, db_len_before)
+
     try:
         async with message.channel.typing():
             # I knew even as I was writing it that this loop wasn't working;
@@ -228,6 +240,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                 except Exception as e:
                     logger.error("Error in schedule agent get_interaction: %s", e)
                     await message.reply(f"An error occurred while communicating with the model: {e}")
+                    clean_context_from_partial_steps()
                     return
 
                 candidate_tokens = 0
@@ -342,17 +355,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                 await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
 
     except asyncio.CancelledError:
-
-        def clean_context(ctx_dict, original_len):
-            if channel_id_str not in ctx_dict:
-                return
-            original_items = ctx_dict[channel_id_str][:original_len]
-            new_items = ctx_dict[channel_id_str][original_len:]
-            real_user_messages = [item for item in new_items if item.get("role") == "user" and "parts" in item]
-            ctx_dict[channel_id_str] = original_items + real_user_messages
-
-        clean_context(schedule_context_manager.llm_context, llm_len_before)
-        clean_context(schedule_context_manager.database_context, db_len_before)
+        clean_context_from_partial_steps()
 
         if tools_instance.schedule_modified:
             provider.restore_backup(user_id, backup_data)
