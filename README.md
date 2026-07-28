@@ -49,43 +49,41 @@ Beyond its practical features, OLIVE serves as a hands-on learning environment. 
 ### English
 
 1. Clone the repository and navigate to its directory:
-```bash
-git clone https://github.com/oleh-devlab/olive.git
-cd olive
-git submodule update --init --recursive
-```
+    ```bash
+    git clone https://github.com/oleh-devlab/olive.git
+    cd olive
+    git submodule update --init --recursive
+    ```
 2. Create a Python virtual environment and activate it:
-```bash
-python -m venv .venv
+    ```bash
+    python -m venv .venv
 
-# Windows
-.venv\Scripts\activate
-# Linux/MacOS
-source .venv/bin/activate
-```
-3. Move `settings.py.example` to the source folder (into `src/`, or such that it is on the same level as `main.py`).
-4. Rename `settings.py.example` to `settings.py` and fill in the required fields (see the comments inside the file).
-5. Create token files in the source folder (`src/`, in the same folder as `main.py` and `settings.py`) according to their names defined in `settings.py`.
-- You can skip adding tokens for modules that are disabled (see `settings.py`).
-6. Ensure that the token paths you use (see `settings.py`) are listed in `.gitignore`.
-7. Install dependencies.
-- You can skip installing dependencies for unused modules. Check `settings.py` to see which modules to disable and edit `requirements.txt` accordingly.
-```bash
-pip install -r requirements.txt
-```
-- If you have made changes to the `requirements.txt` file to exclude certain dependencies, we recommend reverting it to its original state after the installation is complete to avoid conflicts when working with Git.
-- *Tip:* You can quickly revert the file by running `git checkout -- requirements.txt` or `git restore requirements.txt`.
-8. *(Optional)* Fill in `phrases.json`.
+    # Windows
+    .venv\Scripts\activate
+    # Linux/MacOS
+    source .venv/bin/activate
+    ```
+3. Copy and rename the example files into `src/`:
+    ```bash
+    cp settings.py.example src/settings.py
+    cp tokens.json.example src/tokens.json
+    cp llm_token_budget.json.example src/llm_token_budget.json
+    ```
+4. Fill in the required fields and settings in `settings.py` (see the comments inside the file).
+5. Insert tokens for the Discord bot and other modules into the `tokens.json` file.
+    - You can skip adding tokens for modules that are disabled (see `settings.py`).
+6. Install dependencies.
+    - You can skip installing dependencies for unused modules. Check `settings.py` to see which modules to disable and edit `requirements.txt` accordingly.
+    ```bash
+    pip install -r requirements.txt
+    ```
+    - If you have made changes to the `requirements.txt` file to exclude certain dependencies, we recommend reverting it to its original state after the installation is complete to avoid conflicts when working with Git.
+    - *Tip:* You can quickly revert the file by running `git checkout -- requirements.txt` or `git restore requirements.txt`.
+7. *(Optional)* Fill in `phrases.json`.
     - Comprehensive documentation for `phrases.json` is currently unavailable, so you will need to check the source code to fill in the parts you want to change. However, you can review the multi-server format documentation: [English](/docs/EN/walkthroughs/multi-server-phrases.md) | [Ukrainian](/docs/UK/walkthroughs/multi-server-phrases.md).
-
-9. Initialize the SQLite database. This creates the necessary tables for the bot to run:
-```bash
-cd src
-python scripts/init_database.py
-```
-
-10. Run the bot:
-```bash
-# Assuming you are already in the `src` directory
-python main.py
-```
+8. Run the bot:
+    ```bash
+    # Make sure you are in the `src` directory
+    cd src
+    python main.py
+    ```
