@@ -17,26 +17,42 @@ Beyond its practical features, OLIVE serves as a hands-on learning environment. 
 
 ---
 
+## Submodules
+
+This project relies on the following Git submodules to extend its core functionality:
+
+- **[automatic_timetable_py](https://github.com/oleh-devlab/automatic_timetable_py)**: A scheduling engine written in Python. It utilizes the Google OR-Tools (CP-SAT solver) to solve scheduling problems. It calculates optimal schedules based on task deadlines, flexible/fixed routines, Pomodoro chunking, global breaks, and a Two-Stage priority architecture.
+
+---
+
 ## Expected file structure
 ```
 .
-├── .venv/              # Virtual environment (ignored by Git)
-├── docs/               # Documentation files (setup instructions, walkthroughs)
+├── .venv/                          # Virtual environment (ignored by Git)
+├── docs/                           # Documentation files
 │   ├── EN/
 │   └── UK/
 ├── src/
-│   ├── main.py         # The main entry point of the bot
-│   ├── settings.py     # Local configuration (created by the user based on settings.py.example. Ignored by Git)
-│   ├── phrases.json    # Local phrases configuration (ignored by Git)
-│   ├── cogs/
-│   ├── core/
-│   ├── modules/
-│   ├── ...             # The bot will store files such as llm_context.json, config.ini, currency_cache.json, and others in this (src/) folder.
-│   └── .env            # And the rest of the tokens with the names you specify in settings.py (should be in .gitignore)
+│   ├── main.py                     # The main entry point of the bot
+│   ├── settings.py                 # Local configuration (created by the user. Ignored by Git)
+│   ├── tokens.json                 # Bot and module tokens (created by the user. Ignored by Git)
+│   ├── llm_token_budget.json       # LLM budget settings (created by the user. Ignored by Git)
+│   ├── phrases.json                # Local phrases configuration (ignored by Git)
+│   ├── cogs/                       # Discord bot cogs (commands and events)
+│   ├── core/                       # Core bot logic and utilities
+│   ├── database/                   # Database logic and migrations
+│   ├── modules/                    # Specialized submodules and extensions
+│   ├── scripts/                    # Utility scripts (e.g., data migrations)
+│   └── ...                         # The bot will store files like config.ini and sqlite3 databases here
+├── tests/                          # Automated tests
 ├── README.md
 ├── .gitignore
-├── requirements.txt    # Tracked by Git
-└── settings.py.example # Tracked by Git
+├── .gitmodules                     # Git submodules configuration
+├── pyproject.toml                  # Python project configuration
+├── requirements.txt                # Tracked by Git
+├── settings.py.example             # Tracked by Git
+├── tokens.json.example             # Tracked by Git
+└── llm_token_budget.json.example   # Tracked by Git
 ```
 
 ---
