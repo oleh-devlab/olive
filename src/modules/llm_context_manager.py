@@ -78,7 +78,37 @@ class LLMContextManager:
         """
         if discord_id not in self.llm_context:
             self.llm_context[discord_id] = []
-        return [self._interaction_content(m) for m in self.llm_context[discord_id]]
+        raw_steps = [self._interaction_content(m) for m in self.llm_context[discord_id]]
+        
+        # We need to interleave function_calls and function_results to satisfy Gemini's strict turn requirements.
+        # It expects function_call -> function_result.
+        # If we have multiple function_calls followed by multiple function_results, we must interleave them.
+        
+        # 1. Extract all function_results and index them by call_id
+        results_by_id = {}
+        for step in raw_steps:
+            if step.get("type") == "function_result" and step.get("call_id"):
+                results_by_id[step.get("call_id")] = step
+                
+        # 2. Build the interleaved list
+        interleaved = []
+        for step in raw_steps:
+            if step.get("type") == "function_result":
+                # We skip appending them here because we inject them immediately after their function_call
+                continue
+                
+            interleaved.append(step)
+            
+            if step.get("type") == "function_call":
+                call_id = step.get("id")
+                if call_id in results_by_id:
+                    interleaved.append(results_by_id[call_id])
+                    # We don't delete from results_by_id in case there's some bizarre duplication,
+                    # but typically it's 1:1. Actually deleting is safer so we don't duplicate if
+                    # the same call_id appears twice for some reason.
+                    del results_by_id[call_id]
+                
+        return interleaved
 
     @staticmethod
     def _interaction_content(message: dict) -> dict:
@@ -113,11 +143,31 @@ class LLMContextManager:
             # and take additional tokens into account.
             if isinstance(step_dict, dict):
                 step_dict = step_dict.copy()
+                
+                # Pydantic objects like FunctionCallStep lose their "type" field
+                # when dumped. We must restore it so the API doesn't reject it on subsequent calls.
+                if "type" not in step_dict and not hasattr(step, "get"):
+                    class_name = step.__class__.__name__
+                    if "FunctionCall" in class_name:
+                        step_dict["type"] = "function_call"
+                    elif "ModelOutput" in class_name or "ModelContent" in class_name or "GenerateContent" in class_name:
+                        step_dict["type"] = "model_output"
+                    elif "Thought" in class_name:
+                        step_dict["type"] = "thought"
+
+                # --- [ARCHIVED COMMENT BEGIN] ---
                 # Skip thought blocks for compatibility (Gemma and others may not support them).
-                if step_dict.get("type") == "thought":
-                    continue
+                # if step_dict.get("type") == "thought":
+                #     continue
                 # The "signature" field is obsolete. Discard it before saving to the DB.
-                step_dict.pop("signature", None)
+                # step_dict.pop("signature", None)
+                # --- [ARCHIVED COMMENT END] ---
+                #
+                # [UPDATE 30.07.2026]:
+                # We no longer strip "thought" steps or "signature" fields at the database level.
+                # Gemini strictly requires "signature" on "thought" steps to validate function calls.
+                # Gemma also now generates and supports them. We will conditionally filter them 
+                # at runtime in LLMClient if needed, but they must be preserved in the context.
 
             entry = {
                 "role": "model",
