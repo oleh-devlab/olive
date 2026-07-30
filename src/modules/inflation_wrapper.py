@@ -1,10 +1,12 @@
 import os
 import datetime
+from pathlib import Path
 from modules.inflation_calculator.modules.api import InflationCalculator
 import settings
 
 # Define paths for data
-DATA_DIR = getattr(settings, "inflation_data_dir", "data/inflation")
+_default_data_dir = str(Path(__file__).resolve().parent.parent.parent / "data" / "inflation")
+DATA_DIR = getattr(settings, "inflation_data_dir", _default_data_dir)
 RECORDS_DIR = os.path.join(DATA_DIR, "records")
 RATES_FILE = os.path.join(DATA_DIR, "inflation_rates.json")
 
