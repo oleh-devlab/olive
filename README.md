@@ -22,6 +22,7 @@ Beyond its practical features, OLIVE serves as a hands-on learning environment. 
 This project relies on the following Git submodules to extend its core functionality:
 
 - **[automatic_timetable_py](https://github.com/oleh-devlab/automatic_timetable_py)**: A scheduling engine written in Python. It utilizes the Google OR-Tools (CP-SAT solver) to solve scheduling problems. It calculates optimal schedules based on task deadlines, flexible/fixed routines, Pomodoro chunking, global breaks, and a Two-Stage priority architecture.
+- **[inflation_calculator](https://github.com/oleh-devlab/inflation_calculator)**: An inflation calculator that computes the inflation-adjusted value of a past amount using monthly CPI data. Integrated into OLIVE to provide inflation commands and interactive UI through Discord.
 
 ---
 
