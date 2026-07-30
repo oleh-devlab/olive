@@ -21,6 +21,7 @@ schedule_context_manager = LLMContextManager(
 
 UNDO_TIMEOUT_MINUTES = 15
 UNDO_TIMEOUT_SECONDS = UNDO_TIMEOUT_MINUTES * 60
+MAX_ITERATIONS = 14
 
 
 async def load_schedule_context():
@@ -196,7 +197,6 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
         agent_tools_schema.append({"type": "function", **decl})
 
-    max_iterations = 7
     iteration = 0
 
     llm_len_before = len(schedule_context_manager.llm_context.get(channel_id_str, []))
@@ -219,7 +219,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
             # I knew even as I was writing it that this loop wasn't working;
             # I just hadn't gotten around to rewriting it and passing the responsibility to the SDK yet.
             # "If it's working, don't touch it."
-            while iteration < max_iterations:
+            while iteration < MAX_ITERATIONS:
                 iteration += 1
 
                 # Fetch fresh context before each API call
@@ -352,7 +352,11 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
             else:
                 # Reached max iterations
-                await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
+                clean_context_from_partial_steps()
+                if tools_instance.schedule_modified:
+                    provider.restore_backup(user_id, backup_data)
+                    logger.info("Schedule agent for user %s reached max iterations, backup automatically restored.", user_id)
+                await message.reply("The agent reached the maximum number of tool iterations and was stopped. Don't worry, all intermediate changes have been reverted and your schedule remains unmodified.")
 
     except asyncio.CancelledError:
         clean_context_from_partial_steps()
