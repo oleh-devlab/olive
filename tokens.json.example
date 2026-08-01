@@ -3,5 +3,6 @@
     "genai": {
         "default": "AIzaSy_DEFAULT_KEY_HERE",
         "private": ""
-    }
+    },
+    "openai": "YOUR_OPENAI_COMPATIBLE_API_KEY"
 }

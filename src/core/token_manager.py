@@ -14,6 +14,7 @@ class TokenRegistry:
 
         self._discord_token: str | None = None
         self._genai_tokens: dict[str, str] = {}
+        self._openai_token: str | None = None
 
         self._load_tokens()
 
@@ -40,6 +41,11 @@ class TokenRegistry:
             if isinstance(genai_data, dict):
                 self._genai_tokens = {str(k): str(v).strip() for k, v in genai_data.items() if v}
 
+            # OpenAI-compatible API key
+            openai_raw = data.get("openai", "")
+            if openai_raw and isinstance(openai_raw, str):
+                self._openai_token = openai_raw.strip()
+
             logger.info("Loaded tokens from %s", self.config_path)
         except Exception as e:
             logger.error("Error loading tokens from %s: %s", self.config_path, e)
@@ -61,6 +67,10 @@ class TokenRegistry:
                 return default_token
 
         return os.environ.get("GENAI_API_KEY")
+
+    def get_openai_token(self) -> str | None:
+        """Get OpenAI-compatible API key. Falls back to OPENAI_API_KEY env var."""
+        return self._openai_token or os.environ.get("OPENAI_API_KEY")
 
 
 # Global singleton

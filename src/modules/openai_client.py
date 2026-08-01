@@ -1,20 +1,19 @@
 import aiohttp
 import logging
-from pathlib import Path
-import os
 
 import settings
+from core.token_manager import token_registry
 
 logger = logging.getLogger(__name__)
 
 class OpenAIClient:
     def __init__(self):
-        self.api_key = self.read_api_token()
+        self.api_key = token_registry.get_openai_token() or ""
         self.base_url = getattr(settings, "openai_api_base", "https://api.openai.com/v1")
         self.model_name = getattr(settings, "openai_model_name", "gemma4:e2b")
         
         if not self.api_key:
-            logger.warning("OpenAI API token not found.")
+            logger.warning("OpenAI API token not found in tokens.json or OPENAI_API_KEY env var.")
             
         self.session = None
 
@@ -28,14 +27,6 @@ class OpenAIClient:
                          self.base_url, self.model_name, bool(self.api_key))
         return self.session
         
-    def read_api_token(self):
-        token_path = Path(__file__).resolve().parent.parent / settings.paths.get("openai_token_file", ".openai_token")
-        if token_path.exists():
-            token = token_path.read_text(encoding="utf-8").strip()
-            if token:
-                return token
-        return os.environ.get("OPENAI_API_KEY", "")
-
     async def shutdown(self):
         if self.session and not self.session.closed:
             await self.session.close()

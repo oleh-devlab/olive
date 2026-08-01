@@ -8,8 +8,7 @@ import time
 from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
 from modules.llm_message_formatter import format_user_message, FormattingProfile
 from modules.openai_context_manager import OpenAIContextManager
-import core.cache as cache
-from core.utils import get_phrases, TaskDebouncer, send_long_reply
+from core.utils import get_phrases, TaskDebouncer, send_long_reply, send_long_message
 from core.token_manager import token_registry
 import settings
 
@@ -123,7 +122,7 @@ class AIAssistantCog(commands.Cog):
     async def on_message(self, message: disnake.Message):
         bot_whitelist = getattr(settings, "olive_bot_whitelist", [])
         is_whitelisted_bot = message.author.bot and message.author.id in bot_whitelist
-        
+
         if (
             not self.olive_enabled
             or (message.author.bot and not is_whitelisted_bot)
@@ -212,7 +211,7 @@ class AIAssistantCog(commands.Cog):
                     return
 
                 self.openai_context_manager.add_model_message(guild_id, response_text)
-                await message.reply(response_text, fail_if_not_exists=False, mention_author=False)
+                await send_long_message(message.channel, response_text)
 
         except Exception as e:
             logger.error("Unexpected error in generate_openai_answer: %s", e)
