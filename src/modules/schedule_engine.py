@@ -86,6 +86,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                             session_index=str(i + 1),
                             total_sessions=len(st.chunks),
                             algo_notes="",
+                            item_id=st.task.id,
                         )
                     )
             else:
@@ -98,6 +99,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                         session_index="1",
                         total_sessions=1,
                         algo_notes="",
+                        item_id=st.task.id,
                     )
                 )
 
@@ -112,9 +114,10 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                     session_index="1",
                     total_sessions=1,
                     algo_notes="",
+                    item_id=getattr(sr, "routine_id", None),
                 )
             )
-            
+
         for tb in getattr(result, "scheduled_timeblocks", []):
             items.append(
                 ScheduleItem(
@@ -125,6 +128,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                     session_index="1",
                     total_sessions=1,
                     algo_notes="",
+                    item_id=getattr(tb, "id", None),
                 )
             )
 

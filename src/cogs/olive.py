@@ -5,7 +5,11 @@ from google.genai import types
 import logging
 import time
 
-from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
+from modules.llm_client import LLMClientPool
+from modules.llm_rate_limiter import RateLimitExceeded
+from modules.llm_context_manager import LLMContextManager
+from modules.message_metadata import UserMessageMetadata
+from modules.llm_token_budget import BudgetRepository
 from modules.llm_message_formatter import format_user_message, FormattingProfile
 from modules.openai_context_manager import OpenAIContextManager
 from core.utils import get_phrases, TaskDebouncer, send_long_reply, send_long_message
@@ -48,7 +52,12 @@ except ImportError as e:
 class AIAssistantCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.context_manager = LLMContextManager()
+
+        self.budget_name = "default"
+        self.context_manager = LLMContextManager(
+            token_budget=BudgetRepository.get_by_name(self.budget_name), budget_name=self.budget_name
+        )
+
         self.response_debouncer = TaskDebouncer(self.bot.loop)
         self.schedule_debouncer = TaskDebouncer(self.bot.loop)
         self.openai_context_manager = OpenAIContextManager()
@@ -122,7 +131,7 @@ class AIAssistantCog(commands.Cog):
     async def on_message(self, message: disnake.Message):
         bot_whitelist = getattr(settings, "olive_bot_whitelist", [])
         is_whitelisted_bot = message.author.bot and message.author.id in bot_whitelist
-
+        
         if (
             not self.olive_enabled
             or (message.author.bot and not is_whitelisted_bot)
@@ -144,7 +153,7 @@ class AIAssistantCog(commands.Cog):
         guild_id = str(message.guild.id)
         has_consent = cache.llm_consent_manager.has_consent(message.author.id) if cache.llm_consent_manager else False
 
-        meta = UserMessageMetadata.from_message(message)
+        meta = UserMessageMetadata.from_disnake_message(message)
 
         new_text = await format_user_message(message, meta, has_consent=has_consent)
 
@@ -180,7 +189,9 @@ class AIAssistantCog(commands.Cog):
             user_id = cache.tasks_channels[message.channel.id]
 
             # Format with AGENT profile (minimal: time + text only)
-            agent_text = await format_user_message(message, meta, has_consent=has_consent, profile=FormattingProfile.AGENT)
+            agent_text = await format_user_message(
+                message, meta, has_consent=has_consent, profile=FormattingProfile.AGENT
+            )
             schedule_context_manager.add_user_message(str(message.channel.id), agent_text, meta)
 
             self.schedule_debouncer.submit(guild_id, 3, run_schedule_agent, self.bot, message, user_id)
@@ -338,43 +349,6 @@ class AIAssistantCog(commands.Cog):
         self.schedule_agent_enabled = not self.schedule_agent_enabled
         status = "enabled" if self.schedule_agent_enabled else "disabled"
         await ctx.send(f"Schedule Agent is now {status}.", ephemeral=True)
-
-    @commands.slash_command(name="token_budget", description="Manage LLM token budget")
-    @commands.is_owner()
-    async def token_budget(self, ctx: disnake.ApplicationCommandInteraction):
-        pass
-
-    @token_budget.sub_command(name="set", description="Update a token budget value")
-    async def token_budget_set(
-        self,
-        ctx: disnake.ApplicationCommandInteraction,
-        field: str = commands.Param(
-            description="Budget field to update",
-            choices=["context_tokens", "reserved_system_tokens", "reserved_memory_tokens", "reserved_response_tokens"],
-        ),
-        value: int = commands.Param(description="New value (tokens)", gt=0),
-    ):
-        budget = self.context_manager.token_budget
-
-        old_value = getattr(budget, field)
-        setattr(budget, field, value)
-
-        if cache.llm_pool and cache.llm_pool.default:
-            error = budget.validate(cache.llm_pool.default.min_context_tokens)
-            if error:
-                setattr(budget, field, old_value)
-                await ctx.send(f"Error: {error}", ephemeral=True)
-                return
-
-        budget.save_to_file()
-
-        self.context_manager.apply_restrictions()
-        await self.context_manager.write_to_file()
-
-        await ctx.send(
-            f"`{field}`: {old_value:,} → {value:,} (total: {budget.total:,})",
-            ephemeral=True,
-        )
 
 
 def setup(bot: commands.Bot):

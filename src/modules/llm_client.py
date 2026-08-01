@@ -136,21 +136,40 @@ class LLMClient:
                 if max_output_tokens:
                     generation_config["max_output_tokens"] = max_output_tokens
 
-                # Gemini models (e.g. gemini-3.5-flash) require the "signature" field in function_call steps 
-                # If it is missing, Gemini throws a 400 invalid_request error.
-                # However, Gemma models (e.g. gemma-4-31b-it) do not support the "signature" field 
-                # and will throw a 400 error if it is present in the interaction history.
-                # Therefore, we must keep signatures in the global context/database, but dynamically strip them 
-                # "on the fly" right before sending the payload *only* if the target model is Gemma.
-                # ...it's just that I haven't found or come up with a better way to solve this yet...
+                # --- [ARCHIVED COMMENT BEGIN] ---
+                # The Google GenAI SDK and API no longer return or require the "signature" field.
+                # However, older saved contexts (prior to late July 2026) might still contain it.
+                # We strip it here unconditionally for ALL models to prevent BadRequestError
+                # during context history validation.
+                # --- [ARCHIVED COMMENT END] ---
+                # 
+                # [UPDATE 30.07.2026]: 
+                # 1. Gemma (and potentially other non-Gemini models) does not support "signature" fields
+                #    steps, so we must strip them out if we are not using a Gemini model.
+                # 2. Gemini strictly REQUIRES the "signature" field on "thought" steps if function calls
+                #    were made. Stripping it will cause a 400 BadRequestError.
+                is_gemini = model.name.startswith("gemini")
+                
                 model_input = []
                 for step in input_data:
-                    if isinstance(step, dict) and "gemma" in model.name.lower() and step.get("type") == "function_call" and "signature" in step:
-                        step_copy = step.copy()
-                        step_copy.pop("signature", None)
-                        model_input.append(step_copy)
-                    else:
-                        model_input.append(step)
+                    # if isinstance(step, dict) and "signature" in step:
+                    #     step_copy = step.copy()
+                    #     step_copy.pop("signature", None)
+                    #     model_input.append(step_copy)
+                    # else:
+                    #     model_input.append(step)
+                    # Input could be a pydantic object or dict.
+                    step_dict = step.copy() if isinstance(step, dict) else step
+                    
+                    if isinstance(step_dict, dict):
+                        if not is_gemini:
+                            # Strip thoughts for Gemma
+                            if step_dict.get("type") == "thought":
+                                continue
+                            # Strip signature for Gemma
+                            step_dict.pop("signature", None)
+                            
+                    model_input.append(step_dict)
 
                 kwargs = {
                     "model": model.name,
@@ -192,7 +211,7 @@ class LLMClient:
             except Exception as e:
                 model.refund_request()
                 code = getattr(e, "code", None)
-                
+
                 # Sometimes the code is only in the string representation
                 if code is None and "429" in str(e):
                     code = 429
@@ -212,7 +231,7 @@ class LLMClient:
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning("Attempting fallback to next model due to server error %s", code)
                     continue
-                
+
                 # For 400 Bad Request or any other unexpected exceptions, we log and fallback to the next model.
                 logger.error("Exception on model '%s': %s", model.name, str(e))
                 attempted_errors.append(f"{model.name} (Exception: {type(e).__name__})")
@@ -246,7 +265,7 @@ class LLMClientPool:
 
     def __init__(self):
         self._clients_by_token: dict[str, LLMClient] = {}  # token_value -> LLMClient
-        self._role_to_token: dict[str, str] = {}            # role -> token_value
+        self._role_to_token: dict[str, str] = {}  # role -> token_value
 
     def register(self, role: str, token: str) -> LLMClient:
         """
@@ -305,8 +324,5 @@ class LLMClientPool:
         for token, roles in token_to_roles.items():
             client = self._clients_by_token.get(token)
             if client:
-                result.append({
-                    "roles": roles,
-                    "status_list": client.get_limits_status()
-                })
+                result.append({"roles": roles, "status_list": client.get_limits_status()})
         return result

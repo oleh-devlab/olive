@@ -36,7 +36,9 @@ def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem]
             if is_spill:
                 prefix += "[From yesterday] "
 
-            task_line = f"{prefix}{item.tag}{item.task_name} ({item.duration_min}m)"
+            id_str = f"[id:{item.item_id}] " if item.item_id is not None else ""
+            task_line = f"{prefix}{id_str}{item.tag}{item.task_name} ({item.duration_min}m)"
+            
             if item.total_sessions > 1:
                 task_line += f" [s. {item.session_index}/{item.total_sessions}]"
 
@@ -47,12 +49,13 @@ def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem]
             prefix = " ├──- "
             if is_spill:
                 prefix += "[From yesterday] "
-            
+
             note = item.task_name if item.task_name else "Break"
-            
+            id_str = f"[id:{item.item_id}] " if item.item_id is not None and item.task_name else ""
+
             if item.algo_notes:
                 lines.append(f" │      !!! {item.algo_notes}")
-            lines.append(f"{prefix}{note} ({item.duration_min}m)")
+            lines.append(f"{prefix}{id_str}{note} ({item.duration_min}m)")
         else:
             note = item.algo_notes if item.algo_notes else "Break"
             prefix = " ├──- "
@@ -94,6 +97,11 @@ async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, 
             "date_str": date_obj.strftime("%d.%m.%Y"),
             "weekday": date_obj.strftime("%A"),
             "blocks": _format_day_blocks(data["items"], data["spillovers"]),
+            "routine_ids": {
+                item.item_id
+                for item in data["items"] + data["spillovers"]
+                if item.item_id is not None and "routine" in item.item_type
+            },
         }
 
     return (

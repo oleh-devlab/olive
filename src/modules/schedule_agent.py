@@ -3,29 +3,32 @@ import inspect
 import disnake
 from google.genai import types
 import asyncio
-import time
 
 import core.cache as cache
 from core.utils import get_phrases, send_long_message
-from modules.llm_context_manager import LLMContextManager, UserMessageMetadata
+from modules.llm_context_manager import LLMContextManager
 from modules.schedule_agent_tools import ScheduleAgentTools
 from modules.schedule_provider import ScheduleProvider
+from modules.llm_token_budget import BudgetRepository
 
 logger = logging.getLogger(__name__)
 
-# Dedicated context manager for schedule channels so it doesn't pollute the main guild context.
-# This ensures it uses the same robust clipping (apply_restrictions) as the main bot.
-schedule_context_manager = LLMContextManager(context_file_name="schedule_agent_context.json")
+budget_name = "private"
+token_budget = BudgetRepository.get_by_name(budget_name)
+schedule_context_manager = LLMContextManager(
+    token_budget=token_budget, context_file_name="schedule_agent_context.json", budget_name=budget_name
+)
 
 UNDO_TIMEOUT_MINUTES = 15
 UNDO_TIMEOUT_SECONDS = UNDO_TIMEOUT_MINUTES * 60
+MAX_ITERATIONS = 14
 
 
 async def load_schedule_context():
     await schedule_context_manager.load_from_file()
 
 
-def _get_schedule_instruction(guild_id: int) -> str:
+def _get_schedule_instruction() -> str:
     agent_prompt = """You are a highly capable scheduling assistant.
 Your goal is to help the user manage their dynamic daily schedule, which consists of Tasks, Routines, and TimeBlocks.
 
@@ -153,7 +156,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
     """
     channel_id_str = str(message.channel.id)
 
-    system_instruction = _get_schedule_instruction(message.guild.id)
+    system_instruction = _get_schedule_instruction()
 
     tools_instance = ScheduleAgentTools(user_id)
     provider = ScheduleProvider()
@@ -184,9 +187,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
     agent_tools_schema = []
     for f in agent_tools:
-        decl = types.FunctionDeclaration.from_callable(
-            client=llm_client.client._api_client, callable=f
-        ).model_dump(exclude_unset=True, exclude_none=True)
+        decl = types.FunctionDeclaration.from_callable(client=llm_client.client._api_client, callable=f).model_dump(
+            exclude_unset=True, exclude_none=True
+        )
 
         # Interactions API requires parameters to be an object
         if "parameters" not in decl:
@@ -194,18 +197,29 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
         agent_tools_schema.append({"type": "function", **decl})
 
-    max_iterations = 7
     iteration = 0
 
     llm_len_before = len(schedule_context_manager.llm_context.get(channel_id_str, []))
     db_len_before = len(schedule_context_manager.database_context.get(channel_id_str, []))
+
+    def clean_context_from_partial_steps():
+        def _clean(ctx_dict, original_len):
+            if channel_id_str not in ctx_dict:
+                return
+            original_items = ctx_dict[channel_id_str][:original_len]
+            new_items = ctx_dict[channel_id_str][original_len:]
+            real_user_messages = [item for item in new_items if item.get("role") == "user" and "parts" in item]
+            ctx_dict[channel_id_str] = original_items + real_user_messages
+
+        _clean(schedule_context_manager.llm_context, llm_len_before)
+        _clean(schedule_context_manager.database_context, db_len_before)
 
     try:
         async with message.channel.typing():
             # I knew even as I was writing it that this loop wasn't working;
             # I just hadn't gotten around to rewriting it and passing the responsibility to the SDK yet.
             # "If it's working, don't touch it."
-            while iteration < max_iterations:
+            while iteration < MAX_ITERATIONS:
                 iteration += 1
 
                 # Fetch fresh context before each API call
@@ -218,7 +232,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                     response = await llm_client.get_interaction(
                         context,
                         system_instruction=system_instruction,
-                        max_output_tokens=2500,
+                        max_output_tokens=schedule_context_manager.token_budget.reserved_response_tokens,
                         tools=agent_tools_schema,
                         model_priority=get_phrases().get("olive", {}).get("schedule_agent_models_priority", []),
                         anticipated_tokens=anticipated_tokens,
@@ -226,6 +240,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                 except Exception as e:
                     logger.error("Error in schedule agent get_interaction: %s", e)
                     await message.reply(f"An error occurred while communicating with the model: {e}")
+                    clean_context_from_partial_steps()
                     return
 
                 candidate_tokens = 0
@@ -237,7 +252,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
                 # Save the model's steps to context
                 if getattr(response, "steps", None):
-                    schedule_context_manager.add_interaction_steps(channel_id_str, response.steps, tokens=candidate_tokens)
+                    schedule_context_manager.add_interaction_steps(
+                        channel_id_str, response.steps, tokens=candidate_tokens
+                    )
 
                 # Check if there are function calls
                 function_calls = []
@@ -263,7 +280,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                                 unique_tools.append(t)
 
                         iters_str = f" ({iteration} iteration{'s' if iteration != 1 else ''})"
-                        text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(f"- {t}" for t in unique_tools)
+                        text_response += f"\n\n---\nUsed tools{iters_str}:\n" + "\n".join(
+                            f"- {t}" for t in unique_tools
+                        )
 
                     kwargs = {}
                     if tools_instance.schedule_modified:
@@ -333,29 +352,27 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
 
             else:
                 # Reached max iterations
-                await message.reply("Agent reached the maximum number of tool iterations and was stopped.")
+                clean_context_from_partial_steps()
+                if tools_instance.schedule_modified:
+                    provider.restore_backup(user_id, backup_data)
+                    logger.info("Schedule agent for user %s reached max iterations, backup automatically restored.", user_id)
+                await message.reply("The agent reached the maximum number of tool iterations and was stopped. Don't worry, all intermediate changes have been reverted and your schedule remains unmodified.")
 
     except asyncio.CancelledError:
-        def clean_context(ctx_dict, original_len):
-            if channel_id_str not in ctx_dict: return
-            original_items = ctx_dict[channel_id_str][:original_len]
-            new_items = ctx_dict[channel_id_str][original_len:]
-            real_user_messages = [item for item in new_items if item.get("role") == "user" and "parts" in item]
-            ctx_dict[channel_id_str] = original_items + real_user_messages
-
-        clean_context(schedule_context_manager.llm_context, llm_len_before)
-        clean_context(schedule_context_manager.database_context, db_len_before)
+        clean_context_from_partial_steps()
 
         if tools_instance.schedule_modified:
             provider.restore_backup(user_id, backup_data)
             bot.dispatch("schedule_update", message.channel.id)
-            logger.info("Schedule agent for user %s was cancelled during execution, backup automatically restored.", user_id)
+            logger.info(
+                "Schedule agent for user %s was cancelled during execution, backup automatically restored.", user_id
+            )
         raise
 
     finally:
         # Apply clipping and save context
         schedule_context_manager.apply_restrictions()
-        
+
         # If cancelled, await inside finally might raise CancelledError again, but typically the first await handles it
         # However, to be completely safe, we can spawn a task
         bot.loop.create_task(schedule_context_manager.write_to_file())

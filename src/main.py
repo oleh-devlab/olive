@@ -114,7 +114,10 @@ if __name__ == "__main__":
         text = (
             get_phrases()
             .get("main", {})
-            .get("token_file_not_found", "[Error] Discord bot token not found in tokens.json or DISCORD_BOT_TOKEN env var. Bot cannot start.")
+            .get(
+                "token_file_not_found",
+                "[Error] Discord bot token not found in tokens.json or DISCORD_BOT_TOKEN env var. Bot cannot start.",
+            )
         )
         print(text)
     else:

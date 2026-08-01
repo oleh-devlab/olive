@@ -4,13 +4,14 @@ logger = logging.getLogger(__name__)
 
 import disnake
 from disnake.ext import commands
-from datetime import datetime
+from datetime import datetime, date as date_type
 
 import core.cache as cache
 from core.utils import get_phrases
 from core.time_utils import tz
 import modules.schedule_formatter as auto_timetable
 from core.eternal_message import EternalMessage
+from modules.schedule_provider import ScheduleProvider
 import settings
 
 
@@ -60,17 +61,25 @@ async def update_schedule_message(
             state["is_calculating"] = False
 
         pages = []
+        page_routine_ids = []
+        page_dates = []
 
         if error_msg:
             pages = [error_msg]
+            page_routine_ids = [set()]
+            page_dates = [None]
         elif not schedule_days:
             pages = [
                 "You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items."
             ]
+            page_routine_ids = [set()]
+            page_dates = [None]
         else:
             for day in schedule_days:
                 header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
                 blocks = day["blocks"]
+                day_routine_ids = day.get("routine_ids", set())
+                day_date = day.get("date_obj")
                 day_pages = []
                 current_page_blocks = []
                 current_len = len(header)
@@ -94,10 +103,17 @@ async def update_schedule_message(
                         part_header = f"=== {day['date_str']} ({day['weekday']}) (Part {i+1}) ===\n"
                         p = p.replace(header, part_header, 1)
                         pages.append(p)
+                        page_routine_ids.append(day_routine_ids)
+                        page_dates.append(day_date)
                 else:
                     pages.extend(day_pages)
+                    if day_pages:
+                        page_routine_ids.append(day_routine_ids)
+                        page_dates.append(day_date)
 
         state["pages"] = pages
+        state["page_routine_ids"] = page_routine_ids
+        state["page_dates"] = page_dates
         state["perf_time"] = perf_time
         state["planning_days"] = planning_days
         state["skipped_tasks_ids"] = skipped_tasks_ids
@@ -158,7 +174,37 @@ async def update_schedule_message(
         elif getattr(child, "custom_id", None) in ("schedule_next_page", "schedule_last_page"):
             child.disabled = next_disabled
 
-    view_state = (prev_disabled, next_disabled)
+    # Dynamic skip buttons for routines on the current page
+    current_routine_ids = set()
+    page_routine_ids_list = state.get("page_routine_ids", [])
+    if current_page < len(page_routine_ids_list):
+        current_routine_ids = page_routine_ids_list[current_page]
+
+    page_date = None
+    page_dates_list = state.get("page_dates", [])
+    if current_page < len(page_dates_list):
+        page_date = page_dates_list[current_page]
+
+    if page_date is not None and current_routine_ids:
+        date_str = page_date.isoformat()
+        
+        label_btn = disnake.ui.Button(
+            label="Skip rout.:",
+            style=disnake.ButtonStyle.secondary,
+            custom_id="schedule_skip_label",
+            disabled=True
+        )
+        view.add_item(label_btn)
+        
+        for rid in sorted(current_routine_ids)[:19]:
+            btn = disnake.ui.Button(
+                label=f"ID {rid}",
+                style=disnake.ButtonStyle.secondary,
+                custom_id=f"schedule_skip_{rid}_{date_str}",
+            )
+            view.add_item(btn)
+
+    view_state = (prev_disabled, next_disabled, frozenset(current_routine_ids), page_date)
 
     if state.get("last_content") != schedule_content or state.get("last_view_state") != view_state:
         try:
@@ -172,6 +218,7 @@ async def update_schedule_message(
 
             state["last_content"] = schedule_content
             state["last_view_state"] = view_state
+            state["current_view"] = view
         except Exception as e:
             logger.error(f"Error editing message: {e}")
 
@@ -245,6 +292,79 @@ class ScheduleUI(commands.Cog):
     async def cog_load(self):
         self.bot.add_view(SchedulePaginationView())
 
+    @commands.Cog.listener("on_button_click")
+    async def handle_skip_button(self, interaction: disnake.MessageInteraction):
+        custom_id = interaction.data.custom_id
+        if not custom_id.startswith("schedule_skip_"):
+            return
+
+        # Parse custom_id: "schedule_skip_{routine_id}_{YYYY-MM-DD}"
+        parts = custom_id.removeprefix("schedule_skip_").split("_", 1)
+        if len(parts) != 2:
+            return
+
+        try:
+            routine_id = int(parts[0])
+            resume_after_date = date_type.fromisoformat(parts[1])
+        except (ValueError, IndexError):
+            return
+
+        channel_id = interaction.channel_id
+        state = cache.schedule_states.get(channel_id)
+        if not state:
+            await interaction.response.send_message("State not found, wait for update.", ephemeral=True)
+            return
+
+        user_id = state["user_id"]
+
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+
+        provider = ScheduleProvider()
+        current_routine = provider.get_routine(user_id, routine_id)
+        if not current_routine:
+            try:
+                await interaction.followup.send(f"Routine {routine_id} not found.", ephemeral=True)
+            except Exception:
+                pass
+            return
+
+        current_resume = getattr(current_routine, "resume_after", None)
+        if current_resume and current_resume > resume_after_date:
+            logger.info(
+                f"[User {user_id}] Routine {routine_id} skip ignored in UI: current resume_after ({current_resume}) is later than requested ({resume_after_date})"
+            )
+            try:
+                await interaction.followup.send(
+                    f"Routine is already skipped until {current_resume.strftime('%d.%m.%Y')}.", ephemeral=True
+                )
+            except Exception:
+                pass
+            return
+
+        provider.skip_routine(user_id, routine_id, resume_after_date)
+
+        current_view = state.get("current_view")
+        if not current_view:
+            try:
+                await interaction.followup.send("View state not found, wait for update.", ephemeral=True)
+            except Exception:
+                pass
+            return
+
+        for child in current_view.children:
+            if getattr(child, "custom_id", None) == custom_id:
+                child.disabled = True
+                break
+
+        try:
+            await interaction.edit_original_response(view=current_view)
+            await interaction.followup.send(f"Routine {routine_id} skipped. The schedule will recalculate shortly.", ephemeral=True)
+        except Exception:
+            pass
+
     @commands.Cog.listener("on_schedule_update")
     async def handle_schedule_update(self, channel_id: int):
         await update_schedule_message(self.bot, channel_id, recalculate=True)
@@ -270,6 +390,8 @@ class ScheduleUI(commands.Cog):
             "last_content": "",
             "last_view_state": None,
             "pages": [],
+            "page_routine_ids": [],
+            "page_dates": [],
             "perf_time": 0.0,
             "planning_days": 0,
             "skipped_tasks_ids": [],

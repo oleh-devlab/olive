@@ -48,7 +48,11 @@ class ModelConfig:
             self._day_tokens = 0
             self._day_window_start = now
 
-        if self._week_window_start is None or now < self._week_window_start or (now - self._week_window_start) >= 604800.0:
+        if (
+            self._week_window_start is None
+            or now < self._week_window_start
+            or (now - self._week_window_start) >= 604800.0
+        ):
             self._week_requests = 0
             self._week_tokens = 0
             self._week_window_start = now
