@@ -123,6 +123,18 @@ class ScheduleAgentTools:
 
         return schd_item_formatters.format_completed_task_list(tasks, use_markdown=False)
 
+    @log_tool(modifies_schedule=True)
+    def clear_completed_tasks(self) -> str:
+        """
+        Clears all completed tasks from the user's history.
+        Use this if the user wants to delete their completed task history.
+        """
+        count = self.provider.clear_completed_tasks(self.user_id)
+        if count > 0:
+            self.schedule_modified = True
+            return f"Successfully cleared {count} completed tasks from history."
+        return "Task history is already empty."
+
     @log_tool(modifies_schedule=False)
     def list_time_blocks(self) -> str:
         """

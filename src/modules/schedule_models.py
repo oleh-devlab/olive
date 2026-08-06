@@ -26,6 +26,13 @@ Routine = BaseRoutine
 
 
 @dataclass
+class CompletedTask(Task):
+    def __post_init__(self):
+        # Disable validation for completed tasks (allow duration 0)
+        pass
+
+
+@dataclass
 class ScheduleItem:
     item_type: str  # "task", "fixed_routine", "flexible_routine"
 

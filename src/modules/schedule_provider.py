@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 
 import settings
-from modules.schedule_models import Task, TimeBlock, Routine
+from modules.schedule_models import Task, TimeBlock, Routine, CompletedTask
 
 
 def get_data_dir() -> Path:
@@ -92,6 +92,21 @@ def _task_to_dict(task: Task) -> dict:
 
 def _dict_to_task(d: dict) -> Task:
     return Task(
+        id=d.get("id"),
+        name=d.get("name", ""),
+        depends_on=d.get("depends_on", []),
+        description=d.get("description", ""),
+        duration=_deserialize_timedelta(d.get("duration", 0)) or datetime.timedelta(minutes=0),
+        deadline=_deserialize_datetime(d.get("deadline")),
+        priority=d.get("priority", 0),
+        min_chunk_duration=_deserialize_timedelta(d.get("min_chunk_duration")),
+        max_chunk_duration=_deserialize_timedelta(d.get("max_chunk_duration")),
+        break_duration=_deserialize_timedelta(d.get("break_duration", 0)) or datetime.timedelta(minutes=0),
+    )
+
+
+def _dict_to_completed_task(d: dict) -> CompletedTask:
+    return CompletedTask(
         id=d.get("id"),
         name=d.get("name", ""),
         depends_on=d.get("depends_on", []),
@@ -326,9 +341,17 @@ class ScheduleProvider:
         data = self._load_data(user_id)
         return [_dict_to_task(t) for t in data.get("tasks", [])]
 
-    def list_completed_tasks(self, user_id: int) -> List[Task]:
+    def list_completed_tasks(self, user_id: int) -> List[CompletedTask]:
         data = self._load_data(user_id)
-        return [_dict_to_task(t) for t in data.get("completed_tasks", [])]
+        return [_dict_to_completed_task(t) for t in data.get("completed_tasks", [])]
+
+    def clear_completed_tasks(self, user_id: int) -> int:
+        data = self._load_data(user_id)
+        count = len(data.get("completed_tasks", []))
+        if count > 0:
+            data["completed_tasks"] = []
+            self._save_data(user_id, data)
+        return count
 
     def spend_task_time(self, user_id: int, task_id: int, minutes: int) -> Tuple[bool, int]:
         data = self._load_data(user_id)
