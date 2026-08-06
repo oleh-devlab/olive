@@ -214,6 +214,15 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("History listed above.")
 
+    @task.sub_command(name="clear_history", description=phrases_cmd.get("cmd_task_clear_history_desc", "Clear all completed tasks from history"))
+    async def task_clear_history(self, inter: disnake.ApplicationCommandInteraction):
+        await inter.response.defer(ephemeral=True)
+        count = provider.clear_completed_tasks(inter.author.id)
+        if count > 0:
+            await inter.edit_original_response(f"Successfully cleared {count} completed tasks from history.")
+        else:
+            await inter.edit_original_response("Your task history is already empty.")
+
     @commands.slash_command(
         test_guilds=settings.guilds, description=phrases_cmd.get("cmd_timeblock_desc", "Manage time blocks")
     )
