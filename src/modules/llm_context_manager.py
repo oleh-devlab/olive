@@ -67,8 +67,8 @@ class LLMContextManager:
             logger.error("Error writing LLM context file: %s", e)
             try:
                 os.remove(temp_path)
-            except OSError:
-                pass
+            except OSError as cleanup_error:
+                logger.debug("Failed to remove temp file %s: %s", temp_path, cleanup_error)
 
     def get_interaction_context(self, discord_id: str) -> list:
         """
