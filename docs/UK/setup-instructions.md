@@ -14,7 +14,7 @@
     # Linux/MacOS
     source .venv/bin/activate
     ```
-3. Скопіювати та перейменувати файли-приклади у `src/`:
+3. Скопіювати та перейменувати файли-приклади:
     ```bash
     cp settings.py.example src/settings.py
     cp tokens.json.example src/tokens.json

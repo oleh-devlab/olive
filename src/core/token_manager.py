@@ -10,7 +10,7 @@ class TokenRegistry:
     """Centralized token storage. Reads all secrets from a single tokens.json file."""
 
     def __init__(self, config_path: str = "tokens.json"):
-        self.config_path = Path(__file__).resolve().parent.parent.parent / config_path
+        self.config_path = Path(__file__).resolve().parent.parent / config_path
 
         self._discord_token: str | None = None
         self._genai_tokens: dict[str, str] = {}
