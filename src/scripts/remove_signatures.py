@@ -9,7 +9,7 @@ def remove_signatures(filepath):
     if not path.exists():
         print(f"Error: File '{filepath}' not found.")
         sys.exit(1)
-        
+
     print(f"Loading '{filepath}'...")
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -17,9 +17,9 @@ def remove_signatures(filepath):
     except json.JSONDecodeError as e:
         print(f"Error: Failed to parse JSON from '{filepath}'.\n{e}")
         sys.exit(1)
-        
+
     removed_count = 0
-    
+
     # Context format: { "discord_id": [ { "role": "...", "interaction_step": {...} }, ... ] }
     for messages in data.values():
         for msg in messages:
@@ -27,7 +27,7 @@ def remove_signatures(filepath):
             if isinstance(step, dict) and "signature" in step:
                 del step["signature"]
                 removed_count += 1
-                
+
     if removed_count > 0:
         with open(path, "w", encoding="utf-8") as f:
             # Save using the same formatting as LLMContextManager (compact)
@@ -36,9 +36,12 @@ def remove_signatures(filepath):
     else:
         print(f"No 'signature' fields found in '{filepath}'. File was not modified.")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Removes the obsolete 'signature' field from an LLM context JSON file.")
+    parser = argparse.ArgumentParser(
+        description="Removes the obsolete 'signature' field from an LLM context JSON file."
+    )
     parser.add_argument("filename", help="Path to the JSON file (e.g. schedule_agent_context.json)")
-    
+
     args = parser.parse_args()
     remove_signatures(args.filename)

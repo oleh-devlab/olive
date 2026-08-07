@@ -357,8 +357,12 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                 clean_context_from_partial_steps()
                 if tools_instance.schedule_modified:
                     provider.restore_backup(user_id, backup_data)
-                    logger.info("Schedule agent for user %s reached max iterations, backup automatically restored.", user_id)
-                await message.reply("The agent reached the maximum number of tool iterations and was stopped. Don't worry, all intermediate changes have been reverted and your schedule remains unmodified.")
+                    logger.info(
+                        "Schedule agent for user %s reached max iterations, backup automatically restored.", user_id
+                    )
+                await message.reply(
+                    "The agent reached the maximum number of tool iterations and was stopped. Don't worry, all intermediate changes have been reverted and your schedule remains unmodified."
+                )
 
     except asyncio.CancelledError:
         clean_context_from_partial_steps()
