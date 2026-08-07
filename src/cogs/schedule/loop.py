@@ -3,12 +3,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 import asyncio
-from disnake.ext import commands, tasks
 import traceback
-import settings
 
+import settings
+from disnake.ext import commands, tasks
+
+from core import cache
 from core.task_handler import ResilientTaskHandler
-import core.cache as cache
 from modules.schedule_provider import ScheduleProvider
 
 provider = ScheduleProvider()

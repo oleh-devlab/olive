@@ -1,16 +1,17 @@
-import settings
-import inspect
 import functools
+import inspect
 
-from modules.schedule_provider import ScheduleProvider
+import settings
+
 import modules.schedule_formatter as auto_timetable
+from modules import schd_item_formatters
 from modules.schedule_exceptions import ScheduleValidationError
-import modules.schd_item_formatters as schd_item_formatters
+from modules.schedule_provider import ScheduleProvider
 from modules.schedule_validators import (
-    validate_task_creation_data,
-    validate_task_update_data,
     validate_routine_creation_data,
     validate_routine_update_data,
+    validate_task_creation_data,
+    validate_task_update_data,
 )
 
 MAX_SCHEDULE_LINES = 60

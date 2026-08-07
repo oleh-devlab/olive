@@ -1,12 +1,13 @@
-from disnake.ext import commands, tasks
 from datetime import datetime, timezone
-import psutil
+
 import disnake
+import psutil
+import settings
+from disnake.ext import commands, tasks
 
 import core.cache
 from core.task_handler import ResilientTaskHandler
-from core.utils import u_decline, format_embed_data, get_phrases
-import settings
+from core.utils import format_embed_data, get_phrases, u_decline
 
 UPDATE_SECONDS = getattr(settings, "hosting_update_seconds", 10)
 

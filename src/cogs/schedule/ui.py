@@ -2,17 +2,19 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import disnake
-from disnake.ext import commands
-from datetime import datetime, date as date_type
+from datetime import date as date_type
+from datetime import datetime
 
-import core.cache as cache
-from core.utils import get_phrases
-from core.time_utils import tz
-import modules.schedule_formatter as auto_timetable
-from core.eternal_message import EternalMessage
-from modules.schedule_provider import ScheduleProvider
+import disnake
 import settings
+from disnake.ext import commands
+
+import modules.schedule_formatter as auto_timetable
+from core import cache
+from core.eternal_message import EternalMessage
+from core.time_utils import tz
+from core.utils import get_phrases
+from modules.schedule_provider import ScheduleProvider
 
 
 async def update_schedule_message(
@@ -130,8 +132,7 @@ async def update_schedule_message(
     state["max_pages"] = len(pages)
     if current_page >= len(pages):
         current_page = len(pages) - 1
-    if current_page < 0:
-        current_page = 0
+    current_page = max(current_page, 0)
 
     state["current_page"] = current_page
 
@@ -151,7 +152,7 @@ async def update_schedule_message(
         perf_time=perf_time,
         status_text=status_text,
         update_mins=(
-            str(getattr(settings, "schedule_loop_update_seconds") // 60)
+            str(settings.schedule_loop_update_seconds // 60)
             if hasattr(settings, "schedule_loop_update_seconds")
             else "N/A"
         ),

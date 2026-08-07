@@ -1,10 +1,10 @@
 import disnake
+import settings
 from disnake.ext import commands, tasks
+from settings import paths
 
 import core.cache
 from core.utils import format_embed_data, get_phrases
-from settings import paths
-import settings
 
 UPDATE_SECONDS = getattr(settings, "active_cogs_update_seconds", 45)
 

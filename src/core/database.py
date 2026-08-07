@@ -1,6 +1,5 @@
-import sqlite3
 import logging
-from typing import Optional, List
+import sqlite3
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +8,7 @@ class DatabaseManager:
     def __init__(self, db_path: str = "olive.sqlite3"):
         self.db_path = db_path
 
-        self.conn: Optional[sqlite3.Connection] = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn: sqlite3.Connection | None = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
 
         self._apply_pragmas()
@@ -34,7 +33,7 @@ class DatabaseManager:
         cursor.execute("PRAGMA synchronous=NORMAL;")
         cursor.execute("PRAGMA foreign_keys=ON;")
 
-    def execute(self, query: str, params: tuple = ()) -> List[sqlite3.Row]:
+    def execute(self, query: str, params: tuple = ()) -> list[sqlite3.Row]:
         try:
             with self.conn:
                 cursor = self.conn.cursor()
@@ -44,7 +43,7 @@ class DatabaseManager:
             logger.error(f"Database error during query [{query}]: {e}")
             raise e
 
-    def executemany(self, query: str, param_list: List[tuple]) -> None:
+    def executemany(self, query: str, param_list: list[tuple]) -> None:
         try:
             with self.conn:
                 cursor = self.conn.cursor()

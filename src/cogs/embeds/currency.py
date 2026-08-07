@@ -1,16 +1,17 @@
-from disnake.ext import commands, tasks
-from datetime import datetime, timedelta
-import os
 import json
-import disnake
-import aiohttp
-from core.utils import format_embed_data, get_phrases
-from aiohttp import ClientTimeout
 import logging
+import os
+from datetime import datetime, timedelta
+
+import aiohttp
+import disnake
+import settings
+from aiohttp import ClientTimeout
+from disnake.ext import commands, tasks
 
 import core.cache
 from core.task_handler import ResilientTaskHandler
-import settings
+from core.utils import format_embed_data, get_phrases
 
 UPDATE_SECONDS = getattr(settings, "currency_update_seconds", 10)
 

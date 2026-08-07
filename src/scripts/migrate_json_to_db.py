@@ -1,7 +1,7 @@
-import sys
 import json
 import logging
 import sqlite3
+import sys
 from pathlib import Path
 
 src_root = Path(__file__).resolve().parent.parent

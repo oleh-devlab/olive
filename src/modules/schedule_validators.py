@@ -1,9 +1,10 @@
 import datetime
+
 import settings
 
 from core.time_utils import tz
-from modules.schedule_models import Task, Routine, TimeBlock
 from modules.schedule_exceptions import ScheduleValidationError
+from modules.schedule_models import Routine, Task, TimeBlock
 from modules.schedule_provider import ScheduleProvider
 
 

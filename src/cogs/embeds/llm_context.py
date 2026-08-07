@@ -1,10 +1,10 @@
 import disnake
+import settings
 from disnake.ext import commands, tasks
 
 import core.cache
 from core.utils import format_embed_data, get_phrases
 from modules.schedule_agent import schedule_context_manager
-import settings
 
 UPDATE_SECONDS = getattr(settings, "llm_context_update_seconds", 30)
 

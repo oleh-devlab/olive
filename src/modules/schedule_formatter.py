@@ -1,8 +1,8 @@
-import datetime
 import collections
+import datetime
 
-from modules.schedule_models import ScheduleItem
 from modules.schedule_engine import get_raw_schedule_items
+from modules.schedule_models import ScheduleItem
 
 
 def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem] = None) -> list[str]:

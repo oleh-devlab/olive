@@ -1,9 +1,14 @@
+import json
+import subprocess
+
 import disnake
 from disnake.ext import commands, tasks
-import subprocess
-import json
-
-from settings import is_battery, battery_update_seconds, min_safe_percent_charge, max_safe_percent_charge
+from settings import (
+    battery_update_seconds,
+    is_battery,
+    max_safe_percent_charge,
+    min_safe_percent_charge,
+)
 
 import core.cache
 import core.utils

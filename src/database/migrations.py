@@ -1,9 +1,9 @@
-import sqlite3
-import logging
 import importlib.util
+import logging
+import re
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-import re
 
 logger = logging.getLogger(__name__)
 

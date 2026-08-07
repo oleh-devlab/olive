@@ -1,4 +1,5 @@
 import logging
+
 from core.config import app_config
 
 initial_debug_mode = app_config.getint("DEFAULT", "debug_mode", fallback=0)

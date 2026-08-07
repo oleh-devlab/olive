@@ -3,11 +3,12 @@ import collections
 import datetime
 import time
 
+import settings
+
 from core.time_utils import tz
+from modules.automatic_timetable_py.src.scheduler import Scheduler
 from modules.schedule_models import ScheduleItem
 from modules.schedule_provider import ScheduleProvider
-from modules.automatic_timetable_py.src.scheduler import Scheduler
-import settings
 
 _solver_lock = asyncio.Lock()
 

@@ -1,10 +1,11 @@
-import disnake
-from disnake.ext import commands
 import logging
 
-import core.cache as cache
+import disnake
+from disnake.ext import commands
+
+from core import cache
 from core.utils import get_phrases
-import modules.llm_consent_manager as llm_consent_manager
+from modules import llm_consent_manager
 
 logger = logging.getLogger(__name__)
 

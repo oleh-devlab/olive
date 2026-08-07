@@ -3,16 +3,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 import asyncio
-from datetime import datetime
-from disnake.ext import commands, tasks
 import traceback
+from datetime import datetime
 
+from disnake.ext import commands, tasks
 from settings import channels, embeds_blacklist
+
 import core.cache
-from core.utils import get_phrases
+from core.eternal_message import EternalMessage
 from core.task_handler import ResilientTaskHandler
 from core.time_utils import tz
-from core.eternal_message import EternalMessage
+from core.utils import get_phrases
 
 
 class MessageLoop(commands.Cog):

@@ -1,9 +1,9 @@
 import disnake
+import settings
 from disnake.ext import commands, tasks
 
 import core.cache
 from core.utils import format_embed_data, get_phrases
-import settings
 
 UPDATE_SECONDS = getattr(settings, "llm_limits_update_seconds", 30)
 

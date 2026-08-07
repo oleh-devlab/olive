@@ -1,6 +1,6 @@
-import unittest
 import sqlite3
 import sys
+import unittest
 from pathlib import Path
 
 # Setup path so we can import from src

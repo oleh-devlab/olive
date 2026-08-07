@@ -1,8 +1,8 @@
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
-import sys
 
 # Add src to sys.path to import core
 src_root = Path(__file__).resolve().parent.parent

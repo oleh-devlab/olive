@@ -1,17 +1,18 @@
+import asyncio
+import logging
+from datetime import datetime, timezone
+
 import disnake
 from disnake import Activity, ActivityType
-import os
-import asyncio
-from datetime import datetime, timezone
-import logging
+from settings import channels, guilds, paths, safe_seconds_before_start
+
+import core.bot
+import core.cache
 import core.log_setup
 from core.config import app_config as config
 from core.time_utils import tz
-import core.bot
-import core.cache
-from core.utils import get_phrases
 from core.token_manager import token_registry
-from settings import paths, guilds, channels, safe_seconds_before_start
+from core.utils import get_phrases
 
 logging.getLogger("disnake").setLevel(logging.WARNING)
 logging.getLogger("google_genai").setLevel(logging.WARNING)

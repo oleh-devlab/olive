@@ -1,4 +1,5 @@
 import configparser
+
 from settings import paths
 
 config_ini_path = paths["config_ini"]

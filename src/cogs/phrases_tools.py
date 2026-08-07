@@ -1,12 +1,10 @@
+import difflib
+import json
 import os
 
 import disnake
 from disnake.ext import commands
-
 from settings import guilds
-
-import json
-import difflib
 
 import core.cache
 from core.utils import get_phrases

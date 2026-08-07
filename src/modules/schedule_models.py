@@ -1,11 +1,14 @@
-from dataclasses import dataclass
 import datetime
-from typing import Optional
+from dataclasses import dataclass
 
 from modules.automatic_timetable_py.src.data_structs import (
-    Task as BaseTask,
-    TimeBlock as BaseTimeBlock,
     Routine as BaseRoutine,
+)
+from modules.automatic_timetable_py.src.data_structs import (
+    Task as BaseTask,
+)
+from modules.automatic_timetable_py.src.data_structs import (
+    TimeBlock as BaseTimeBlock,
 )
 
 
@@ -16,7 +19,7 @@ class Task(BaseTask):
     with an ID and description.
     """
 
-    id: Optional[int] = None
+    id: int | None = None
     description: str = ""
 
 

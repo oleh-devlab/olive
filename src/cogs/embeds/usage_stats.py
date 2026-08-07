@@ -1,10 +1,9 @@
 import disnake
+import settings
 from disnake.ext import commands, tasks
 
-import core.cache as cache
+from core import cache
 from core.utils import format_embed_data, get_phrases
-import settings
-
 from modules.schedule_provider import ScheduleProvider
 
 UPDATE_SECONDS = getattr(settings, "usage_stats_update_seconds", 30)

@@ -4,6 +4,7 @@ logger = logging.getLogger(__name__)
 
 import json
 import os
+
 import disnake
 
 CONFIG_PATH = "webhooks_config.json"

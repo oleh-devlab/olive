@@ -1,10 +1,10 @@
-import json
 import datetime
+import json
 from pathlib import Path
-from typing import List, Tuple, Optional
 
 import settings
-from modules.schedule_models import Task, TimeBlock, Routine, CompletedTask
+
+from modules.schedule_models import CompletedTask, Routine, Task, TimeBlock
 
 
 def get_data_dir() -> Path:
@@ -21,37 +21,37 @@ def get_schedule_channels_file() -> Path:
     return get_data_dir() / "schedule_channels.json"
 
 
-def _serialize_timedelta(td: Optional[datetime.timedelta]) -> Optional[int]:
+def _serialize_timedelta(td: datetime.timedelta | None) -> int | None:
     if td is None:
         return None
     return int(td.total_seconds() // 60)
 
 
-def _deserialize_timedelta(minutes: Optional[int]) -> Optional[datetime.timedelta]:
+def _deserialize_timedelta(minutes: int | None) -> datetime.timedelta | None:
     if minutes is None:
         return None
     return datetime.timedelta(minutes=minutes)
 
 
-def _serialize_datetime(dt: Optional[datetime.datetime]) -> Optional[str]:
+def _serialize_datetime(dt: datetime.datetime | None) -> str | None:
     if dt is None:
         return None
     return dt.isoformat()
 
 
-def _deserialize_datetime(dt_str: Optional[str]) -> Optional[datetime.datetime]:
+def _deserialize_datetime(dt_str: str | None) -> datetime.datetime | None:
     if not dt_str:
         return None
     return datetime.datetime.fromisoformat(dt_str)
 
 
-def _serialize_time(t: Optional[datetime.time]) -> Optional[str]:
+def _serialize_time(t: datetime.time | None) -> str | None:
     if t is None:
         return None
     return t.strftime("%H:%M")
 
 
-def _deserialize_time(t_str: Optional[str]) -> Optional[datetime.time]:
+def _deserialize_time(t_str: str | None) -> datetime.time | None:
     if not t_str:
         return None
     try:
@@ -60,13 +60,13 @@ def _deserialize_time(t_str: Optional[str]) -> Optional[datetime.time]:
         return None
 
 
-def _serialize_date(d: Optional[datetime.date]) -> Optional[str]:
+def _serialize_date(d: datetime.date | None) -> str | None:
     if not d:
         return None
     return d.strftime("%d.%m.%Y")
 
 
-def _deserialize_date(d_str: Optional[str]) -> Optional[datetime.date]:
+def _deserialize_date(d_str: str | None) -> datetime.date | None:
     if not d_str:
         return None
     try:
@@ -330,18 +330,18 @@ class ScheduleProvider:
             return True
         return False
 
-    def get_task(self, user_id: int, task_id: int) -> Optional[Task]:
+    def get_task(self, user_id: int, task_id: int) -> Task | None:
         data = self._load_data(user_id)
         for t in data["tasks"]:
             if t.get("id") == task_id:
                 return _dict_to_task(t)
         return None
 
-    def list_tasks(self, user_id: int) -> List[Task]:
+    def list_tasks(self, user_id: int) -> list[Task]:
         data = self._load_data(user_id)
         return [_dict_to_task(t) for t in data.get("tasks", [])]
 
-    def list_completed_tasks(self, user_id: int) -> List[CompletedTask]:
+    def list_completed_tasks(self, user_id: int) -> list[CompletedTask]:
         data = self._load_data(user_id)
         return [_dict_to_completed_task(t) for t in data.get("completed_tasks", [])]
 
@@ -353,7 +353,7 @@ class ScheduleProvider:
             self._save_data(user_id, data)
         return count
 
-    def spend_task_time(self, user_id: int, task_id: int, minutes: int) -> Tuple[bool, int]:
+    def spend_task_time(self, user_id: int, task_id: int, minutes: int) -> tuple[bool, int]:
         data = self._load_data(user_id)
         target_idx = -1
         for i, t in enumerate(data["tasks"]):
@@ -415,7 +415,7 @@ class ScheduleProvider:
         self._save_data(user_id, data)
         return block.id
 
-    def list_time_blocks(self, user_id: int) -> List[TimeBlock]:
+    def list_time_blocks(self, user_id: int) -> list[TimeBlock]:
         data = self._load_data(user_id)
         blocks = data.get("time_blocks", [])
 
@@ -459,7 +459,7 @@ class ScheduleProvider:
         data.setdefault("routines", []).append(routine_dict)
         self._save_data(user_id, data)
 
-    def list_routines(self, user_id: int) -> List[Routine]:
+    def list_routines(self, user_id: int) -> list[Routine]:
         data = self._load_data(user_id)
         return [_dict_to_routine(r) for r in data.get("routines", [])]
 
@@ -478,7 +478,7 @@ class ScheduleProvider:
 
         return False
 
-    def get_routine(self, user_id: int, routine_id: int) -> Optional[Routine]:
+    def get_routine(self, user_id: int, routine_id: int) -> Routine | None:
         data = self._load_data(user_id)
         for r in data.get("routines", []):
             if r.get("id") == routine_id:

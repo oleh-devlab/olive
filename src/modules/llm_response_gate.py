@@ -2,8 +2,6 @@ import json
 import logging
 import re
 
-from google.genai import types
-
 from core.utils import get_phrases
 from modules.llm_rate_limiter import RateLimitExceeded
 

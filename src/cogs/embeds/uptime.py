@@ -1,13 +1,13 @@
 from datetime import datetime
+
 import disnake
-from disnake.ext import commands, tasks
-
-
 import settings
+from disnake.ext import commands, tasks
 from settings import is_battery
+
 import core.cache
-from core.utils import format_embed_data, get_phrases
 from core.time_utils import tz
+from core.utils import format_embed_data, get_phrases
 
 UPDATE_SECONDS = getattr(settings, "uptime_update_seconds", 30)
 

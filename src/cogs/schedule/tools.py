@@ -1,19 +1,18 @@
 import disnake
+import settings
 from disnake.ext import commands
 
-import settings
-import core.utils as utils
-import core.cache as cache
-from modules.schedule_provider import ScheduleProvider
+from core import cache, utils
+from modules import schd_item_formatters
 from modules.schedule_exceptions import ScheduleValidationError
-import modules.schd_item_formatters as schd_item_formatters
+from modules.schedule_provider import ScheduleProvider
 from modules.schedule_validators import (
-    validate_task_creation_data,
-    validate_task_update_data,
     validate_routine_creation_data,
-    validate_timeblock_creation_data,
     validate_routine_update_data,
     validate_skip_routine_data,
+    validate_task_creation_data,
+    validate_task_update_data,
+    validate_timeblock_creation_data,
 )
 
 # We can instantiate the provider here.
@@ -82,7 +81,7 @@ class AutoSchedule(commands.Cog):
         except ScheduleValidationError as e:
             await inter.edit_original_response(str(e))
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @task.sub_command(name="remove", description=phrases_cmd.get("cmd_task_remove_desc", "Remove a task by ID"))
     async def task_remove(
@@ -128,7 +127,7 @@ class AutoSchedule(commands.Cog):
             else:
                 await inter.edit_original_response(f"Subtracted {minutes} min. Remaining duration: {remaining} min.")
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @task.sub_command(
         name="edit", description=phrases_cmd.get("cmd_task_edit_desc", "Edit specific fields of an existing task")
@@ -183,7 +182,7 @@ class AutoSchedule(commands.Cog):
         except ScheduleValidationError as e:
             await inter.edit_original_response(str(e))
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @task.sub_command(
         name="info", description=phrases_cmd.get("cmd_task_info_desc", "View detailed information about a task")
@@ -251,7 +250,7 @@ class AutoSchedule(commands.Cog):
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @timeblock.sub_command(
         name="remove", description=phrases_cmd.get("cmd_timeblock_remove_desc", "Remove a time block by ID")
@@ -270,7 +269,7 @@ class AutoSchedule(commands.Cog):
             else:
                 await inter.edit_original_response(f"Invalid timeblock ID: {block_id}.")
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @timeblock.sub_command(name="list", description=phrases_cmd.get("cmd_timeblock_list_desc", "List all time blocks"))
     async def timeblock_list(self, inter: disnake.ApplicationCommandInteraction):
@@ -343,7 +342,7 @@ class AutoSchedule(commands.Cog):
             provider.add_routine(inter.author.id, r)
             await inter.edit_original_response(f"Fixed routine '{name}' added successfully.")
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @routine.sub_command(
         name="skip",
@@ -371,9 +370,9 @@ class AutoSchedule(commands.Cog):
             else:
                 await inter.edit_original_response(f"Routine {routine_id} not found.")
         except ScheduleValidationError as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @routine.sub_command(
         name="add_flexible",
@@ -432,7 +431,7 @@ class AutoSchedule(commands.Cog):
             provider.add_routine(inter.author.id, r)
             await inter.edit_original_response(f"Flexible routine '{name}' added successfully.")
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @routine.sub_command(
         name="info", description=phrases_cmd.get("cmd_routine_info_desc", "View detailed information about a routine")
@@ -536,7 +535,7 @@ class AutoSchedule(commands.Cog):
         except ScheduleValidationError as e:
             await inter.edit_original_response(str(e))
         except Exception as e:
-            await inter.edit_original_response(f"Error: {str(e)}")
+            await inter.edit_original_response(f"Error: {e!s}")
 
     @commands.slash_command(
         name="schedule_channel",

@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 class RateLimitExceeded(Exception):
     """Raised when all models have exhausted their rate limits."""
 
-    pass
 
 
 @dataclass

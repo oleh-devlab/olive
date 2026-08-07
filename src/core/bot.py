@@ -1,11 +1,11 @@
-import disnake
-from disnake.ext import commands
 from datetime import datetime, timezone
-from typing import Optional
+
+import disnake
+import settings
+from disnake.ext import commands
 
 import core.cache
 import core.database
-import settings
 
 
 class OliveBot(commands.Bot):
@@ -38,7 +38,7 @@ class OliveBot(commands.Bot):
         except Exception as e:
             print(f'[ERROR] Failed to unload cog "{name}": {e}')
 
-    async def get_or_fetch_channel(self, channel_id: int) -> Optional[disnake.abc.GuildChannel]:
+    async def get_or_fetch_channel(self, channel_id: int) -> disnake.abc.GuildChannel | None:
         """
         Searches for the channel in the cache. If it isn't found, it sends a request to the API.
         Returns the channel object or `None` if the channel does not exist or is inaccessible.

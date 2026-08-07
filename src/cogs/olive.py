@@ -1,22 +1,25 @@
-import asyncio
-import disnake
-from disnake.ext import commands
-from google.genai import types
 import logging
 import time
 
-from modules.llm_client import LLMClientPool
-from modules.llm_rate_limiter import RateLimitExceeded
-from modules.llm_context_manager import LLMContextManager
-from modules.message_metadata import UserMessageMetadata
-from modules.llm_token_budget import BudgetRepository
-from modules.llm_message_formatter import format_user_message, FormattingProfile
-from modules.llm_response_gate import want_respond
-from modules.schedule_agent import load_schedule_context, run_schedule_agent, schedule_context_manager
-import core.cache as cache
-from core.utils import get_phrases, TaskDebouncer, send_long_reply
-from core.token_manager import token_registry
+import disnake
 import settings
+from disnake.ext import commands
+
+from core import cache
+from core.token_manager import token_registry
+from core.utils import TaskDebouncer, get_phrases, send_long_reply
+from modules.llm_client import LLMClientPool
+from modules.llm_context_manager import LLMContextManager
+from modules.llm_message_formatter import FormattingProfile, format_user_message
+from modules.llm_rate_limiter import RateLimitExceeded
+from modules.llm_response_gate import want_respond
+from modules.llm_token_budget import BudgetRepository
+from modules.message_metadata import UserMessageMetadata
+from modules.schedule_agent import (
+    load_schedule_context,
+    run_schedule_agent,
+    schedule_context_manager,
+)
 
 logger = logging.getLogger(__name__)
 

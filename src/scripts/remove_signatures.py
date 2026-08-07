@@ -1,7 +1,8 @@
-import sys
-import json
 import argparse
+import json
+import sys
 from pathlib import Path
+
 
 def remove_signatures(filepath):
     path = Path(filepath)
