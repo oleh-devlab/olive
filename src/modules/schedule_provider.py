@@ -296,12 +296,15 @@ class ScheduleProvider:
         if task.priority < 0:
             raise ValueError("priority must be >= 0.")
 
-        if task.min_chunk_duration is not None and task.max_chunk_duration is not None:
-            if (
+        if (
+            task.min_chunk_duration is not None
+            and task.max_chunk_duration is not None
+            and (
                 task.min_chunk_duration <= datetime.timedelta(minutes=0)
                 or task.min_chunk_duration > task.max_chunk_duration
-            ):
-                raise ValueError("min_chunk_duration must be > 0 and <= max_chunk_duration.")
+            )
+        ):
+            raise ValueError("min_chunk_duration must be > 0 and <= max_chunk_duration.")
 
     def add_task(self, user_id: int, task: Task) -> int:
         self._validate_task(task)

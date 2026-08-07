@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import disnake
 from disnake.ext import commands
 
@@ -18,7 +20,10 @@ class LLMLimitsEmbed(BaseEmbedCog):
     phrases_section = "llm_limits_embed"
     settings_key = "llm_limits_update_seconds"
     default_seconds = 30
-    fallback_embed = {"title": ":robot: | LLM API Limits", "description": "Current consumption of LLM models"}
+    fallback_embed: ClassVar[dict] = {
+        "title": ":robot: | LLM API Limits",
+        "description": "Current consumption of LLM models",
+    }
 
     async def decorate(self, embed: disnake.Embed) -> None:
         """Append current consumption stats, or say so when the pool never came up."""

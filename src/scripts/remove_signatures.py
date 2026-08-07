@@ -21,7 +21,7 @@ def remove_signatures(filepath):
     removed_count = 0
     
     # Context format: { "discord_id": [ { "role": "...", "interaction_step": {...} }, ... ] }
-    for guild_id, messages in data.items():
+    for messages in data.values():
         for msg in messages:
             step = msg.get("interaction_step")
             if isinstance(step, dict) and "signature" in step:

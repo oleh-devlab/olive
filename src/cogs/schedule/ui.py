@@ -1,7 +1,4 @@
 import logging
-
-logger = logging.getLogger(__name__)
-
 from datetime import date as date_type
 from datetime import datetime
 
@@ -15,6 +12,8 @@ from core.eternal_message import EternalMessage
 from core.time_utils import tz
 from core.utils import get_phrases
 from modules.schedule_provider import ScheduleProvider
+
+logger = logging.getLogger(__name__)
 
 
 async def update_schedule_message(
@@ -162,7 +161,7 @@ async def update_schedule_message(
         schedule_content += f"\n\n*Tasks that didn't fit (IDs): {', '.join(map(str, skipped_tasks_ids))}*"
 
     if skipped_routines:
-        prefix = "\n" if not skipped_tasks_ids else "\n"
+        prefix = "\n\n" if not skipped_tasks_ids else "\n"
         schedule_content += f"{prefix}*Skipped routines:*\n" + "\n".join(f"- {r}" for r in skipped_routines)
 
     view = SchedulePaginationView()
@@ -188,15 +187,12 @@ async def update_schedule_message(
 
     if page_date is not None and current_routine_ids:
         date_str = page_date.isoformat()
-        
+
         label_btn = disnake.ui.Button(
-            label="Skip rout.:",
-            style=disnake.ButtonStyle.secondary,
-            custom_id="schedule_skip_label",
-            disabled=True
+            label="Skip rout.:", style=disnake.ButtonStyle.secondary, custom_id="schedule_skip_label", disabled=True
         )
         view.add_item(label_btn)
-        
+
         for rid in sorted(current_routine_ids)[:19]:
             btn = disnake.ui.Button(
                 label=f"ID {rid}",
@@ -228,7 +224,9 @@ class SchedulePaginationView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    async def change_page(self, interaction: disnake.MessageInteraction, delta: int = None, to_page: int = None):
+    async def change_page(
+        self, interaction: disnake.MessageInteraction, delta: int | None = None, to_page: int | None = None
+    ):
         channel_id = interaction.channel_id
         phrases = get_phrases(interaction.guild.id if interaction.guild else None).get("schedule", {})
 
@@ -242,8 +240,8 @@ class SchedulePaginationView(disnake.ui.View):
 
         try:
             await interaction.response.defer()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to defer pagination interaction: %s", e)
 
         if to_page is not None:
             if to_page == -1:
@@ -259,8 +257,8 @@ class SchedulePaginationView(disnake.ui.View):
         if should_recalc and state.get("is_calculating", False):
             try:
                 await interaction.followup.send("Please wait, the schedule is currently calculating.", ephemeral=True)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to send 'calculating' notice: %s", e)
             return
 
         await update_schedule_message(interaction.bot, channel_id, recalculate=should_recalc, interaction=interaction)
@@ -320,16 +318,16 @@ class ScheduleUI(commands.Cog):
 
         try:
             await interaction.response.defer()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to defer skip-routine interaction: %s", e)
 
         provider = ScheduleProvider()
         current_routine = provider.get_routine(user_id, routine_id)
         if not current_routine:
             try:
                 await interaction.followup.send(f"Routine {routine_id} not found.", ephemeral=True)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to send 'routine not found' notice: %s", e)
             return
 
         current_resume = getattr(current_routine, "resume_after", None)
@@ -341,8 +339,8 @@ class ScheduleUI(commands.Cog):
                 await interaction.followup.send(
                     f"Routine is already skipped until {current_resume.strftime('%d.%m.%Y')}.", ephemeral=True
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to send 'already skipped' notice: %s", e)
             return
 
         provider.skip_routine(user_id, routine_id, resume_after_date)
@@ -351,8 +349,8 @@ class ScheduleUI(commands.Cog):
         if not current_view:
             try:
                 await interaction.followup.send("View state not found, wait for update.", ephemeral=True)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to send 'view state not found' notice: %s", e)
             return
 
         for child in current_view.children:
@@ -362,7 +360,9 @@ class ScheduleUI(commands.Cog):
 
         try:
             await interaction.edit_original_response(view=current_view)
-            await interaction.followup.send(f"Routine {routine_id} skipped. The schedule will recalculate shortly.", ephemeral=True)
+            await interaction.followup.send(
+                f"Routine {routine_id} skipped. The schedule will recalculate shortly.", ephemeral=True
+            )
         except Exception:
             pass
 

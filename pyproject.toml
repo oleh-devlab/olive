@@ -21,4 +21,5 @@ ignore = [
     "RUF001",
     "RUF002",
     "RUF003",
+    "PERF203",
 ]

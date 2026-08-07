@@ -89,9 +89,7 @@ class ModelConfig:
             return False
         if self.rpw is not None and self._week_requests >= self.rpw:
             return False
-        if self.tpm is not None and (self._minute_tokens + anticipated_tokens) >= self.tpm:
-            return False
-        return True
+        return not (self.tpm is not None and (self._minute_tokens + anticipated_tokens) >= self.tpm)
 
     def record_request(self, now: float):
         """Increment counters after a successful request or for reservation."""

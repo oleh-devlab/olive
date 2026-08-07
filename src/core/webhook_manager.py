@@ -1,11 +1,10 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
 import json
+import logging
 import os
 
 import disnake
+
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "webhooks_config.json"
 
@@ -37,8 +36,8 @@ class WebhookManager:
             logger.error(f"Error saving config: {e}")
             try:
                 os.remove(temp_path)
-            except OSError:
-                pass
+            except OSError as cleanup_error:
+                logger.debug("Failed to remove temp file %s: %s", temp_path, cleanup_error)
 
     async def get_or_create_webhook(self, bot, channel: disnake.TextChannel):
         """

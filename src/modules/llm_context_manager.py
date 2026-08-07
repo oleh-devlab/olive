@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from typing import ClassVar
 
 from modules.llm_token_budget import LLMTokenBudget
 from modules.message_metadata import UserMessageMetadata
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMContextManager:
-    _registry: dict[str, "LLMContextManager"] = {}
+    _registry: ClassVar[dict[str, "LLMContextManager"]] = {}
 
     def __init__(
         self,
@@ -66,8 +67,8 @@ class LLMContextManager:
             logger.error("Error writing LLM context file: %s", e)
             try:
                 os.remove(temp_path)
-            except OSError:
-                pass
+            except OSError as cleanup_error:
+                logger.debug("Failed to remove temp file %s: %s", temp_path, cleanup_error)
 
     def get_interaction_context(self, discord_id: str) -> list:
         """
@@ -316,10 +317,7 @@ class LLMContextManager:
 
         # Check if it's a function result
         step = msg.get("interaction_step", {})
-        if isinstance(step, dict) and step.get("type") == "function_result":
-            return False
-
-        return True
+        return not (isinstance(step, dict) and step.get("type") == "function_result")
 
     def apply_restrictions(self):
         """
@@ -328,7 +326,7 @@ class LLMContextManager:
         """
         effective_limit = self.token_budget.context_tokens
 
-        for discord_id, messages in self.llm_context.items():
+        for messages in self.llm_context.values():
             total_tokens = sum(self.get_message_tokens(m) for m in messages)
 
             while messages and total_tokens > effective_limit:

@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from disnake.ext import commands
 from settings import paths
 
@@ -12,7 +14,7 @@ class ActiveCogsEmbed(BaseEmbedCog):
     phrases_section = "active_cogs_embed"
     settings_key = "active_cogs_update_seconds"
     default_seconds = 45
-    fallback_embed = {"title": ":electric_plug: | Active Cogs", "description": "No data available."}
+    fallback_embed: ClassVar[dict] = {"title": ":electric_plug: | Active Cogs", "description": "No data available."}
 
     async def get_data(self):
         formatted_cogs_list = "\n".join(

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import ClassVar
 
 import disnake
 import psutil
@@ -27,7 +28,7 @@ class Hosting(BaseEmbedCog):
     phrases_key = "server_embed_data"
     settings_key = "hosting_update_seconds"
     default_seconds = 10
-    fallback_embed = {"title": ":nut_and_bolt: | Server"}
+    fallback_embed: ClassVar[dict] = {"title": ":nut_and_bolt: | Server"}
 
     async def get_taimer_embed(self):
         test_datetime = datetime(2025, 5, 14, 0, 0, 0)

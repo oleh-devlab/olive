@@ -259,10 +259,9 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                     )
 
                 # Check if there are function calls
-                function_calls = []
-                for step in getattr(response, "steps", []):
-                    if getattr(step, "type", "") == "function_call":
-                        function_calls.append(step)
+                function_calls = [
+                    step for step in getattr(response, "steps", []) if getattr(step, "type", "") == "function_call"
+                ]
 
                 if not function_calls:
                     # No function calls, the model responded with text.

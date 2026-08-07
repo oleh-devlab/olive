@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import disnake
 from disnake.ext import commands
 
@@ -48,7 +50,7 @@ class LLMContextEmbed(BaseEmbedCog):
     phrases_section = "llm_context_embed"
     settings_key = "llm_context_update_seconds"
     default_seconds = 30
-    fallback_embed = {"title": ":brain: | LLM Context", "description": "Token usage per server context"}
+    fallback_embed: ClassVar[dict] = {"title": ":brain: | LLM Context", "description": "Token usage per server context"}
 
     async def decorate(self, embed: disnake.Embed) -> None:
         olive_cog = self.bot.get_cog("AIAssistantCog")

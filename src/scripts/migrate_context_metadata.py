@@ -8,7 +8,7 @@ from pathlib import Path
 src_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(src_root))
 
-from core.time_utils import tz
+from core.time_utils import tz  # noqa: E402
 
 
 def migrate_context(input_path: Path, output_path: Path):
@@ -29,7 +29,7 @@ def migrate_context(input_path: Path, output_path: Path):
     migrated_users = 0
     migrated_models = 0
 
-    for guild_id, messages in data.items():
+    for messages in data.values():
         last_timestamp = 0
 
         for msg in messages:
@@ -44,7 +44,7 @@ def migrate_context(input_path: Path, output_path: Path):
                     text = parts[0].get("text", "")
                     match = tag_pattern.search(text)
                     if match:
-                        time_str, display_name, user_name, content = match.groups()
+                        time_str, display_name, user_name, _content = match.groups()
 
                         try:
                             # Convert the timestamp string to POSIX milliseconds

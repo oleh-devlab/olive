@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import ClassVar
 
 import settings
 from disnake.ext import commands
@@ -13,7 +14,7 @@ class UptimeEmbed(BaseEmbedCog):
     phrases_section = "uptime_embed"
     settings_key = "uptime_update_seconds"
     default_seconds = 30
-    fallback_embed = {"title": ":clock1: | Uptime", "description": "`{uptime_str}\n{cost_str}`"}
+    fallback_embed: ClassVar[dict] = {"title": ":clock1: | Uptime", "description": "`{uptime_str}\n{cost_str}`"}
 
     def __init__(self, bot):
         self.watt = 0.6
