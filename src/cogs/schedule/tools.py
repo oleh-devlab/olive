@@ -213,7 +213,10 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("History listed above.")
 
-    @task.sub_command(name="clear_history", description=phrases_cmd.get("cmd_task_clear_history_desc", "Clear all completed tasks from history"))
+    @task.sub_command(
+        name="clear_history",
+        description=phrases_cmd.get("cmd_task_clear_history_desc", "Clear all completed tasks from history"),
+    )
     async def task_clear_history(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
         count = provider.clear_completed_tasks(inter.author.id)
