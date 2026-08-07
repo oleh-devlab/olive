@@ -41,7 +41,7 @@ class DatabaseManager:
                 return cursor.fetchall()
         except sqlite3.Error as e:
             logger.error(f"Database error during query [{query}]: {e}")
-            raise e
+            raise
 
     def executemany(self, query: str, param_list: list[tuple]) -> None:
         try:
@@ -50,7 +50,7 @@ class DatabaseManager:
                 cursor.executemany(query, param_list)
         except sqlite3.Error as e:
             logger.error(f"Database error during executemany [{query}]: {e}")
-            raise e
+            raise
 
     def close(self):
         if self.conn:

@@ -24,8 +24,7 @@ def format_completed_task_list(tasks, use_markdown: bool = False) -> str:
     b, c = ("**", "`") if use_markdown else ("", "")
     lines = [f"{b}Completed Tasks:{b}"] if use_markdown else []
 
-    for t in tasks:
-        lines.append(f"{c}[ID: {t.id}]{c} {b}{t.name}{b} (Priority: {t.priority})")
+    lines.extend(f"{c}[ID: {t.id}]{c} {b}{t.name}{b} (Priority: {t.priority})" for t in tasks)
 
     return "\n".join(lines)
 

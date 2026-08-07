@@ -105,12 +105,12 @@ class LLMClient:
     async def get_interaction(
         self,
         input_data: str | Any,
-        system_instruction: str = None,
-        response_format: list = None,
-        max_output_tokens: int = None,
+        system_instruction: str | None = None,
+        response_format: list | None = None,
+        max_output_tokens: int | None = None,
         cheap_first: bool = False,
         model_priority: list[str] | None = None,
-        tools: list = None,
+        tools: list | None = None,
         *,
         anticipated_tokens: int,
     ):
@@ -161,13 +161,12 @@ class LLMClient:
                     # Input could be a pydantic object or dict.
                     step_dict = step.copy() if isinstance(step, dict) else step
                     
-                    if isinstance(step_dict, dict):
-                        if not is_gemini:
-                            # Strip thoughts for Gemma
-                            if step_dict.get("type") == "thought":
-                                continue
-                            # Strip signature for Gemma
-                            step_dict.pop("signature", None)
+                    if isinstance(step_dict, dict) and not is_gemini:
+                        # Strip thoughts for Gemma
+                        if step_dict.get("type") == "thought":
+                            continue
+                        # Strip signature for Gemma
+                        step_dict.pop("signature", None)
                             
                     model_input.append(step_dict)
 

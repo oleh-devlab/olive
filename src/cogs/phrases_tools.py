@@ -58,7 +58,7 @@ class PhrasesTools(commands.Cog):
 
         for i, k in enumerate(keys[:-1]):
             if k not in current or not isinstance(current[k], dict):
-                available = [f"`{key}`" for key in current.keys()] if isinstance(current, dict) else []
+                available = [f"`{key}`" for key in current] if isinstance(current, dict) else []
                 await inter.edit_original_response(
                     content=f"Ключ `{k}` не знайдено або він не є словником на рівні `{'/'.join(keys[:i]) or 'root'}`.\nДоступні ключі: {', '.join(available) or 'Порожньо'}"
                 )
@@ -69,7 +69,7 @@ class PhrasesTools(commands.Cog):
 
         if action == "read":
             if last_key not in current:
-                available = [f"`{key}`" for key in current.keys()] if isinstance(current, dict) else []
+                available = [f"`{key}`" for key in current] if isinstance(current, dict) else []
                 await inter.edit_original_response(
                     content=f"Ключ `{last_key}` не знайдено.\nДоступні ключі тут: {', '.join(available) or 'Порожньо'}"
                 )
@@ -87,7 +87,7 @@ class PhrasesTools(commands.Cog):
                 return
 
             if last_key not in current:
-                available = [f"`{key}`" for key in current.keys()] if isinstance(current, dict) else []
+                available = [f"`{key}`" for key in current] if isinstance(current, dict) else []
                 await inter.edit_original_response(
                     content=f"Ключ `{last_key}` не знайдено для редагування.\nДоступні ключі: {', '.join(available) or 'Порожньо'}"
                 )

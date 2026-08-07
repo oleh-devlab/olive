@@ -5,7 +5,7 @@ from modules.schedule_engine import get_raw_schedule_items
 from modules.schedule_models import ScheduleItem
 
 
-def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem] = None) -> list[str]:
+def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem] | None = None) -> list[str]:
     """Format items into visual timeline blocks, in chronological order (start on top, end on bottom)."""
     blocks = []
 
@@ -116,8 +116,8 @@ async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, 
 
 async def get_schedule(client_ID: int) -> str:
     """Returns a full formatted schedule string for the agent."""
-    days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await _get_parsed_schedule_days(
-        client_ID
+    days, _solve_time, _planning_days, _skipped_tasks_ids, _skipped_routines, _status_text = (
+        await _get_parsed_schedule_days(client_ID)
     )
     if not days:
         return "You don't have any tasks or routines yet. Use `/task add` or `/routine add_flexible` to add your first items.\n"

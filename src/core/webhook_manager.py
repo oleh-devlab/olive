@@ -1,11 +1,10 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
 import json
+import logging
 import os
 
 import disnake
+
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "webhooks_config.json"
 

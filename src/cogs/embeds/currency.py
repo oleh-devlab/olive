@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta
+from typing import ClassVar
 
 import aiohttp
 from aiohttp import ClientTimeout
@@ -18,7 +19,7 @@ class CurrencyEmbed(BaseEmbedCog):
     phrases_key = "currency_embed_data"
     settings_key = "currency_update_seconds"
     default_seconds = 10
-    fallback_embed = {"title": ":dollar: | Currency"}
+    fallback_embed: ClassVar[dict] = {"title": ":dollar: | Currency"}
 
     def __init__(self, bot):
         self.usd_eur_test = {"usd": 0, "eur": 0}
@@ -57,9 +58,8 @@ class CurrencyEmbed(BaseEmbedCog):
     async def _fetch_currencies(self):
         logger.debug("Run currency update.")
 
-        async with aiohttp.ClientSession(timeout=self.HTTP_TIMEOUT) as session:
-            async with session.get(self.url) as response:
-                data = await response.json()
+        async with aiohttp.ClientSession(timeout=self.HTTP_TIMEOUT) as session, session.get(self.url) as response:
+            data = await response.json()
 
         return {
             item.get("cc"): {"rate": item.get("rate"), "date": item.get("exchangedate")}

@@ -1,10 +1,10 @@
 import logging
 
-logger = logging.getLogger(__name__)
-
 import disnake
 
 from core.webhook_manager import webhook_manager
+
+logger = logging.getLogger(__name__)
 
 
 class EternalMessage:
@@ -65,7 +65,7 @@ class EternalMessage:
 
         return True
 
-    async def update(self, fallback_kwargs: dict = None, **kwargs):
+    async def update(self, fallback_kwargs: dict | None = None, **kwargs):
         """
         Updates the message. If it was deleted, recreates it automatically.
         `fallback_kwargs` is used to recreate the message if `kwargs` only contains partial data

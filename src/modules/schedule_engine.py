@@ -119,19 +119,19 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
                 )
             )
 
-        for tb in getattr(result, "scheduled_timeblocks", []):
-            items.append(
-                ScheduleItem(
-                    item_type="time_block",
-                    task_name=tb.name,
-                    dt_start=tb.start_time,
-                    dt_end=tb.end_time,
-                    session_index="1",
-                    total_sessions=1,
-                    algo_notes="",
-                    item_id=getattr(tb, "id", None),
-                )
+        items.extend(
+            ScheduleItem(
+                item_type="time_block",
+                task_name=tb.name,
+                dt_start=tb.start_time,
+                dt_end=tb.end_time,
+                session_index="1",
+                total_sessions=1,
+                algo_notes="",
+                item_id=getattr(tb, "id", None),
             )
+            for tb in getattr(result, "scheduled_timeblocks", [])
+        )
 
     items.sort(key=lambda x: x.dt_start)
 

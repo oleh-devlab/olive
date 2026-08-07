@@ -1,8 +1,5 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
 import asyncio
+import logging
 import traceback
 
 import settings
@@ -11,6 +8,8 @@ from disnake.ext import commands, tasks
 from core import cache
 from core.task_handler import ResilientTaskHandler
 from modules.schedule_provider import ScheduleProvider
+
+logger = logging.getLogger(__name__)
 
 provider = ScheduleProvider()
 
@@ -27,7 +26,7 @@ class ScheduleMessageLoop(commands.Cog):
     @tasks.loop(seconds=getattr(settings, "schedule_loop_update_seconds", 600))
     async def main_loop(self):
         data = provider.load_channels()
-        for user_id_str, info in data.items():
+        for info in data.values():
             channel_id = info.get("channel_id")
             if channel_id:
                 try:

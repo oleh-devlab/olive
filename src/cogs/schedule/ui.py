@@ -1,7 +1,4 @@
 import logging
-
-logger = logging.getLogger(__name__)
-
 from datetime import date as date_type
 from datetime import datetime
 
@@ -15,6 +12,8 @@ from core.eternal_message import EternalMessage
 from core.time_utils import tz
 from core.utils import get_phrases
 from modules.schedule_provider import ScheduleProvider
+
+logger = logging.getLogger(__name__)
 
 
 async def update_schedule_message(
@@ -228,7 +227,9 @@ class SchedulePaginationView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    async def change_page(self, interaction: disnake.MessageInteraction, delta: int = None, to_page: int = None):
+    async def change_page(
+        self, interaction: disnake.MessageInteraction, delta: int | None = None, to_page: int | None = None
+    ):
         channel_id = interaction.channel_id
         phrases = get_phrases(interaction.guild.id if interaction.guild else None).get("schedule", {})
 

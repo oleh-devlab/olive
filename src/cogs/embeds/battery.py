@@ -1,5 +1,6 @@
 import json
 import subprocess
+from typing import ClassVar
 
 from disnake.ext import commands
 from settings import is_battery, max_safe_percent_charge, min_safe_percent_charge
@@ -17,7 +18,10 @@ class Battery(BaseEmbedCog):
     phrases_key = "battery_embed"
     settings_key = "battery_update_seconds"
     default_seconds = 180
-    fallback_embed = {"title": ":battery: | Battery Information", "description": "Error with getting text."}
+    fallback_embed: ClassVar[dict] = {
+        "title": ":battery: | Battery Information",
+        "description": "Error with getting text.",
+    }
 
     def should_start(self) -> bool:
         # raw_embed = get_phrases().get("battery_embed", {}).get("no_battery_embed", {"title": ":battery: | No battery information available", "description": "This device does not have battery information or it cannot be accessed."})
@@ -29,7 +33,7 @@ class Battery(BaseEmbedCog):
         Cyclic update of the battery information embed from Termux
         """
 
-        result = subprocess.run(["termux-battery-status"], capture_output=True, text=True)
+        result = subprocess.run(["termux-battery-status"], capture_output=True, text=True, check=False)
         if result.returncode != 0:
             print("Error occurred while fetching battery information")
             return None

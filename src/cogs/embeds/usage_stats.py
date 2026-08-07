@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from disnake.ext import commands
 
 from core import cache
@@ -10,7 +12,7 @@ class UsageStatsEmbed(BaseEmbedCog):
     phrases_section = "usage_stats_embed"
     settings_key = "usage_stats_update_seconds"
     default_seconds = 30
-    fallback_embed = {
+    fallback_embed: ClassVar[dict] = {
         "title": ":chart_with_upwards_trend: | Usage Statistics",
         "description": "Schedule users: `{schedule_users}`\nLLM consented: `{llm_consented}`",
     }

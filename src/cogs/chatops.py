@@ -24,7 +24,9 @@ class ChatOps(commands.Cog):
 
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
-    async def git_pull(self, inter: disnake.ApplicationCommandInteraction, remote: str = None, branch: str = None):
+    async def git_pull(
+        self, inter: disnake.ApplicationCommandInteraction, remote: str | None = None, branch: str | None = None
+    ):
         await inter.response.defer(ephemeral=True)
 
         safe_pattern = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-\/]*$")
@@ -72,7 +74,7 @@ class ChatOps(commands.Cog):
 
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
-    async def reload_cogs(self, inter: disnake.ApplicationCommandInteraction, cog_name: str = None):
+    async def reload_cogs(self, inter: disnake.ApplicationCommandInteraction, cog_name: str | None = None):
         if cog_name:
             extension_name = f"{cogs_directory}.{cog_name}"
             available_cogs = self.get_available_cogs()
@@ -95,7 +97,7 @@ class ChatOps(commands.Cog):
 
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()
-    async def unload_cogs(self, inter: disnake.ApplicationCommandInteraction, cog_name: str = None):
+    async def unload_cogs(self, inter: disnake.ApplicationCommandInteraction, cog_name: str | None = None):
         if cog_name:
             extension_name = f"{cogs_directory}.{cog_name}"
             if extension_name in self.bot.extensions:

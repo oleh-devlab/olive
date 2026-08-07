@@ -35,13 +35,17 @@ def dump_schema(conn: sqlite3.Connection) -> str:
 
         # Columns: cid, name, type, notnull, dflt_value, pk
         cursor.execute(f"PRAGMA table_info({table})")
-        for col in cursor.fetchall():
-            schema_dump.append(f"  COL: {col[1]} | type:{col[2]} | notnull:{col[3]} | dflt:{col[4]} | pk:{col[5]}")
+        schema_dump.extend(
+            f"  COL: {col[1]} | type:{col[2]} | notnull:{col[3]} | dflt:{col[4]} | pk:{col[5]}"
+            for col in cursor.fetchall()
+        )
 
         # Foreign Keys: id, seq, table, from, to, on_update, on_delete, match
         cursor.execute(f"PRAGMA foreign_key_list({table})")
-        for fk in sorted(cursor.fetchall(), key=lambda x: (x[0], x[1])):
-            schema_dump.append(f"  FK: {fk[3]} -> {fk[2]}({fk[4]}) ON UPDATE {fk[5]} ON DELETE {fk[6]}")
+        schema_dump.extend(
+            f"  FK: {fk[3]} -> {fk[2]}({fk[4]}) ON UPDATE {fk[5]} ON DELETE {fk[6]}"
+            for fk in sorted(cursor.fetchall(), key=lambda x: (x[0], x[1]))
+        )
 
         # Indexes: seq, name, unique, origin, partial
         cursor.execute(f"PRAGMA index_list({table})")
@@ -51,8 +55,7 @@ def dump_schema(conn: sqlite3.Connection) -> str:
                 continue
             schema_dump.append(f"  IDX: {idx[1]} | unique:{idx[2]}")
             cursor.execute(f"PRAGMA index_info('{idx[1]}')")
-            for ic in cursor.fetchall():
-                schema_dump.append(f"    IDX_COL: {ic[2]}")
+            schema_dump.extend(f"    IDX_COL: {ic[2]}" for ic in cursor.fetchall())
 
     # Views and Triggers
     cursor.execute("SELECT type, name, sql FROM sqlite_master WHERE type IN ('view', 'trigger') ORDER BY type, name")

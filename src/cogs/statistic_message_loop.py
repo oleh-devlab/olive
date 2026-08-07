@@ -1,8 +1,5 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
 import asyncio
+import logging
 import traceback
 from datetime import datetime
 
@@ -14,6 +11,8 @@ from core.eternal_message import EternalMessage
 from core.task_handler import ResilientTaskHandler
 from core.time_utils import tz
 from core.utils import get_phrases
+
+logger = logging.getLogger(__name__)
 
 
 class MessageLoop(commands.Cog):

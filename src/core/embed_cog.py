@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import disnake
 import settings
 from disnake.ext import commands, tasks
@@ -21,7 +23,7 @@ class BaseEmbedCog(commands.Cog):
     phrases_key: str = "embed_data"  # subkey inside that section
     settings_key: str = ""  # settings.py attribute holding the interval
     default_seconds: int = 30
-    fallback_embed: dict = {"title": "Embed", "description": "No data available."}
+    fallback_embed: ClassVar[dict] = {"title": "Embed", "description": "No data available."}
 
     def __init__(self, bot):
         self.bot = bot

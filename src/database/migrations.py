@@ -31,7 +31,7 @@ class MigrationRunner:
     must be unique across both file types.
     """
 
-    def __init__(self, conn: sqlite3.Connection, migrations_dir: Path = None):
+    def __init__(self, conn: sqlite3.Connection, migrations_dir: Path | None = None):
         self.conn = conn
         if migrations_dir is None:
             self.migrations_dir = Path(__file__).resolve().parent

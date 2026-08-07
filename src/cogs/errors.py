@@ -153,7 +153,7 @@ class Errors(commands.Cog):
             await ctx_or_inter.reply(text)
             self.last_time_not_found = datetime.now(timezone.utc)
 
-        elif isinstance(error, commands.NotOwner) or isinstance(error, commands.MissingPermissions):
+        elif isinstance(error, (commands.NotOwner, commands.MissingPermissions)):
             message = (
                 get_phrases(guild_id)
                 .get("errors", {})
