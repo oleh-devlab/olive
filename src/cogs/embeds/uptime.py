@@ -1,38 +1,31 @@
 from datetime import datetime
 
-import disnake
 import settings
-from disnake.ext import commands, tasks
+from disnake.ext import commands
 from settings import is_battery
 
-import core.cache
+from core.embed_cog import BaseEmbedCog
 from core.time_utils import tz
-from core.utils import format_embed_data, get_phrases
-
-UPDATE_SECONDS = getattr(settings, "uptime_update_seconds", 30)
 
 
-class UptimeEmbed(commands.Cog):
+class UptimeEmbed(BaseEmbedCog):
+    embed_key = "uptime"
+    phrases_section = "uptime_embed"
+    settings_key = "uptime_update_seconds"
+    default_seconds = 30
+    fallback_embed = {"title": ":clock1: | Uptime", "description": "`{uptime_str}\n{cost_str}`"}
+
     def __init__(self, bot):
-        self.bot = bot
-
         self.watt = 0.6
-
         self.start_time = datetime.now(tz)  # Approximate bot start time
 
-        self.update_uptime.start()
+        super().__init__(bot)
 
-    def cog_unload(self):
-        self.update_uptime.cancel()
-
-    @tasks.loop(seconds=UPDATE_SECONDS)
-    async def update_uptime(self):
+    async def get_data(self):
         """
-        Update the uptime embed with the current uptime and estimated cost based on power consumption.
+        Report the current uptime and the estimated cost based on power consumption.
         """
-
-        now = datetime.now(tz)
-        delta = now - self.start_time
+        delta = datetime.now(tz) - self.start_time
         days = delta.days
         hours, remainder = divmod(delta.seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
@@ -43,35 +36,14 @@ class UptimeEmbed(commands.Cog):
             else f"{hours} год. {minutes} хв. {seconds} сек."
         )
 
-        if is_battery:
-            cost_kwh = getattr(settings, "cost_kwh", 4.32)
-        else:
-            cost_kwh = 0
-
+        cost_kwh = getattr(settings, "cost_kwh", 4.32) if is_battery else 0
         uptime_all_hours = delta.total_seconds() / 3600
-
         cost_session = (self.watt / 1000) * uptime_all_hours * cost_kwh
 
         cost_str = f"{cost_session:.4f}{'' if is_battery else '(VPS)'} uah."
 
-        raw_embed_data = (
-            get_phrases()
-            .get("uptime_embed", {})
-            .get("embed_data", {"title": ":clock1: | Uptime", "description": "`{uptime_str}\n{cost_str}`"})
-        )
-        formatted_embed_data = format_embed_data(raw_embed_data, uptime_str=uptime_str, cost_str=cost_str)
-        embed = disnake.Embed.from_dict(formatted_embed_data)
-
-        footer_text = (
-            get_phrases()
-            .get("utils", {})
-            .get("update_interval", "Updates every {seconds} seconds.")
-            .format(seconds=UPDATE_SECONDS)
-        )
-        embed.set_footer(text=footer_text)
-
-        core.cache.embeds_to_send["uptime"] = embed
+        return {"uptime_str": uptime_str, "cost_str": cost_str}
 
 
-def setup(bot):
+def setup(bot: commands.Bot) -> None:
     bot.add_cog(UptimeEmbed(bot))

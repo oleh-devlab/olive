@@ -2,14 +2,10 @@ from datetime import datetime, timezone
 
 import disnake
 import psutil
-import settings
-from disnake.ext import commands, tasks
+from disnake.ext import commands
 
-import core.cache
-from core.task_handler import ResilientTaskHandler
+from core.embed_cog import BaseEmbedCog
 from core.utils import format_embed_data, get_phrases, u_decline
-
-UPDATE_SECONDS = getattr(settings, "hosting_update_seconds", 10)
 
 
 async def get_memory_info():
@@ -25,16 +21,13 @@ async def get_memory_info():
     }
 
 
-class Hosting(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-        self.error_handler = ResilientTaskHandler(bot, self.hosting_loop, "HostingLoop")
-
-        self.hosting_loop.start()
-
-    def cog_unload(self):
-        self.hosting_loop.stop()
+class Hosting(BaseEmbedCog):
+    embed_key = "server_load"
+    phrases_section = "hosting_embed"
+    phrases_key = "server_embed_data"
+    settings_key = "hosting_update_seconds"
+    default_seconds = 10
+    fallback_embed = {"title": ":nut_and_bolt: | Server"}
 
     async def get_taimer_embed(self):
         test_datetime = datetime(2025, 5, 14, 0, 0, 0)
@@ -92,46 +85,25 @@ class Hosting(commands.Cog):
 
         return embed
 
-    @tasks.loop(seconds=UPDATE_SECONDS)
-    async def hosting_loop(self):
+    async def get_data(self):
         memory_info = await get_memory_info()
 
         total_used = memory_info["swap_used_gib"] + memory_info["memory_used_gib"]
         total_total = memory_info["swap_total_gib"] + memory_info["memory_total_gib"]
         total_percent = (100 * (total_used / total_total)) if total_total > 0 else 0
 
-        raw_embed_data = (
-            get_phrases().get("hosting_embed", {}).get("server_embed_data", {"title": ":nut_and_bolt: | Server"})
-        )
-        formatted_embed_data = format_embed_data(
-            raw_embed_data,
-            memory_used_gib=memory_info["memory_used_gib"],
-            memory_total_gib=memory_info["memory_total_gib"],
-            memory_percent=memory_info["memory_percent"],
-            swap_used_gib=memory_info["swap_used_gib"],
-            swap_total_gib=memory_info["swap_total_gib"],
-            swap_percent=memory_info["swap_percent"],
-            total_used=total_used,
-            total_total=total_total,
-            total_percent=total_percent,
-        )
-
-        embed0 = disnake.Embed.from_dict(formatted_embed_data)
-
-        footer_text = (
-            get_phrases()
-            .get("utils", {})
-            .get("update_interval", "Updates every {seconds} seconds.")
-            .format(seconds=UPDATE_SECONDS)
-        )
-        embed0.set_footer(text=footer_text)
-
-        core.cache.embeds_to_send["server_load"] = embed0
-
-    @hosting_loop.error
-    async def on_ram_error(self, error):
-        await self.error_handler.handle_error(error)
+        return {
+            "memory_used_gib": memory_info["memory_used_gib"],
+            "memory_total_gib": memory_info["memory_total_gib"],
+            "memory_percent": memory_info["memory_percent"],
+            "swap_used_gib": memory_info["swap_used_gib"],
+            "swap_total_gib": memory_info["swap_total_gib"],
+            "swap_percent": memory_info["swap_percent"],
+            "total_used": total_used,
+            "total_total": total_total,
+            "total_percent": total_percent,
+        }
 
 
-def setup(bot):
+def setup(bot: commands.Bot) -> None:
     bot.add_cog(Hosting(bot))

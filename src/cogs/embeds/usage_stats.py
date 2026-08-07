@@ -1,25 +1,26 @@
-import disnake
-import settings
-from disnake.ext import commands, tasks
+from disnake.ext import commands
 
 from core import cache
-from core.utils import format_embed_data, get_phrases
+from core.embed_cog import BaseEmbedCog
 from modules.schedule_provider import ScheduleProvider
 
-UPDATE_SECONDS = getattr(settings, "usage_stats_update_seconds", 30)
 
+class UsageStatsEmbed(BaseEmbedCog):
+    embed_key = "usage_stats"
+    phrases_section = "usage_stats_embed"
+    settings_key = "usage_stats_update_seconds"
+    default_seconds = 30
+    fallback_embed = {
+        "title": ":chart_with_upwards_trend: | Usage Statistics",
+        "description": "Schedule users: `{schedule_users}`\nLLM consented: `{llm_consented}`",
+    }
 
-class UsageStatsEmbed(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
         self.provider = ScheduleProvider()
-        self.update_usage_stats.start()
 
-    def cog_unload(self):
-        self.update_usage_stats.cancel()
+        super().__init__(bot)
 
-    @tasks.loop(seconds=UPDATE_SECONDS)
-    async def update_usage_stats(self):
+    async def get_data(self):
         # Calculate schedule users
         try:
             channels_data = self.provider.load_channels()
@@ -32,33 +33,7 @@ class UsageStatsEmbed(commands.Cog):
         if hasattr(cache, "llm_consent_manager") and cache.llm_consent_manager:
             llm_consented = cache.llm_consent_manager.get_consented_users_count()
 
-        raw_embed_data = (
-            get_phrases()
-            .get("usage_stats_embed", {})
-            .get(
-                "embed_data",
-                {
-                    "title": ":chart_with_upwards_trend: | Usage Statistics",
-                    "description": "Schedule users: `{schedule_users}`\nLLM consented: `{llm_consented}`",
-                },
-            )
-        )
-
-        formatted_embed_data = format_embed_data(
-            raw_embed_data, schedule_users=schedule_users, llm_consented=llm_consented
-        )
-
-        embed = disnake.Embed.from_dict(formatted_embed_data)
-
-        footer_text = (
-            get_phrases()
-            .get("utils", {})
-            .get("update_interval", "Updates every {seconds} seconds.")
-            .format(seconds=UPDATE_SECONDS)
-        )
-        embed.set_footer(text=footer_text)
-
-        cache.embeds_to_send["usage_stats"] = embed
+        return {"schedule_users": schedule_users, "llm_consented": llm_consented}
 
 
 def setup(bot: commands.Bot) -> None:

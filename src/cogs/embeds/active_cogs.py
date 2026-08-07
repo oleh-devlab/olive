@@ -1,27 +1,20 @@
-import disnake
-import settings
-from disnake.ext import commands, tasks
+from disnake.ext import commands
 from settings import paths
 
 import core.cache
-from core.utils import format_embed_data, get_phrases
-
-UPDATE_SECONDS = getattr(settings, "active_cogs_update_seconds", 45)
+from core.embed_cog import BaseEmbedCog
 
 cog_path = paths["cogs"]
 
 
-class ActiveCogsEmbed(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+class ActiveCogsEmbed(BaseEmbedCog):
+    embed_key = "active_cogs"
+    phrases_section = "active_cogs_embed"
+    settings_key = "active_cogs_update_seconds"
+    default_seconds = 45
+    fallback_embed = {"title": ":electric_plug: | Active Cogs", "description": "No data available."}
 
-        self.update_active_cogs.start()
-
-    def cog_unload(self):
-        self.update_active_cogs.cancel()
-
-    @tasks.loop(seconds=UPDATE_SECONDS)
-    async def update_active_cogs(self):
+    async def get_data(self):
         formatted_cogs_list = "\n".join(
             [
                 f"[+] {cog_name.removeprefix(f'{cog_path}.')} - from {load_time}"
@@ -29,24 +22,7 @@ class ActiveCogsEmbed(commands.Cog):
             ]
         )
 
-        raw_embed_data = (
-            get_phrases()
-            .get("active_cogs_embed", {})
-            .get("embed_data", {"title": ":electric_plug: | Active Cogs", "description": "No data available."})
-        )
-        formatted_embed_data = format_embed_data(raw_embed_data, formatted_cogs_list=formatted_cogs_list)
-
-        embed = disnake.Embed.from_dict(formatted_embed_data)
-
-        footer_text = (
-            get_phrases()
-            .get("utils", {})
-            .get("update_interval", "Updates every {seconds} seconds.")
-            .format(seconds=UPDATE_SECONDS)
-        )
-        embed.set_footer(text=footer_text)
-
-        core.cache.embeds_to_send["active_cogs"] = embed
+        return {"formatted_cogs_list": formatted_cogs_list}
 
 
 def setup(bot: commands.Bot) -> None:
