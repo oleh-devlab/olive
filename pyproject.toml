@@ -4,3 +4,21 @@ extend-exclude = 'src/modules/automatic_timetable_py'
 
 [tool.ruff]
 exclude = ["src/modules/automatic_timetable_py"]
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "SIM",
+    "PERF",
+    "RUF",
+    "TRY201",
+    "PLW1510",
+]
+ignore = [
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
