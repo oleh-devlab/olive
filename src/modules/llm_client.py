@@ -142,14 +142,14 @@ class LLMClient:
                 # We strip it here unconditionally for ALL models to prevent BadRequestError
                 # during context history validation.
                 # --- [ARCHIVED COMMENT END] ---
-                # 
-                # [UPDATE 30.07.2026]: 
+                #
+                # [UPDATE 30.07.2026]:
                 # 1. Gemma (and potentially other non-Gemini models) does not support "signature" fields
                 #    steps, so we must strip them out if we are not using a Gemini model.
                 # 2. Gemini strictly REQUIRES the "signature" field on "thought" steps if function calls
                 #    were made. Stripping it will cause a 400 BadRequestError.
                 is_gemini = model.name.startswith("gemini")
-                
+
                 model_input = []
                 for step in input_data:
                     # if isinstance(step, dict) and "signature" in step:
@@ -160,14 +160,14 @@ class LLMClient:
                     #     model_input.append(step)
                     # Input could be a pydantic object or dict.
                     step_dict = step.copy() if isinstance(step, dict) else step
-                    
+
                     if isinstance(step_dict, dict) and not is_gemini:
                         # Strip thoughts for Gemma
                         if step_dict.get("type") == "thought":
                             continue
                         # Strip signature for Gemma
                         step_dict.pop("signature", None)
-                            
+
                     model_input.append(step_dict)
 
                 kwargs = {
