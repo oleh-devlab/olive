@@ -19,3 +19,4 @@ active_cogs_list = {}
 _phrases = {}
 
 schedule_states = {}
+inflation_states = {}

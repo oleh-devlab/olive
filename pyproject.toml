@@ -1,9 +1,9 @@
 [tool.black]
 line-length = 120
-extend-exclude = 'src/modules/automatic_timetable_py'
+extend-exclude = 'src/modules/(automatic_timetable_py|inflation_calculator)'
 
 [tool.ruff]
-exclude = ["src/modules/automatic_timetable_py"]
+exclude = ["src/modules/automatic_timetable_py", "src/modules/inflation_calculator"]
 
 [tool.ruff.lint]
 select = [
