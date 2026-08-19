@@ -4,6 +4,7 @@ from pathlib import Path
 
 import settings
 
+from core.personal_channels import PersonalChannelRegistry
 from modules.schedule_models import CompletedTask, Routine, Task, TimeBlock
 
 
@@ -19,6 +20,12 @@ def get_schedule_file(user_id: int) -> Path:
 
 def get_schedule_channels_file() -> Path:
     return get_data_dir() / "schedule_channels.json"
+
+
+# The key names are the ones this file has always been written with.
+channels_registry = PersonalChannelRegistry(
+    get_schedule_channels_file(), display_key="channel_id", management_key="tasks_channel_id"
+)
 
 
 def _serialize_timedelta(td: datetime.timedelta | None) -> int | None:
@@ -222,39 +229,32 @@ class ScheduleProvider:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
+    channels = channels_registry
+
     def load_channels(self) -> dict:
-        filepath = get_schedule_channels_file()
-        if not filepath.exists():
-            return {}
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+        return channels_registry.load()
 
     def save_channels(self, data: dict):
-        filepath = get_schedule_channels_file()
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        channels_registry.save(data)
+
+    def get_settings(self, user_id: int) -> dict:
+        """Per-user solver settings, stored alongside the channel ids."""
+        return channels_registry.get(user_id) or {}
 
     def get_planning_days(self, user_id: int) -> int:
-        data = self.load_channels()
-        return data.get(str(user_id), {}).get("planning_days", 14)
+        return self.get_settings(user_id).get("planning_days", 14)
 
     def get_priority_threshold(self, user_id: int) -> int:
-        data = self.load_channels()
-        return data.get(str(user_id), {}).get("priority_threshold", 5)
+        return self.get_settings(user_id).get("priority_threshold", 5)
 
     def get_timeouts(self, user_id: int) -> dict[str, float]:
-        data = self.load_channels()
-        user_data = data.get(str(user_id), {})
+        user_data = self.get_settings(user_id)
         packer = user_data.get("packer_timeout", getattr(settings, "schedule_default_packer_timeout", 3.0))
         gravity = user_data.get("gravity_timeout", getattr(settings, "schedule_default_gravity_timeout", 0.5))
         return {"packer": packer, "gravity": gravity}
 
     def get_step_minutes(self, user_id: int) -> int:
-        data = self.load_channels()
-        return data.get(str(user_id), {}).get("step_minutes", 1)
+        return self.get_settings(user_id).get("step_minutes", 1)
 
     def update_schedule_settings(
         self,

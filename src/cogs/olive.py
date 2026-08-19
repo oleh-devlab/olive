@@ -112,9 +112,6 @@ class AIAssistantCog(commands.Cog):
             return
 
         # Intercept schedule management in tasks_channel
-        if not hasattr(cache, "tasks_channels"):
-            cache.tasks_channels = {}
-
         if message.channel.id in cache.tasks_channels:
             user_id = cache.tasks_channels[message.channel.id]
 

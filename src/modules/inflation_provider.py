@@ -12,6 +12,7 @@ from pathlib import Path
 
 import settings
 
+from core.personal_channels import PersonalChannelRegistry
 from modules.inflation_calculator.modules.api import InflationCalculator
 from modules.inflation_calculator.modules.config import FALLBACK_ANNUAL_INFLATION_RATE
 from modules.inflation_calculator.modules.exceptions import ValidationError
@@ -19,7 +20,6 @@ from modules.inflation_calculator.modules.storage import (
     load_inflation_rates_from_file,
     save_inflation_rates_to_file,
 )
-from modules.inflation_formatter import find_rate_gaps
 
 logger = logging.getLogger(__name__)
 
@@ -60,22 +60,26 @@ class InflationProvider:
 
     Calculator instances are cached per user because `InflationCalculator.from_json`
     re-reads both JSON files on construction, and the report loop would otherwise
-    do that on every tick. Rates are shared by every user, so changing them bumps
-    `_rates_version` and invalidates all cached calculators at once.
+    do that on every tick. Rates are shared by every user, so changing them drops
+    the whole cache.
     """
 
     def __init__(self):
-        self._calculators: dict[int, tuple[int, InflationCalculator]] = {}
-        self._rates_version = 0
+        self._calculators: dict[int, InflationCalculator] = {}
+
+        # Key names match the file this shipped with, so nothing on disk moves.
+        self.channels = PersonalChannelRegistry(
+            get_channels_file(), display_key="report_channel_id", management_key="management_channel_id"
+        )
 
     # ------------------------------------------------------------------
     # Calculator access
     # ------------------------------------------------------------------
 
     def _get_calculator(self, user_id: int) -> InflationCalculator:
-        cached = self._calculators.get(user_id)
-        if cached and cached[0] == self._rates_version:
-            return cached[1]
+        calculator = self._calculators.get(user_id)
+        if calculator is not None:
+            return calculator
 
         get_records_dir().mkdir(parents=True, exist_ok=True)
 
@@ -83,7 +87,7 @@ class InflationProvider:
             records_filepath=str(get_records_file(user_id)),
             inflation_rates_filepath=str(get_rates_file()),
         )
-        self._calculators[user_id] = (self._rates_version, calculator)
+        self._calculators[user_id] = calculator
 
         return calculator
 
@@ -144,9 +148,6 @@ class InflationProvider:
 
         return count
 
-    def count_users_with_channels(self) -> int:
-        return len(self.load_channels())
-
     # ------------------------------------------------------------------
     # Inflation rates (shared by all users)
     # ------------------------------------------------------------------
@@ -167,74 +168,30 @@ class InflationProvider:
     def get_rates(self) -> dict[str, Decimal]:
         return self._rates_calculator().get_inflation_rates()
 
-    def has_rates(self) -> bool:
-        return bool(self.get_rates())
-
     def set_rate(self, year_month: str, rate_percent: str) -> None:
         """
         Store a monthly CPI value. `rate_percent` is a CPI index (101.4 → +1.4%),
         matching the Ministry of Finance tables the data is copied from.
         """
         self._rates_calculator().set_inflation_rate(year_month, rate_percent)
-        self._rates_version += 1
-        self._calculators.clear()
 
-    def get_rate_gaps(self) -> list[str]:
-        """Months with no CPI data between the oldest known month and last month."""
-        return find_rate_gaps(self.get_rates())
+        # Every cached calculator holds a copy of the old rates.
+        self.invalidate()
 
     # ------------------------------------------------------------------
     # Channel registry
     # ------------------------------------------------------------------
 
-    def load_channels(self) -> dict:
-        filepath = get_channels_file()
-        if not filepath.exists():
-            return {}
-
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
-            logger.error(f"Error reading {filepath}: {e}")
-            return {}
-
-    def save_channels(self, data: dict) -> None:
-        filepath = get_channels_file()
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-
     def get_channels(self, user_id: int) -> dict | None:
-        return self.load_channels().get(str(user_id))
+        return self.channels.get(user_id)
 
-    def register_channels(self, user_id: int, guild_id: int, report_channel_id: int, management_channel_id: int):
-        data = self.load_channels()
-        data[str(user_id)] = {
-            "report_channel_id": report_channel_id,
-            "management_channel_id": management_channel_id,
-            "guild_id": guild_id,
-        }
-        self.save_channels(data)
+    def get_report_channel_id(self, user_id: int) -> int | None:
+        entry = self.channels.get(user_id)
 
-    def remove_channels(self, user_id: int) -> dict | None:
-        data = self.load_channels()
-        removed = data.pop(str(user_id), None)
-        if removed is not None:
-            self.save_channels(data)
+        return self.channels.display_channel_id(entry) if entry else None
 
-        return removed
-
-    def count_channels_in_guild(self, guild_id: int) -> int:
-        return sum(1 for info in self.load_channels().values() if info.get("guild_id") == guild_id)
-
-    def find_user_by_management_channel(self, channel_id: int) -> int | None:
-        for user_id_str, info in self.load_channels().items():
-            if info.get("management_channel_id") == channel_id:
-                return int(user_id_str)
-
-        return None
+    def count_users_with_channels(self) -> int:
+        return self.channels.count()
 
 
 inflation_provider = InflationProvider()

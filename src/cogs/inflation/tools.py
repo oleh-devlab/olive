@@ -8,6 +8,8 @@ import settings
 from disnake.ext import commands
 
 from core import cache, utils
+from core.utils import format_phrase
+from core.personal_channels import ChannelSetupError, create_channel_pair
 from modules.inflation_calculator.modules.exceptions import InflationCalculatorError, ValidationError
 from modules.inflation_provider import inflation_provider
 from modules.inflation_formatter import format_money
@@ -29,9 +31,9 @@ def get_phrases(inter: disnake.ApplicationCommandInteraction) -> dict:
 async def report_error(inter: disnake.ApplicationCommandInteraction, phrases: dict, error: Exception, action: str):
     """Turn a calculator exception into a user-facing message."""
     if isinstance(error, ValidationError):
-        text = phrases.get("validation_error", "Validation error: {error}").format(error=error)
+        text = format_phrase(phrases, "validation_error", "Validation error: {error}", error=error)
     elif isinstance(error, InflationCalculatorError):
-        text = phrases.get("calculator_error", "Inflation calculator error: {error}").format(error=error)
+        text = format_phrase(phrases, "calculator_error", "Inflation calculator error: {error}", error=error)
     else:
         logger.error(f"Unexpected error in inflation {action}: {traceback.format_exc()}")
         text = phrases.get("unexpected_error", "An unexpected error occurred. Please notify the administrator.")
@@ -45,9 +47,9 @@ class InflationTools(commands.Cog):
 
     def notify_update(self, user_id: int):
         """Refresh the user's eternal report message, if they have a report channel."""
-        channels = inflation_provider.get_channels(user_id)
-        if channels and channels.get("report_channel_id"):
-            self.bot.dispatch("inflation_update", channels["report_channel_id"])
+        channel_id = inflation_provider.get_report_channel_id(user_id)
+        if channel_id:
+            self.bot.dispatch("inflation_update", channel_id)
 
     @commands.slash_command(
         name="inflation",
@@ -90,8 +92,8 @@ class InflationTools(commands.Cog):
 
         self.notify_update(inter.author.id)
         await inter.edit_original_response(
-            content=phrases.get("record_added", "Record added successfully! ID: {record_id}").format(
-                record_id=record.get("id")
+            content=format_phrase(
+                phrases, "record_added", "Record added successfully! ID: {record_id}", record_id=record.get("id")
             )
         )
 
@@ -116,8 +118,11 @@ class InflationTools(commands.Cog):
         self.notify_update(inter.author.id)
         currency = get_currency(inter.guild.id if inter.guild else None)
         await inter.edit_original_response(
-            content=phrases.get("record_deleted", "Record deleted successfully! (Amount: {amount})").format(
-                amount=format_money(record.get("amount", 0), currency)
+            content=format_phrase(
+                phrases,
+                "record_deleted",
+                "Record deleted successfully! (Amount: {amount})",
+                amount=format_money(record.get("amount", 0), currency),
             )
         )
 
@@ -161,95 +166,40 @@ class InflationTools(commands.Cog):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
 
-        categories = getattr(settings, "inflation_categories", {})
-        if not inter.guild or inter.guild.id not in categories:
-            await inter.edit_original_response(
-                content=phrases.get("not_available_server", "Not available on this server.")
-            )
-            return
-
-        category = inter.guild.get_channel(categories[inter.guild.id])
-        if not category:
-            await inter.edit_original_response(
-                content=phrases.get("category_not_found", "Category for channels not found. Contact administrator.")
-            )
-            return
-
-        if inflation_provider.get_channels(inter.author.id):
-            await inter.edit_original_response(
-                content=phrases.get(
-                    "channel_already_exists", "You already have inflation channels on one of the servers."
-                )
-            )
-            return
-
-        max_channels = getattr(settings, "inflation_max_channels_per_guild", 5)
-        if inflation_provider.count_channels_in_guild(inter.guild.id) >= max_channels:
-            await inter.edit_original_response(
-                content=phrases.get(
-                    "limit_exceeded", "Inflation channel limit exceeded for this server (max {max_channels})."
-                ).format(max_channels=max_channels)
-            )
-            return
-
-        # Records are personal finance data, so both channels are private: the
-        # report channel is read-only, the management one accepts commands.
-        report_overwrites = {
-            inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
-            inter.author: disnake.PermissionOverwrite(read_messages=True, send_messages=False),
-            inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
-        }
-        management_overwrites = {
-            inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
-            inter.author: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
-            inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
-        }
-
-        report_channel = None
         try:
-            report_channel = await inter.guild.create_text_channel(
-                name=f"inflation-{inter.author.display_name}",
-                category=category,
-                overwrites=report_overwrites,
-                reason="Automatic creation of inflation report channel",
+            report_channel, management_channel = await create_channel_pair(
+                inter,
+                registry=inflation_provider.channels,
+                categories=getattr(settings, "inflation_categories", {}),
+                max_per_guild=getattr(settings, "inflation_max_channels_per_guild", 5),
+                display_name=f"inflation-{inter.author.display_name}",
+                management_name=f"records-{inter.author.display_name}",
+                reason="Automatic creation of inflation channels",
             )
-            management_channel = await inter.guild.create_text_channel(
-                name=f"records-{inter.author.display_name}",
-                category=category,
-                overwrites=management_overwrites,
-                reason="Automatic creation of inflation management channel",
-            )
-        except Exception as e:
-            logger.error(f"Error creating inflation channels: {e}")
-
-            # Don't leave half a pair behind if only the second channel failed.
-            if report_channel:
-                try:
-                    await report_channel.delete(reason="Rollback of a failed inflation channel creation")
-                except Exception as cleanup_error:
-                    logger.warning(f"Could not roll back channel {report_channel.id}: {cleanup_error}")
-
-            await inter.edit_original_response(
-                content=phrases.get("creation_error", "An error occurred while creating the channels.")
-            )
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
             return
 
-        inflation_provider.register_channels(inter.author.id, inter.guild.id, report_channel.id, management_channel.id)
         self.bot.dispatch("inflation_init", report_channel, inter.author.id)
 
         await inter.edit_original_response(
-            content=phrases.get(
+            content=format_phrase(
+                phrases,
                 "channels_created",
                 "Channels successfully created:\n- Report {report_channel}\n- Records {management_channel}",
-            ).format(report_channel=report_channel.mention, management_channel=management_channel.mention)
+                report_channel=report_channel.mention,
+                management_channel=management_channel.mention,
+            )
         )
 
         await management_channel.send(
-            phrases.get(
+            format_phrase(
+                phrases,
                 "privacy_warning",
                 "{user_mention}, this channel is for your inflation commands. Command replies here are private "
                 "(ephemeral), but the report channel is visible to anyone who can read it.",
-            ).format(user_mention=f"<@{inter.author.id}>")
+                user_mention=f"<@{inter.author.id}>",
+            )
         )
 
     @inflation_channel.sub_command(
@@ -260,7 +210,7 @@ class InflationTools(commands.Cog):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
 
-        removed = inflation_provider.remove_channels(inter.author.id)
+        removed = inflation_provider.channels.remove(inter.author.id)
         if not removed:
             await inter.edit_original_response(
                 content=phrases.get("no_channels", "You do not have inflation channels.")
@@ -268,7 +218,7 @@ class InflationTools(commands.Cog):
             return
 
         report_channel_id = removed.get("report_channel_id")
-        cache.inflation_states.pop(report_channel_id, None)
+        cache.channel_states.pop(report_channel_id, None)
 
         # Records stay on disk; only the Discord channels go away.
         await inter.edit_original_response(
@@ -287,11 +237,7 @@ class InflationTools(commands.Cog):
 
     async def notify_all_updates(self):
         """Refresh every report message: a rate change moves everyone's numbers."""
-        for info in inflation_provider.load_channels().values():
-            channel_id = info.get("report_channel_id")
-            if not channel_id:
-                continue
-
+        for _, channel_id in inflation_provider.channels.iter_display_channels():
             self.bot.dispatch("inflation_update", channel_id)
             await asyncio.sleep(0.5)
 
@@ -323,10 +269,14 @@ class InflationTools(commands.Cog):
             return
 
         months = sorted(rates)
-        content = phrases.get(
+        content = format_phrase(
+            phrases,
             "rates_status",
             "CPI data: `{count}` months, from `{oldest}` to `{newest}`.",
-        ).format(count=len(months), oldest=months[0], newest=months[-1])
+            count=len(months),
+            oldest=months[0],
+            newest=months[-1],
+        )
 
         warning = build_rates_warning(guild_id)
         if warning:
@@ -357,8 +307,8 @@ class InflationTools(commands.Cog):
             return
 
         await inter.edit_original_response(
-            content=phrases.get("rate_saved", "CPI for `{year_month}` saved as `{cpi}`.").format(
-                year_month=year_month, cpi=cpi
+            content=format_phrase(
+                phrases, "rate_saved", "CPI for `{year_month}` saved as `{cpi}`.", year_month=year_month, cpi=cpi
             )
         )
 

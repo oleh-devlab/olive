@@ -18,5 +18,8 @@ active_cogs_list = {}
 
 _phrases = {}
 
-schedule_states = {}
-inflation_states = {}
+# channel_id -> core.paged_message.PagedChannelMessage
+channel_states = {}
+
+# management channel_id -> user_id, for the cogs that listen in those channels
+tasks_channels = {}

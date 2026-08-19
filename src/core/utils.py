@@ -1,7 +1,10 @@
 import asyncio
 import json
+import logging
 
 import core.cache
+
+logger = logging.getLogger(__name__)
 
 
 async def u_decline(number, forms):
@@ -113,6 +116,23 @@ def _deep_merge(base: dict, override: dict) -> dict:
         else:
             merged[k] = v
     return merged
+
+
+def format_phrase(section: dict, key: str, default: str, **kwargs) -> str:
+    """
+    Render one phrase, falling back when its placeholders do not match.
+
+    `phrases.json` is hand-edited, so a renamed or misspelled placeholder must
+    not turn a user-facing message into a traceback. Same forgiving spirit as
+    `format_embed_data()`, but for a single string.
+    """
+    template = section.get(key, default)
+
+    try:
+        return template.format(**kwargs)
+    except (KeyError, IndexError, ValueError):
+        logger.warning("Phrase '%s' has an unexpected placeholder; using the built-in text.", key)
+        return default.format(**kwargs)
 
 
 def get_phrases(guild_id=None):

@@ -6,8 +6,8 @@ Both the slash commands and the eternal report message go through here so the
 two never drift apart.
 """
 
-from core.utils import get_phrases
-from modules.inflation_formatter import build_record_pages, format_date, format_money, format_percent
+from core.utils import format_phrase, get_phrases
+from modules.inflation_formatter import build_record_pages, find_rate_gaps, format_date, format_money, format_percent
 from modules.inflation_provider import FALLBACK_ANNUAL_PERCENT, inflation_provider
 
 # Above this many missing months the warning switches to a "N months since X"
@@ -31,28 +31,39 @@ def build_rates_warning(guild_id: int | None = None) -> str:
     month it has no data for, and the report looks authoritative anyway.
     """
     phrases = get_phrases_section(guild_id)
+    rates = inflation_provider.get_rates()
 
-    if not inflation_provider.has_rates():
-        return phrases.get(
+    if not rates:
+        return format_phrase(
+            phrases,
             "rates_empty",
             ":warning: No CPI data at all — a fallback of {fallback}% per year is used instead.",
-        ).format(fallback=FALLBACK_ANNUAL_PERCENT)
+            fallback=FALLBACK_ANNUAL_PERCENT,
+        )
 
-    gaps = inflation_provider.get_rate_gaps()
+    gaps = find_rate_gaps(rates)
     if not gaps:
         return ""
 
     if len(gaps) > MAX_LISTED_GAPS:
-        return phrases.get(
+        return format_phrase(
+            phrases,
             "rates_gaps_many",
             ":warning: No CPI data for {count} months (starting from {first}) — "
             "a fallback of {fallback}% per year is used for them.",
-        ).format(count=len(gaps), first=gaps[0], fallback=FALLBACK_ANNUAL_PERCENT)
+            count=len(gaps),
+            first=gaps[0],
+            fallback=FALLBACK_ANNUAL_PERCENT,
+        )
 
-    return phrases.get(
+    return format_phrase(
+        phrases,
         "rates_gaps",
         ":warning: No CPI data for: {months} — a fallback of {fallback}% per year is used for them.",
-    ).format(months=", ".join(gaps), count=len(gaps), fallback=FALLBACK_ANNUAL_PERCENT)
+        months=", ".join(gaps),
+        count=len(gaps),
+        fallback=FALLBACK_ANNUAL_PERCENT,
+    )
 
 
 def build_summary(report: dict, guild_id: int | None = None) -> str:
@@ -61,7 +72,8 @@ def build_summary(report: dict, guild_id: int | None = None) -> str:
     currency = get_currency(guild_id)
 
     oldest_date = report.get("oldest_date")
-    summary = phrases.get(
+    summary = format_phrase(
+        phrases,
         "summary",
         "**Inflation report**\n"
         "Nominal total: `{total_nominal}`\n"
@@ -69,7 +81,6 @@ def build_summary(report: dict, guild_id: int | None = None) -> str:
         "Purchasing power change: `{loss_percent}`\n"
         "Oldest record: `{oldest_date}`\n"
         "Records: `{records_count}`",
-    ).format(
         total_nominal=format_money(report.get("total_nominal", 0), currency),
         total_adjusted=format_money(report.get("total_adjusted", 0), currency),
         loss_percent=format_percent(report.get("loss_percent", 0)),
@@ -100,10 +111,10 @@ def render_page(summary: str, pages: list[str], page_index: int = 0, guild_id: i
 
     page_index = min(max(page_index, 0), len(pages) - 1)
 
-    return phrases.get(
+    return format_phrase(
+        phrases,
         "page_format",
         "{summary}\n\n**Records (page {current_page}/{max_pages}):**\n```text\n{page_content}\n```",
-    ).format(
         summary=summary,
         current_page=page_index + 1,
         max_pages=len(pages),

@@ -1,8 +1,11 @@
+import logging
+
 import disnake
 import settings
 from disnake.ext import commands
 
 from core import cache, utils
+from core.personal_channels import ChannelSetupError, create_channel_pair
 from modules import schd_item_formatters
 from modules.schedule_exceptions import ScheduleValidationError
 from modules.schedule_provider import ScheduleProvider
@@ -14,6 +17,8 @@ from modules.schedule_validators import (
     validate_task_update_data,
     validate_timeblock_creation_data,
 )
+
+logger = logging.getLogger(__name__)
 
 # We can instantiate the provider here.
 provider = ScheduleProvider()
@@ -213,7 +218,10 @@ class AutoSchedule(commands.Cog):
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("History listed above.")
 
-    @task.sub_command(name="clear_history", description=phrases_cmd.get("cmd_task_clear_history_desc", "Clear all completed tasks from history"))
+    @task.sub_command(
+        name="clear_history",
+        description=phrases_cmd.get("cmd_task_clear_history_desc", "Clear all completed tasks from history"),
+    )
     async def task_clear_history(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
         count = provider.clear_completed_tasks(inter.author.id)
@@ -551,97 +559,72 @@ class AutoSchedule(commands.Cog):
     )
     async def schedule_channel_create(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
-
-        schedule_categories = getattr(settings, "schedule_categories", {})
-        phrases = utils.get_phrases(inter.guild.id).get("schedule", {})
-
-        if inter.guild.id not in schedule_categories:
-            await inter.edit_original_response(phrases.get("not_available_server", "Not available on this server."))
-            return
-
-        category_id = schedule_categories[inter.guild.id]
-        category = inter.guild.get_channel(category_id)
-        if not category:
-            await inter.edit_original_response(
-                phrases.get("category_not_found", "Category for channels not found. Contact administrator.")
-            )
-            return
-
-        data = provider.load_channels()
-        user_id_str = str(inter.author.id)
-
-        if user_id_str in data:
-            await inter.edit_original_response(
-                phrases.get("channel_already_exists", "You already have a schedule channel on one of the servers.")
-            )
-            return
-
-        # Check limit per server
-        channels_in_guild = sum(1 for d in data.values() if d.get("guild_id") == inter.guild.id)
-        max_channels = getattr(settings, "schedule_max_channels_per_guild", 3)
-        if channels_in_guild >= max_channels:
-            await inter.edit_original_response(
-                phrases.get("limit_exceeded", f"Schedule channel limit exceeded for this server (max {max_channels}).")
-            )
-            return
+        phrases = utils.get_phrases(inter.guild.id if inter.guild else None).get("schedule", {})
 
         try:
-            schedule_overwrites = {
-                inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
-                inter.author: disnake.PermissionOverwrite(read_messages=True, send_messages=False),
-                inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
-            }
-            tasks_overwrites = {
-                inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
-                inter.author: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
-                inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
-            }
-
-            schedule_channel = await inter.guild.create_text_channel(
-                name=f"schedule-{inter.author.display_name}",
-                category=category,
-                overwrites=schedule_overwrites,
-                reason="Automatic creation of schedule channel",
+            schedule_channel, tasks_channel = await create_channel_pair(
+                inter,
+                registry=provider.channels,
+                categories=getattr(settings, "schedule_categories", {}),
+                max_per_guild=getattr(settings, "schedule_max_channels_per_guild", 3),
+                display_name=f"schedule-{inter.author.display_name}",
+                management_name=f"tasks-{inter.author.display_name}",
+                reason="Automatic creation of schedule channels",
             )
+        except ChannelSetupError as e:
+            await inter.edit_original_response(e.text(phrases))
+            return
 
-            tasks_channel = await inter.guild.create_text_channel(
-                name=f"tasks-{inter.author.display_name}",
-                category=category,
-                overwrites=tasks_overwrites,
-                reason="Automatic creation of tasks channel",
-            )
+        cache.tasks_channels[tasks_channel.id] = inter.author.id
 
-            data[user_id_str] = {
-                "channel_id": schedule_channel.id,
-                "tasks_channel_id": tasks_channel.id,
-                "guild_id": inter.guild.id,
-            }
-            provider.save_channels(data)
+        # Initialize channel in the loop via event dispatch
+        self.bot.dispatch("schedule_init", schedule_channel, inter.author.id)
 
-            if not hasattr(cache, "tasks_channels"):
-                cache.tasks_channels = {}
-            cache.tasks_channels[tasks_channel.id] = inter.author.id
+        msg_created = phrases.get(
+            "channel_created",
+            "Channels successfully created:\n- Schedule {schedule_channel}\n- Tasks {tasks_channel}",
+        ).format(schedule_channel=schedule_channel.mention, tasks_channel=tasks_channel.mention)
+        await inter.edit_original_response(msg_created)
 
-            # Initialize channel in the loop via event dispatch
-            self.bot.dispatch("schedule_init", schedule_channel, inter.author.id)
+        warning_msg = phrases.get(
+            "privacy_warning",
+            "{user_mention}, please note: view commands (such as `/task list` or `/routine list`) are not ephemeral (private). Their results will be visible to all participants in the channel where you use them. If privacy is important to you, use them only in this private channel.",
+        ).format(user_mention=f"<@{inter.author.id}>")
+        await tasks_channel.send(warning_msg)
 
-            msg_created = phrases.get(
-                "channel_created",
-                "Channels successfully created:\n- Schedule {schedule_channel}\n- Tasks {tasks_channel}",
-            ).format(schedule_channel=schedule_channel.mention, tasks_channel=tasks_channel.mention)
-            await inter.edit_original_response(msg_created)
+    @schedule_channel.sub_command(
+        name="delete",
+        description=phrases_cmd.get("cmd_schedule_channel_delete_desc", "Delete your schedule channels"),
+    )
+    async def schedule_channel_delete(self, inter: disnake.ApplicationCommandInteraction):
+        await inter.response.defer(ephemeral=True)
+        phrases = utils.get_phrases(inter.guild.id if inter.guild else None).get("schedule", {})
 
-            warning_msg = phrases.get(
-                "privacy_warning",
-                "{user_mention}, please note: view commands (such as `/task list` or `/routine list`) are not ephemeral (private). Their results will be visible to all participants in the channel where you use them. If privacy is important to you, use them only in this private channel.",
-            ).format(user_mention=f"<@{inter.author.id}>")
-            await tasks_channel.send(warning_msg)
+        removed = provider.channels.remove(inter.author.id)
+        if not removed:
+            await inter.edit_original_response(phrases.get("no_channels", "You do not have schedule channels."))
+            return
 
-        except Exception as e:
-            print(f"Error creating channel: {e}")
-            await inter.edit_original_response(
-                phrases.get("creation_error", "An error occurred while creating the channel.")
-            )
+        schedule_channel_id = provider.channels.display_channel_id(removed)
+        tasks_channel_id = removed.get("tasks_channel_id")
+
+        cache.channel_states.pop(schedule_channel_id, None)
+        cache.tasks_channels.pop(tasks_channel_id, None)
+
+        # Tasks, routines and time blocks stay on disk; only the channels go.
+        await inter.edit_original_response(
+            phrases.get("channels_deleted", "Your schedule channels are being deleted. Your tasks are kept.")
+        )
+
+        for channel_id in (schedule_channel_id, tasks_channel_id):
+            if not channel_id:
+                continue
+            try:
+                channel = await self.bot.get_or_fetch_channel(channel_id)
+                if channel:
+                    await channel.delete(reason="Schedule channels removed by their owner")
+            except Exception as e:
+                logger.warning(f"Could not delete schedule channel {channel_id}: {e}")
 
     @schedule_channel.sub_command(
         name="settings",
@@ -727,7 +710,13 @@ class AutoSchedule(commands.Cog):
             if step_minutes is not None:
                 msg += f"- Time step: {step_minutes} min\n"
             await inter.edit_original_response(msg)
-            self.bot.dispatch("schedule_update", inter.channel.id)
+
+            # The command is used in the tasks channel; the message lives in the
+            # schedule one, so the update has to be aimed there.
+            entry = provider.channels.get(inter.author.id)
+            schedule_channel_id = provider.channels.display_channel_id(entry) if entry else None
+            if schedule_channel_id:
+                self.bot.dispatch("schedule_update", schedule_channel_id)
         else:
             await inter.edit_original_response(
                 "You don't have a schedule channel yet. Please use `/schedule_channel create` first."

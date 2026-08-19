@@ -6,7 +6,7 @@ from disnake.ext import commands
 from core import cache
 from core.embed_cog import BaseEmbedCog
 from modules.inflation_provider import inflation_provider
-from modules.schedule_provider import ScheduleProvider
+from modules.schedule_provider import channels_registry as schedule_channels
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +26,10 @@ class UsageStatsEmbed(BaseEmbedCog):
         ),
     }
 
-    def __init__(self, bot: commands.Bot) -> None:
-        self.provider = ScheduleProvider()
-
-        super().__init__(bot)
-
     async def get_data(self):
         # Calculate schedule users
         try:
-            channels_data = self.provider.load_channels()
-            schedule_users = len(channels_data)
+            schedule_users = schedule_channels.count()
         except Exception:
             schedule_users = 0
 

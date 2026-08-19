@@ -1,88 +1,30 @@
-import asyncio
-import logging
-import traceback
-
-import settings
-from disnake.ext import commands, tasks
+from disnake.ext import commands
 
 from core import cache
-from core.task_handler import ResilientTaskHandler
-from modules.schedule_provider import ScheduleProvider
-
-logger = logging.getLogger(__name__)
-
-provider = ScheduleProvider()
+from core.channel_loop import PersonalChannelLoopCog
+from modules.schedule_provider import channels_registry
 
 
-class ScheduleMessageLoop(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.error_handler = ResilientTaskHandler(bot, self.main_loop, "Main_ScheduleMessageLoop")
-        self.main_loop.start()
+class ScheduleMessageLoop(PersonalChannelLoopCog):
+    """
+    Recomputes every user's schedule on a slow tick.
 
-    def cog_unload(self):
-        self.main_loop.cancel()
+    Unlike the inflation report, a schedule goes stale on its own: time passes,
+    deadlines approach and routines roll over, so this loop is the main way the
+    message stays current rather than a safety net.
+    """
 
-    @tasks.loop(seconds=getattr(settings, "schedule_loop_update_seconds", 600))
-    async def main_loop(self):
-        data = provider.load_channels()
-        for info in data.values():
-            channel_id = info.get("channel_id")
-            if channel_id:
-                try:
-                    self.bot.dispatch("schedule_update", channel_id)
-                    await asyncio.sleep(0.5)
-                except Exception as e:
-                    logger.error(f"Error dispatching update: {e}")
+    registry = channels_registry
+    init_event = "schedule_init"
+    update_event = "schedule_update"
+    interval_setting = "schedule_loop_update_seconds"
+    default_interval = 600
 
-    @main_loop.before_loop
-    async def before_main_loop(self):
-        await self.bot.wait_until_ready()
-
-        try:
-            channels = []
-
-            # 1. Getting channels from JSON
-            data = provider.load_channels()
-
-            for user_id_str, info in data.items():
-                channel_id = info.get("channel_id")
-                user_id = int(user_id_str)
-                tasks_channel_id = info.get("tasks_channel_id")
-
-                if not hasattr(cache, "tasks_channels"):
-                    cache.tasks_channels = {}
-                if tasks_channel_id:
-                    cache.tasks_channels[tasks_channel_id] = user_id
-
-                try:
-                    channel = await self.bot.get_or_fetch_channel(channel_id)
-                    channels.append((channel, user_id))
-                except Exception as e:
-                    logger.warning(f"Not found channel {channel_id}: {e}")
-
-            # 2. (Purge is now handled by EternalMessage in schedule_init)
-            for channel, _ in channels:
-                await asyncio.sleep(0.5)
-
-            # 3. Sending initial messages and filling the list for future edits
-            await asyncio.sleep(0.5)
-
-            for channel, user_id in channels:
-                try:
-                    self.bot.dispatch("schedule_init", channel, user_id)
-                    logger.info(f"Dispatched schedule_init for channel {channel.id}.")
-                except Exception as e:
-                    logger.error(f"Error for channel {channel.id}: {e}")
-
-        except Exception as e:
-            logger.error(f"Error in before_main_loop: {e}")
-            traceback.print_exc()
-
-    @main_loop.error
-    async def on_main_loop_error(self, error):
-        await self.error_handler.handle_error(error)
+    async def prepare(self):
+        """Map the tasks channels to their owners, for the cogs listening there."""
+        for user_id, tasks_channel_id in self.registry.iter_management_channels():
+            cache.tasks_channels[tasks_channel_id] = user_id
 
 
-def setup(bot):
+def setup(bot: commands.Bot) -> None:
     bot.add_cog(ScheduleMessageLoop(bot))
