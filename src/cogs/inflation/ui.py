@@ -9,7 +9,7 @@ from core import cache
 from core.paged_message import Page, PageSource, PaginationView, ensure_controller
 from core.time_utils import tz
 from core.utils import format_phrase, get_phrases
-from modules.inflation_report import build_report, render_page
+from modules.inflation_report import build_report, build_server_report, render_page
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +61,34 @@ class InflationPageSource(PageSource):
         )
 
 
+class InflationServerPageSource(InflationPageSource):
+    """
+    The guild's shared budget, as a single page with no pager.
+
+    Everything the reader sees is inherited from the personal source — the same
+    welcome text, header and error page — because it is the same report; only
+    the trimming differs, and that lives in `build_server_report`.
+    """
+
+    # A different message so it gets its own entry in `webhooks_config.json`, and
+    # a different prefix so a stray personal pager button cannot drive it.
+    message_type = "inflation_server"
+    view_prefix = "inflation_server"
+    paginated = False
+
+    async def build_pages(self, owner_id: int, guild_id: int | None) -> list[Page]:
+        # The header is prepended to the page content, so it eats into the same
+        # message limit the report has to fit in. +2 for the blank line after it.
+        reserve = len(self.header(guild_id)) + 2
+
+        return [Page(content=build_server_report(owner_id, reserve))]
+
+
 class InflationUI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.source = InflationPageSource()
+        self.server_source = InflationServerPageSource()
 
     async def cog_load(self):
         # Persistent view: the buttons keep working across restarts.
@@ -82,6 +106,16 @@ class InflationUI(commands.Cog):
     @commands.Cog.listener("on_inflation_init")
     async def handle_inflation_init(self, channel: disnake.TextChannel, user_id: int):
         await ensure_controller(self.bot, channel.id, user_id, self.source)
+
+    @commands.Cog.listener("on_inflation_server_update")
+    async def handle_inflation_server_update(self, channel_id: int):
+        await self.handle_inflation_update(channel_id)
+
+    @commands.Cog.listener("on_inflation_server_init")
+    async def handle_inflation_server_init(self, channel: disnake.TextChannel, guild_id: int):
+        # The "owner" of a server report is the guild itself, so its id is what
+        # the source gets asked to build pages for.
+        await ensure_controller(self.bot, channel.id, guild_id, self.server_source)
 
 
 def setup(bot):

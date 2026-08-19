@@ -93,6 +93,9 @@ class PageSource:
     # Defaults to `view_prefix`; set it when the module's phrases live under a
     # different name than its buttons.
     phrases_section: str = ""
+    # Set to False for a source that always builds exactly one page: the message
+    # is then posted without any pager, like the statistic message.
+    paginated: bool = True
 
     async def build_pages(self, user_id: int, guild_id: int | None) -> list[Page]:
         """Build every page. An empty list falls back to the welcome text."""
@@ -287,9 +290,8 @@ class PagedChannelMessage:
         guild_id = self.get_guild_id()
         welcome = self.source.welcome_text(guild_id)
 
-        success = await self.em.init_message(
-            {"content": welcome, "view": PaginationView.for_source(self.source)}, purge_on_recreate=True
-        )
+        view = PaginationView.for_source(self.source) if self.source.paginated else None
+        success = await self.em.init_message(self._with_view({"content": welcome}, view), purge_on_recreate=True)
         if not success:
             logger.error(f"Failed to initialize eternal message for channel {self.channel_id}")
             return False
@@ -323,7 +325,7 @@ class PagedChannelMessage:
 
         state = (
             page.fingerprint(),
-            tuple((item.custom_id, getattr(item, "disabled", False)) for item in view.children),
+            tuple((item.custom_id, getattr(item, "disabled", False)) for item in view.children) if view else (),
         )
         if state == self.last_state:
             return
@@ -363,7 +365,10 @@ class PagedChannelMessage:
         # out of it, and the header must not cost the page its identity.
         return Page(content=content, embeds=page.embeds, meta=page.meta)
 
-    def _build_view(self, page: Page, guild_id: int | None) -> PaginationView:
+    def _build_view(self, page: Page, guild_id: int | None) -> PaginationView | None:
+        if not self.source.paginated:
+            return None
+
         return PaginationView.for_source(
             self.source,
             prev_disabled=self.current_page <= 0,
@@ -371,21 +376,32 @@ class PagedChannelMessage:
             extra=self.source.extra_components(page, self.current_page, guild_id),
         )
 
+    @staticmethod
+    def _with_view(kwargs: dict, view: "PaginationView | None") -> dict:
+        """
+        Add the view to a payload, but only when there is one.
+
+        `webhook.send()` — the path that recreates a deleted message — rejects
+        `view=None`, and a message posted without components has nothing to clear
+        anyway, so the key is left out entirely instead.
+        """
+        return kwargs if view is None else kwargs | {"view": view}
+
     async def _publish(
         self,
         page: Page,
-        view: PaginationView,
+        view: PaginationView | None,
         state: tuple,
         guild_id: int | None,
         interaction: disnake.MessageInteraction | None,
     ):
-        kwargs = page.to_kwargs() | {"view": view}
+        kwargs = self._with_view(page.to_kwargs(), view)
 
         try:
             if interaction:
                 await interaction.edit_original_response(**kwargs)
             else:
-                fallback = {"content": self.source.welcome_text(guild_id), "view": view}
+                fallback = self._with_view({"content": self.source.welcome_text(guild_id)}, view)
                 await self.em.update(fallback_kwargs=fallback, **kwargs)
 
             self.last_state = state

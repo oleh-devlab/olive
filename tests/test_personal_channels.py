@@ -3,13 +3,19 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 # Setup path so we can import from src
 # TODO: fix paths
 src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
-from core.personal_channels import ChannelSetupError, PersonalChannelRegistry  # noqa: E402
+from core.personal_channels import (  # noqa: E402
+    ChannelSetupError,
+    PersonalChannelRegistry,
+    create_channel_pair,
+    create_public_channel,
+)
 
 
 class TestPersonalChannelRegistry(unittest.TestCase):
@@ -63,6 +69,26 @@ class TestPersonalChannelRegistry(unittest.TestCase):
         self.assertEqual(entry["planning_days"], 30)
         self.assertEqual(entry["report_channel_id"], 6001)
 
+    def test_registering_without_a_management_channel_omits_the_key(self):
+        # The inflation module keeps its public per-guild channels here, keyed by
+        # guild id and with no management channel at all.
+        self.registry.register(111, 111, 5001)
+
+        entry = self.registry.get(111)
+
+        self.assertEqual(entry["report_channel_id"], 5001)
+        self.assertNotIn("management_channel_id", entry)
+        self.assertEqual(list(self.registry.iter_display_channels()), [(111, 5001)])
+        self.assertEqual(list(self.registry.iter_management_channels()), [])
+
+    def test_registering_without_a_management_channel_clears_a_stale_one(self):
+        # Otherwise the entry would keep claiming a channel the caller just said
+        # this owner does not have.
+        self.registry.register(42, 111, 5001, 5002)
+        self.registry.register(42, 111, 5001)
+
+        self.assertNotIn("management_channel_id", self.registry.get(42))
+
     def test_save_leaves_no_temporary_file_behind(self):
         self.registry.register(42, 111, 5001, 5002)
 
@@ -105,6 +131,63 @@ class TestPersonalChannelRegistry(unittest.TestCase):
 
         self.assertEqual(self.registry.find_user_by_management_channel(5002), 42)
         self.assertIsNone(self.registry.find_user_by_management_channel(9999))
+
+
+class TestCategoryValidation(unittest.IsolatedAsyncioTestCase):
+    """A settings entry pointing at the wrong kind of channel must say so."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.registry = PersonalChannelRegistry(Path(self.tmp.name) / "channels.json", "report_channel_id")
+
+    def interaction(self, category):
+        """An interaction whose guild resolves the configured id to `category`."""
+        guild = SimpleNamespace(id=111, get_channel=lambda _: category)
+
+        return SimpleNamespace(guild=guild, author=SimpleNamespace(id=42))
+
+    async def test_public_channel_rejects_a_non_category(self):
+        # A text channel id here used to reach create_text_channel() and come
+        # back as a generic "creation failed", which names nothing to fix.
+        with self.assertRaises(ChannelSetupError) as caught:
+            await create_public_channel(
+                self.interaction(SimpleNamespace(id=222)),
+                registry=self.registry,
+                categories={111: 222},
+                owner_id=111,
+                name="inflation-server",
+                reason="test",
+            )
+
+        self.assertEqual(caught.exception.phrase_key, "server_category_not_found")
+
+    async def test_channel_pair_rejects_a_non_category(self):
+        with self.assertRaises(ChannelSetupError) as caught:
+            await create_channel_pair(
+                self.interaction(SimpleNamespace(id=222)),
+                registry=self.registry,
+                categories={111: 222},
+                max_per_guild=5,
+                display_name="a",
+                management_name="b",
+                reason="test",
+            )
+
+        self.assertEqual(caught.exception.phrase_key, "category_not_found")
+
+    async def test_a_missing_category_reports_the_same_way(self):
+        with self.assertRaises(ChannelSetupError) as caught:
+            await create_public_channel(
+                self.interaction(None),
+                registry=self.registry,
+                categories={111: 222},
+                owner_id=111,
+                name="inflation-server",
+                reason="test",
+            )
+
+        self.assertEqual(caught.exception.phrase_key, "server_category_not_found")
 
 
 class TestChannelSetupError(unittest.TestCase):

@@ -90,6 +90,53 @@ def build_record_pages(
     return pages
 
 
+def build_single_record_page(
+    records: list[dict],
+    currency: str = "",
+    page_limit: int = DEFAULT_PAGE_LIMIT,
+) -> tuple[str, int]:
+    """
+    Render as many whole records as fit into one page, and say how many that was.
+
+    `build_record_pages` spills what does not fit onto the next page; here there
+    is no next page, so the list is cut instead and the caller can tell the
+    reader how much is missing. A record longer than `page_limit` on its own is
+    still shown — a page holding nothing but a truncation note is worse than one
+    slightly oversized record.
+    """
+    lines: list[str] = []
+    length = 0
+
+    for record in records:
+        block = format_record(record, currency)
+        # +1 for the newline that will join this block to the previous one.
+        extra = len(block) + (1 if lines else 0)
+
+        if lines and length + extra > page_limit:
+            break
+
+        lines.append(block)
+        length += extra
+
+    return "\n".join(lines), len(lines)
+
+
+def trim_to_whole_lines(text: str, limit: int) -> str:
+    """
+    The longest run of whole lines of `text` that fits into `limit`.
+
+    Cutting mid-line is the last resort, for a single line that is over the
+    limit on its own; everywhere else a line boundary keeps the markdown intact.
+    """
+    if len(text) <= limit:
+        return text
+
+    head = text[:limit]
+    last_break = head.rfind("\n")
+
+    return head[:last_break] if last_break > 0 else head
+
+
 def _next_month(day: datetime.date) -> datetime.date:
     """First day of the month following `day`."""
     return datetime.date(day.year + day.month // 12, day.month % 12 + 1, 1)

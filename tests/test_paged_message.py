@@ -79,6 +79,41 @@ class TestPagePayload(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class TestUnpaginatedSource(unittest.IsolatedAsyncioTestCase):
+    """A source that always builds one page is published without a pager."""
+
+    def controller(self, paginated: bool) -> PagedChannelMessage:
+        class Source(PageSource):
+            view_prefix = "test"
+
+        Source.paginated = paginated
+
+        controller = PagedChannelMessage.__new__(PagedChannelMessage)
+        controller.source = Source()
+        controller.current_page = 0
+        controller.pages = [Page(content="body")]
+
+        return controller
+
+    async def test_no_view_is_built(self):
+        self.assertIsNone(self.controller(paginated=False)._build_view(Page(), None))
+        self.assertIsNotNone(self.controller(paginated=True)._build_view(Page(), None))
+
+    async def test_the_view_key_is_left_out_entirely(self):
+        # `webhook.send()` — the path that recreates a deleted message — rejects
+        # view=None, so the key must be absent rather than None.
+        payload = PagedChannelMessage._with_view({"content": "body"}, None)
+
+        self.assertNotIn("view", payload)
+
+    async def test_a_view_is_still_attached_when_there_is_one(self):
+        view = PaginationView("test")
+
+        payload = PagedChannelMessage._with_view({"content": "body"}, view)
+
+        self.assertIs(payload["view"], view)
+
+
 class TestPaginationView(unittest.IsolatedAsyncioTestCase):
     async def test_for_source_takes_the_prefix_and_the_phrases_section(self):
         class Source(PageSource):

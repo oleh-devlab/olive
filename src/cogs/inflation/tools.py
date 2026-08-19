@@ -9,11 +9,11 @@ from disnake.ext import commands
 
 from core import cache, utils
 from core.utils import format_phrase
-from core.personal_channels import ChannelSetupError, create_channel_pair
+from core.personal_channels import ChannelSetupError, create_channel_pair, create_public_channel
 from modules.inflation_calculator.modules.exceptions import InflationCalculatorError, ValidationError
-from modules.inflation_provider import inflation_provider
+from modules.inflation_provider import SERVER_SCOPE, USER_SCOPE, inflation_provider
 from modules.inflation_formatter import format_money
-from modules.inflation_report import build_rates_warning, build_report, get_currency, render_page
+from modules.inflation_report import build_rates_warning, build_report, build_server_report, get_currency, render_page
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,41 @@ logger = logging.getLogger(__name__)
 phrases_cmd = utils.get_phrases().get("inflation_cmd", {})
 
 DATE_FORMAT = "%d.%m.%Y"
+
+# What the `scope` option offers. The values double as `inflation_provider`
+# scopes, so the commands never translate between the two.
+PERSONAL_CHOICE = "personal"
+SCOPE_CHOICES = [PERSONAL_CHOICE, SERVER_SCOPE]
+
+
+def scope_param(default: str = PERSONAL_CHOICE):
+    """The `scope` option, spelled the same way in every subcommand."""
+    return commands.Param(
+        default=default,
+        choices=SCOPE_CHOICES,
+        description=phrases_cmd.get("param_scope", "Whose records to use: your own, or the server's shared budget"),
+    )
+
+
+def resolve_owner(inter: disnake.ApplicationCommandInteraction, scope: str, *, write: bool) -> tuple[int, str]:
+    """
+    Return `(owner_id, provider scope)` for a command, or raise `ChannelSetupError`.
+
+    Reading the server budget is open to everyone — the report channel is public
+    anyway — while changing it is for administrators only. `ChannelSetupError`
+    is reused for the refusal because it already carries a phrases key instead of
+    a finished string.
+    """
+    if scope != SERVER_SCOPE:
+        return inter.author.id, USER_SCOPE
+
+    if not inter.guild:
+        raise ChannelSetupError("server_scope_requires_guild", "The server budget is only available on a server.")
+
+    if write and not inter.author.guild_permissions.administrator:
+        raise ChannelSetupError("server_scope_denied", "Only server administrators can change the server budget.")
+
+    return inter.guild.id, SERVER_SCOPE
 
 
 def get_phrases(inter: disnake.ApplicationCommandInteraction) -> dict:
@@ -45,11 +80,17 @@ class InflationTools(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def notify_update(self, user_id: int):
-        """Refresh the user's eternal report message, if they have a report channel."""
-        channel_id = inflation_provider.get_report_channel_id(user_id)
+    def notify_update(self, owner_id: int, scope: str = USER_SCOPE):
+        """Refresh the owner's eternal report message, if they have a report channel."""
+        if scope == SERVER_SCOPE:
+            channel_id = inflation_provider.get_server_report_channel_id(owner_id)
+            event = "inflation_server_update"
+        else:
+            channel_id = inflation_provider.get_report_channel_id(owner_id)
+            event = "inflation_update"
+
         if channel_id:
-            self.bot.dispatch("inflation_update", channel_id)
+            self.bot.dispatch(event, channel_id)
 
     @commands.slash_command(
         name="inflation",
@@ -72,9 +113,16 @@ class InflationTools(commands.Cog):
         comment: str = commands.Param(
             default="", description=phrases_cmd.get("param_comment", "Optional comment for this record")
         ),
+        scope: str = scope_param(),
     ):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
+
+        try:
+            owner_id, owner_scope = resolve_owner(inter, scope, write=True)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
 
         try:
             date_obj = datetime.datetime.strptime(date_str, DATE_FORMAT).date()
@@ -85,12 +133,12 @@ class InflationTools(commands.Cog):
             return
 
         try:
-            record = inflation_provider.add_record(inter.author.id, amount, date_obj, comment)
+            record = inflation_provider.add_record(owner_id, amount, date_obj, comment, owner_scope)
         except Exception as e:
             await report_error(inter, phrases, e, "add")
             return
 
-        self.notify_update(inter.author.id)
+        self.notify_update(owner_id, owner_scope)
         await inter.edit_original_response(
             content=format_phrase(
                 phrases, "record_added", "Record added successfully! ID: {record_id}", record_id=record.get("id")
@@ -105,17 +153,24 @@ class InflationTools(commands.Cog):
         self,
         inter: disnake.ApplicationCommandInteraction,
         record_id: int = commands.Param(description=phrases_cmd.get("param_record_id", "ID of the record to delete")),
+        scope: str = scope_param(),
     ):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
 
         try:
-            record = inflation_provider.delete_record(inter.author.id, record_id)
+            owner_id, owner_scope = resolve_owner(inter, scope, write=True)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
+
+        try:
+            record = inflation_provider.delete_record(owner_id, record_id, owner_scope)
         except Exception as e:
             await report_error(inter, phrases, e, "delete")
             return
 
-        self.notify_update(inter.author.id)
+        self.notify_update(owner_id, owner_scope)
         currency = get_currency(inter.guild.id if inter.guild else None)
         await inter.edit_original_response(
             content=format_phrase(
@@ -130,17 +185,28 @@ class InflationTools(commands.Cog):
         name="report",
         description=phrases_cmd.get("cmd_report_desc", "Get your personal inflation report"),
     )
-    async def report(self, inter: disnake.ApplicationCommandInteraction):
+    async def report(self, inter: disnake.ApplicationCommandInteraction, scope: str = scope_param()):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
+        guild_id = inter.guild.id if inter.guild else None
 
         try:
-            summary, pages = build_report(inter.author.id, inter.guild.id if inter.guild else None)
+            owner_id, owner_scope = resolve_owner(inter, scope, write=False)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
+
+        try:
+            if owner_scope == SERVER_SCOPE:
+                await inter.edit_original_response(content=build_server_report(owner_id))
+                return
+
+            summary, pages = build_report(owner_id, guild_id)
         except Exception as e:
             await report_error(inter, phrases, e, "report")
             return
 
-        content = render_page(summary, pages, 0, inter.guild.id if inter.guild else None)
+        content = render_page(summary, pages, 0, guild_id)
 
         if len(pages) > 1:
             content += "\n" + phrases.get(
@@ -162,9 +228,13 @@ class InflationTools(commands.Cog):
         name="create",
         description=phrases_cmd.get("cmd_inflation_channel_create_desc", "Create personal inflation channels"),
     )
-    async def inflation_channel_create(self, inter: disnake.ApplicationCommandInteraction):
+    async def inflation_channel_create(self, inter: disnake.ApplicationCommandInteraction, scope: str = scope_param()):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
+
+        if scope == SERVER_SCOPE:
+            await self.create_server_channel(inter, phrases)
+            return
 
         try:
             report_channel, management_channel = await create_channel_pair(
@@ -202,13 +272,82 @@ class InflationTools(commands.Cog):
             )
         )
 
+    async def create_server_channel(self, inter: disnake.ApplicationCommandInteraction, phrases: dict):
+        """The `scope: server` half of `/inflation_channel create`."""
+        try:
+            resolve_owner(inter, SERVER_SCOPE, write=True)
+            channel = await create_public_channel(
+                inter,
+                registry=inflation_provider.server_channels,
+                categories=getattr(settings, "inflation_server_categories", {}),
+                owner_id=inter.guild.id,
+                name="inflation-server",
+                reason="Automatic creation of the server inflation channel",
+            )
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
+
+        self.bot.dispatch("inflation_server_init", channel, inter.guild.id)
+
+        await inter.edit_original_response(
+            content=format_phrase(
+                phrases,
+                "server_channel_created",
+                "The public report channel is ready: {channel}",
+                channel=channel.mention,
+            )
+        )
+
+    async def delete_server_channel(self, inter: disnake.ApplicationCommandInteraction, phrases: dict):
+        """The `scope: server` half of `/inflation_channel delete`."""
+        try:
+            resolve_owner(inter, SERVER_SCOPE, write=True)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
+
+        removed = inflation_provider.server_channels.remove(inter.guild.id)
+        if not removed:
+            await inter.edit_original_response(
+                content=phrases.get("server_no_channel", "This server has no public report channel.")
+            )
+            return
+
+        channel_id = removed.get("report_channel_id")
+        cache.channel_states.pop(channel_id, None)
+
+        # Records stay on disk; only the Discord channel goes away.
+        await inter.edit_original_response(
+            content=phrases.get(
+                "server_channel_deleted", "The public report channel is being deleted. Records are kept."
+            )
+        )
+
+        await self.delete_channels(channel_id, reason="Server inflation channel removed by an administrator")
+
+    async def delete_channels(self, *channel_ids: int | None, reason: str) -> None:
+        for channel_id in channel_ids:
+            if not channel_id:
+                continue
+            try:
+                channel = await self.bot.get_or_fetch_channel(channel_id)
+                if channel:
+                    await channel.delete(reason=reason)
+            except Exception as e:
+                logger.warning(f"Could not delete inflation channel {channel_id}: {e}")
+
     @inflation_channel.sub_command(
         name="delete",
         description=phrases_cmd.get("cmd_inflation_channel_delete_desc", "Delete your inflation channels"),
     )
-    async def inflation_channel_delete(self, inter: disnake.ApplicationCommandInteraction):
+    async def inflation_channel_delete(self, inter: disnake.ApplicationCommandInteraction, scope: str = scope_param()):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
+
+        if scope == SERVER_SCOPE:
+            await self.delete_server_channel(inter, phrases)
+            return
 
         removed = inflation_provider.channels.remove(inter.author.id)
         if not removed:
@@ -225,20 +364,20 @@ class InflationTools(commands.Cog):
             content=phrases.get("channels_deleted", "Your inflation channels are being deleted. Records are kept.")
         )
 
-        for channel_id in (report_channel_id, removed.get("management_channel_id")):
-            if not channel_id:
-                continue
-            try:
-                channel = await self.bot.get_or_fetch_channel(channel_id)
-                if channel:
-                    await channel.delete(reason="Inflation channels removed by their owner")
-            except Exception as e:
-                logger.warning(f"Could not delete inflation channel {channel_id}: {e}")
+        await self.delete_channels(
+            report_channel_id,
+            removed.get("management_channel_id"),
+            reason="Inflation channels removed by their owner",
+        )
 
     async def notify_all_updates(self):
         """Refresh every report message: a rate change moves everyone's numbers."""
         for _, channel_id in inflation_provider.channels.iter_display_channels():
             self.bot.dispatch("inflation_update", channel_id)
+            await asyncio.sleep(0.5)
+
+        for _, channel_id in inflation_provider.server_channels.iter_display_channels():
+            self.bot.dispatch("inflation_server_update", channel_id)
             await asyncio.sleep(0.5)
 
     @commands.slash_command(

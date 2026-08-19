@@ -20,5 +20,16 @@ class InflationMessageLoop(PersonalChannelLoopCog):
     default_interval = 3600
 
 
+class InflationServerMessageLoop(PersonalChannelLoopCog):
+    """The same safety net for the public per-guild report messages."""
+
+    registry = inflation_provider.server_channels
+    init_event = "inflation_server_init"
+    update_event = "inflation_server_update"
+    interval_setting = "inflation_loop_update_seconds"
+    default_interval = 3600
+
+
 def setup(bot: commands.Bot) -> None:
     bot.add_cog(InflationMessageLoop(bot))
+    bot.add_cog(InflationServerMessageLoop(bot))

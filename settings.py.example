@@ -82,6 +82,14 @@ inflation_categories = {
 }
 inflation_max_channels_per_guild = 5
 inflation_max_records_per_user = 200
+
+# <integer_server_id>: <category_id> — where the public channel with the shared
+# server budget is created. Only server administrators can create it or edit the
+# budget; everyone can read the report.
+inflation_server_categories = {
+    123456789: 987654321 # guild_id: category_id
+}
+inflation_max_records_per_server = 500
 inflation_loop_update_seconds = 3600 # (Seconds) Safety-net refresh; records update the report on change anyway
 
 # Where records and CPI data live. Defaults to `<repo>/data/inflation`.

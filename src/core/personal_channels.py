@@ -43,7 +43,11 @@ class ChannelSetupError(Exception):
 
 class PersonalChannelRegistry:
     """
-    `{user_id: {<display key>, <management key>, "guild_id", ...}}` in one JSON file.
+    `{owner_id: {<display key>, <management key>, "guild_id", ...}}` in one JSON file.
+
+    The owner is usually a user, but not always: the inflation module keeps its
+    public per-guild report channels here too, keyed by guild id and with no
+    management channel at all.
 
     The key names are configurable because each module already has a file in
     production written with its own naming, and the registry has to read those
@@ -88,26 +92,40 @@ class PersonalChannelRegistry:
             with contextlib.suppress(OSError):
                 os.remove(temp_path)
 
-    def get(self, user_id: int) -> dict | None:
-        return self.load().get(str(user_id))
+    def get(self, owner_id: int) -> dict | None:
+        return self.load().get(str(owner_id))
 
-    def register(self, user_id: int, guild_id: int, display_channel_id: int, management_channel_id: int, **extra):
+    def register(
+        self,
+        owner_id: int,
+        guild_id: int,
+        display_channel_id: int,
+        management_channel_id: int | None = None,
+        **extra,
+    ):
+        """
+        Write an owner's channels, keeping any unrelated keys already in the entry.
+
+        `management_channel_id` states what the owner has: an id sets it, `None`
+        means "no management channel" and clears a stale one. Only keys this
+        method knows about are touched — the schedule's solver settings live in
+        the same record and have to survive.
+        """
         data = self.load()
-        entry = data.get(str(user_id), {})
-        entry.update(
-            {
-                self.display_key: display_channel_id,
-                self.management_key: management_channel_id,
-                "guild_id": guild_id,
-                **extra,
-            }
-        )
-        data[str(user_id)] = entry
+        entry = data.get(str(owner_id), {})
+        entry.update({self.display_key: display_channel_id, "guild_id": guild_id, **extra})
+
+        if management_channel_id is None:
+            entry.pop(self.management_key, None)
+        else:
+            entry[self.management_key] = management_channel_id
+
+        data[str(owner_id)] = entry
         self.save(data)
 
-    def remove(self, user_id: int) -> dict | None:
+    def remove(self, owner_id: int) -> dict | None:
         data = self.load()
-        removed = data.pop(str(user_id), None)
+        removed = data.pop(str(owner_id), None)
         if removed is not None:
             self.save(data)
 
@@ -123,23 +141,29 @@ class PersonalChannelRegistry:
         return entry.get(self.display_key)
 
     def iter_display_channels(self):
-        """Yield `(user_id, display_channel_id)` for every registered entry."""
-        for user_id_str, entry in self.load().items():
+        """Yield `(owner_id, display_channel_id)` for every registered entry."""
+        for owner_id_str, entry in self.load().items():
             channel_id = entry.get(self.display_key)
             if channel_id:
-                yield int(user_id_str), channel_id
+                yield int(owner_id_str), channel_id
 
     def iter_management_channels(self):
-        """Yield `(user_id, management_channel_id)` for every registered entry."""
-        for user_id_str, entry in self.load().items():
+        """Yield `(owner_id, management_channel_id)` for every registered entry."""
+        for owner_id_str, entry in self.load().items():
             channel_id = entry.get(self.management_key)
             if channel_id:
-                yield int(user_id_str), channel_id
+                yield int(owner_id_str), channel_id
 
     def find_user_by_management_channel(self, channel_id: int) -> int | None:
-        for user_id_str, entry in self.load().items():
+        """
+        The user whose commands that channel carries, if any.
+
+        Still named for users on purpose: a management channel only ever belongs
+        to a personal pair, never to a guild-wide entry.
+        """
+        for owner_id_str, entry in self.load().items():
             if entry.get(self.management_key) == channel_id:
-                return int(user_id_str)
+                return int(owner_id_str)
 
         return None
 
@@ -166,9 +190,14 @@ async def create_channel_pair(
     if not inter.guild or inter.guild.id not in categories:
         raise ChannelSetupError("not_available_server", "Not available on this server.")
 
+    # Not just "is there a channel with that id": a settings entry pointing at a
+    # text channel would otherwise sail through and fail as a generic creation
+    # error, which tells the administrator nothing about what to fix.
     category = inter.guild.get_channel(categories[inter.guild.id])
-    if not category:
-        raise ChannelSetupError("category_not_found", "Category for channels not found. Contact administrator.")
+    if not isinstance(category, disnake.CategoryChannel):
+        raise ChannelSetupError(
+            "category_not_found", "Category for channels not found or misconfigured. Contact administrator."
+        )
 
     if registry.get(inter.author.id):
         raise ChannelSetupError("channel_already_exists", "You already have channels on one of the servers.")
@@ -214,3 +243,52 @@ async def create_channel_pair(
     registry.register(inter.author.id, inter.guild.id, display_channel.id, management_channel.id)
 
     return display_channel, management_channel
+
+
+async def create_public_channel(
+    inter: disnake.ApplicationCommandInteraction,
+    *,
+    registry: PersonalChannelRegistry,
+    categories: dict[int, int],
+    owner_id: int,
+    name: str,
+    reason: str,
+) -> disnake.TextChannel:
+    """
+    Create one channel everybody on the guild can read but only the bot writes to.
+
+    The mirror image of `create_channel_pair`: same guards, same error keys style,
+    but a single channel and open permissions — what lives there is the guild's
+    own data, not one person's. `owner_id` is what the entry is keyed by, which
+    for a guild-wide channel is the guild id itself.
+
+    Raises `ChannelSetupError` with a phrases key for every expected failure.
+    """
+    if not inter.guild or inter.guild.id not in categories:
+        raise ChannelSetupError("server_not_available", "Not available on this server.")
+
+    category = inter.guild.get_channel(categories[inter.guild.id])
+    if not isinstance(category, disnake.CategoryChannel):
+        raise ChannelSetupError(
+            "server_category_not_found", "Category for the channel not found or misconfigured. Contact administrator."
+        )
+
+    if registry.get(owner_id):
+        raise ChannelSetupError("server_channel_exists", "This server already has a public report channel.")
+
+    overwrites = {
+        inter.guild.default_role: disnake.PermissionOverwrite(read_messages=True, send_messages=False),
+        inter.guild.me: disnake.PermissionOverwrite(read_messages=True, send_messages=True),
+    }
+
+    try:
+        channel = await inter.guild.create_text_channel(
+            name=name, category=category, overwrites=overwrites, reason=reason
+        )
+    except Exception as e:
+        logger.error(f"Error creating public channel in guild {inter.guild.id}: {e}")
+        raise ChannelSetupError("server_creation_error", "An error occurred while creating the channel.") from e
+
+    registry.register(owner_id, inter.guild.id, channel.id)
+
+    return channel

@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 # reaching into the vendored package themselves.
 FALLBACK_ANNUAL_PERCENT = (FALLBACK_ANNUAL_INFLATION_RATE * 100).normalize()
 
+# Whose records a call is about: one user's own, or a guild's shared budget.
+# The two live in separate directories so that a guild id can never be mistaken
+# for a user id — `count_users_with_records()` reads the user directory as a
+# whole and would otherwise count server budgets as users.
+USER_SCOPE = "user"
+SERVER_SCOPE = "server"
+
 
 def get_base_data_dir() -> Path:
     """Repo-root `data/`, shared with the schedule subsystem."""
@@ -41,8 +48,30 @@ def get_records_dir() -> Path:
     return get_data_dir() / "records"
 
 
-def get_records_file(user_id: int) -> Path:
-    return get_records_dir() / f"{user_id}.json"
+def get_server_records_dir() -> Path:
+    return get_data_dir() / "server_records"
+
+
+def get_scope_records_dir(scope: str = USER_SCOPE) -> Path:
+    """
+    The directory a scope's records live in, refusing anything else.
+
+    A misspelled scope used to mean "user", which would quietly write a guild's
+    shared budget into someone's personal file — the one mistake here that is
+    not obvious from the outside.
+    """
+    if scope == SERVER_SCOPE:
+        return get_server_records_dir()
+
+    if scope != USER_SCOPE:
+        raise ValueError(f"Unknown inflation scope: {scope!r}")
+
+    return get_records_dir()
+
+
+def get_records_file(owner_id: int, scope: str = USER_SCOPE) -> Path:
+    """Records of one owner: a user by default, a guild under `SERVER_SCOPE`."""
+    return get_scope_records_dir(scope) / f"{owner_id}.json"
 
 
 def get_rates_file() -> Path:
@@ -54,74 +83,92 @@ def get_channels_file() -> Path:
     return get_base_data_dir() / "inflation_channels.json"
 
 
+def get_server_channels_file() -> Path:
+    """Registry of the public per-guild report channels."""
+    return get_base_data_dir() / "inflation_server_channels.json"
+
+
 class InflationProvider:
     """
-    Owns record/rate persistence and the inflation channel registry.
+    Owns record/rate persistence and the inflation channel registries.
 
-    Calculator instances are cached per user because `InflationCalculator.from_json`
+    Calculator instances are cached per owner because `InflationCalculator.from_json`
     re-reads both JSON files on construction, and the report loop would otherwise
-    do that on every tick. Rates are shared by every user, so changing them drops
+    do that on every tick. Rates are shared by everyone, so changing them drops
     the whole cache.
+
+    There are two kinds of owner, told apart by `scope`: a user with their own
+    private records, and a guild with one shared budget its administrators edit.
     """
 
     def __init__(self):
-        self._calculators: dict[int, InflationCalculator] = {}
+        self._calculators: dict[tuple[str, int], InflationCalculator] = {}
 
         # Key names match the file this shipped with, so nothing on disk moves.
         self.channels = PersonalChannelRegistry(
             get_channels_file(), display_key="report_channel_id", management_key="management_channel_id"
         )
 
+        # Keyed by guild id, and with no management channel: the server report is
+        # public and its commands are run wherever the administrator happens to be.
+        self.server_channels = PersonalChannelRegistry(get_server_channels_file(), display_key="report_channel_id")
+
     # ------------------------------------------------------------------
     # Calculator access
     # ------------------------------------------------------------------
 
-    def _get_calculator(self, user_id: int) -> InflationCalculator:
-        calculator = self._calculators.get(user_id)
+    def _get_calculator(self, owner_id: int, scope: str = USER_SCOPE) -> InflationCalculator:
+        calculator = self._calculators.get((scope, owner_id))
         if calculator is not None:
             return calculator
 
-        get_records_dir().mkdir(parents=True, exist_ok=True)
+        get_scope_records_dir(scope).mkdir(parents=True, exist_ok=True)
 
         calculator = InflationCalculator.from_json(
-            records_filepath=str(get_records_file(user_id)),
+            records_filepath=str(get_records_file(owner_id, scope)),
             inflation_rates_filepath=str(get_rates_file()),
         )
-        self._calculators[user_id] = calculator
+        self._calculators[(scope, owner_id)] = calculator
 
         return calculator
 
-    def invalidate(self, user_id: int | None = None) -> None:
+    def invalidate(self, owner_id: int | None = None, scope: str = USER_SCOPE) -> None:
         """Drop cached calculators, e.g. after the JSON files changed on disk."""
-        if user_id is None:
+        if owner_id is None:
             self._calculators.clear()
         else:
-            self._calculators.pop(user_id, None)
+            self._calculators.pop((scope, owner_id), None)
 
     # ------------------------------------------------------------------
     # Records
     # ------------------------------------------------------------------
 
-    def add_record(self, user_id: int, amount: str, date: datetime.date, comment: str = "") -> dict:
-        calculator = self._get_calculator(user_id)
+    def add_record(
+        self, owner_id: int, amount: str, date: datetime.date, comment: str = "", scope: str = USER_SCOPE
+    ) -> dict:
+        calculator = self._get_calculator(owner_id, scope)
 
-        max_records = getattr(settings, "inflation_max_records_per_user", 200)
+        if scope == SERVER_SCOPE:
+            max_records = getattr(settings, "inflation_max_records_per_server", 500)
+        else:
+            max_records = getattr(settings, "inflation_max_records_per_user", 200)
+
         if calculator.records_count >= max_records:
             raise ValidationError(f"Record limit reached ({max_records}). Delete something first.")
 
         return calculator.add_record(amount, date, comment)
 
-    def delete_record(self, user_id: int, record_id: int) -> dict:
-        return self._get_calculator(user_id).delete_record(record_id)
+    def delete_record(self, owner_id: int, record_id: int, scope: str = USER_SCOPE) -> dict:
+        return self._get_calculator(owner_id, scope).delete_record(record_id)
 
-    def list_records(self, user_id: int) -> list[dict]:
-        return self._get_calculator(user_id).get_records()
+    def list_records(self, owner_id: int, scope: str = USER_SCOPE) -> list[dict]:
+        return self._get_calculator(owner_id, scope).get_records()
 
-    def count_records(self, user_id: int) -> int:
-        return self._get_calculator(user_id).records_count
+    def count_records(self, owner_id: int, scope: str = USER_SCOPE) -> int:
+        return self._get_calculator(owner_id, scope).records_count
 
-    def get_report(self, user_id: int) -> dict:
-        return self._get_calculator(user_id).get_report()
+    def get_report(self, owner_id: int, scope: str = USER_SCOPE) -> dict:
+        return self._get_calculator(owner_id, scope).get_report()
 
     def count_users_with_records(self) -> int:
         """
@@ -190,8 +237,16 @@ class InflationProvider:
 
         return self.channels.display_channel_id(entry) if entry else None
 
+    def get_server_report_channel_id(self, guild_id: int) -> int | None:
+        entry = self.server_channels.get(guild_id)
+
+        return self.server_channels.display_channel_id(entry) if entry else None
+
     def count_users_with_channels(self) -> int:
         return self.channels.count()
+
+    def count_servers_with_channels(self) -> int:
+        return self.server_channels.count()
 
 
 inflation_provider = InflationProvider()
