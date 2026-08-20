@@ -9,6 +9,13 @@ from pathlib import Path
 src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
+from tests.inflation_fixtures import (  # noqa: E402
+    make_consumed,
+    make_deposit,
+    make_folded_record,
+    make_node,
+    make_record,
+)
 from modules.inflation_formatter import (  # noqa: E402
     LOT_SOURCE_DEPOSIT_INTEREST,
     MAX_COMMENT_LENGTH,
@@ -31,85 +38,6 @@ from modules.inflation_formatter import (  # noqa: E402
     pack_single_page,
     trim_to_whole_lines,
 )
-
-
-def make_record(record_id: int, amount: str, date: datetime.date, comment: str = "") -> dict:
-    return {
-        "id": record_id,
-        "amount": Decimal(amount),
-        "date": date,
-        "comment": comment,
-        "source": "manual",
-        "count": 1,
-        "adjusted_value": Decimal(amount) * Decimal("1.5"),
-        "loss_percent": Decimal("50"),
-    }
-
-
-def make_folded_record(amount: str, first: datetime.date, last: datetime.date, count: int = 12) -> dict:
-    """The summary row `collapse_interest_rows` puts in place of several lots.
-
-    Its `id` is present and None — the trap `format_record` has to sidestep.
-    """
-    return {
-        "id": None,
-        "amount": Decimal(amount),
-        "date": first,
-        "first_date": first,
-        "last_date": last,
-        "comment": f"deposit interest x{count}",
-        "source": LOT_SOURCE_DEPOSIT_INTEREST,
-        "count": count,
-        "adjusted_value": Decimal(amount) * Decimal("1.5"),
-        "loss_percent": Decimal("50"),
-    }
-
-
-def make_deposit(matured: bool = False) -> dict:
-    """The `deposit` block `describe_group_deposit` hangs on a group node."""
-    return {
-        "annual_rate_percent": Decimal("15"),
-        "capitalization": "monthly",
-        "start_date": datetime.date(2025, 1, 1),
-        "end_date": datetime.date(2026, 1, 1),
-        "comment": "Monobank",
-        "matured": matured,
-        "net_interest_so_far": Decimal("1234.5"),
-        "balance_so_far": Decimal("101234.5"),
-        "projected_net_interest": Decimal("12687.23"),
-        "projected_final_amount": Decimal("112687.23"),
-        "effective_annual_rate_percent": Decimal("16.075"),
-        "at_risk_if_broken_now": Decimal("1000"),
-    }
-
-
-def make_consumed(record_id, date: datetime.date, taken: str, remaining: str, source: str = "manual") -> dict:
-    """One entry of the `consumed` list `InflationCalculator.withdraw()` returns."""
-    return {
-        "id": record_id,
-        "date": date,
-        "source": source,
-        "taken": Decimal(taken),
-        "remaining": Decimal(remaining),
-    }
-
-
-def make_node(name: str, records: list[dict], group_id: int | None = 1) -> dict:
-    """A group node in the shape `InflationCalculator.get_groups_report()` returns."""
-    nominal = sum(r["amount"] for r in records)
-    adjusted = sum(r["adjusted_value"] for r in records)
-
-    return {
-        "id": group_id,
-        "name": name,
-        "comment": "",
-        "records_count": len(records),
-        "total_nominal": nominal,
-        "total_adjusted": adjusted,
-        "loss_percent": Decimal("50"),
-        "oldest_date": min((r["date"] for r in records), default=None),
-        "records": records,
-    }
 
 
 class TestFormatMoney(unittest.TestCase):

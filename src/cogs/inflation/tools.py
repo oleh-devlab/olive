@@ -194,33 +194,16 @@ class InflationTools(commands.Cog):
         group: str = group_param("param_group"),
         scope: str = scope_param(),
     ):
-        await inter.response.defer(ephemeral=True)
-        phrases = get_phrases(inter)
+        def run(owner_id, owner_scope, phrases):
+            record = inflation_provider.add_record(
+                owner_id, amount, parse_date(date_str), comment, owner_scope, group=group
+            )
 
-        try:
-            owner_id, owner_scope = resolve_owner(inter, scope, write=True)
-        except ChannelSetupError as e:
-            await inter.edit_original_response(content=e.text(phrases))
-            return
-
-        try:
-            date_obj = parse_date(date_str)
-        except ChannelSetupError as e:
-            await inter.edit_original_response(content=e.text(phrases))
-            return
-
-        try:
-            record = inflation_provider.add_record(owner_id, amount, date_obj, comment, owner_scope, group=group)
-        except Exception as e:
-            await report_error(inter, phrases, e, "add")
-            return
-
-        self.notify_update(owner_id, owner_scope)
-        await inter.edit_original_response(
-            content=format_phrase(
+            return format_phrase(
                 phrases, "record_added", "Record added successfully! ID: {record_id}", record_id=record.get("id")
             )
-        )
+
+        await self.run_group_action(inter, scope, "add", run)
 
     @inflation.sub_command(
         name="delete",
@@ -232,31 +215,19 @@ class InflationTools(commands.Cog):
         record_id: int = commands.Param(description=phrases_cmd.get("param_record_id", "ID of the record to delete")),
         scope: str = scope_param(),
     ):
-        await inter.response.defer(ephemeral=True)
-        phrases = get_phrases(inter)
-
-        try:
-            owner_id, owner_scope = resolve_owner(inter, scope, write=True)
-        except ChannelSetupError as e:
-            await inter.edit_original_response(content=e.text(phrases))
-            return
-
-        try:
-            record = inflation_provider.delete_record(owner_id, record_id, owner_scope)
-        except Exception as e:
-            await report_error(inter, phrases, e, "delete")
-            return
-
-        self.notify_update(owner_id, owner_scope)
         currency = get_currency(inter.guild.id if inter.guild else None)
-        await inter.edit_original_response(
-            content=format_phrase(
+
+        def run(owner_id, owner_scope, phrases):
+            record = inflation_provider.delete_record(owner_id, record_id, owner_scope)
+
+            return format_phrase(
                 phrases,
                 "record_deleted",
                 "Record deleted successfully! (Amount: {amount})",
                 amount=format_money(record.get("amount", 0), currency),
             )
-        )
+
+        await self.run_group_action(inter, scope, "delete", run)
 
     @inflation.sub_command(
         name="withdraw",
@@ -294,35 +265,26 @@ class InflationTools(commands.Cog):
         ),
         scope: str = scope_param(),
     ):
-        await inter.response.defer(ephemeral=True)
-        phrases = get_phrases(inter)
         guild_id = inter.guild.id if inter.guild else None
 
-        try:
-            owner_id, owner_scope = resolve_owner(inter, scope, write=False)
-        except ChannelSetupError as e:
-            await inter.edit_original_response(content=e.text(phrases))
-            return
-
-        try:
+        def run(owner_id, owner_scope, phrases):
+            # The guild's report has no pager to spill onto, so it is built to
+            # fit one message rather than paged and hinted at.
             if owner_scope == SERVER_SCOPE:
-                await inter.edit_original_response(content=build_server_report(owner_id, mode=view))
-                return
+                return build_server_report(owner_id, mode=view)
 
             summary, pages, mode = build_report(owner_id, guild_id, mode=view)
-        except Exception as e:
-            await report_error(inter, phrases, e, "report")
-            return
+            content = render_page(summary, pages, 0, guild_id, mode)
 
-        content = render_page(summary, pages, 0, guild_id, mode)
+            if len(pages) > 1:
+                content += "\n" + phrases.get(
+                    "more_pages_hint",
+                    "*Only the first page is shown here. Use `/inflation_channel create` for a paginated report.*",
+                )
 
-        if len(pages) > 1:
-            content += "\n" + phrases.get(
-                "more_pages_hint",
-                "*Only the first page is shown here. Use `/inflation_channel create` for a paginated report.*",
-            )
+            return content
 
-        await inter.edit_original_response(content=content)
+        await self.run_group_action(inter, scope, "report", run, write=False)
 
     @inflation.sub_command(
         name="view",
@@ -344,6 +306,11 @@ class InflationTools(commands.Cog):
         ),
         scope: str = scope_param(),
     ):
+        # This one keeps its own body rather than going through
+        # `run_group_action`: its three outcomes — reporting the current state,
+        # refusing for want of a channel, and actually saving — each want a
+        # different answer to "does the report need refreshing", and only the
+        # last one does.
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
 
@@ -792,23 +759,12 @@ class InflationTools(commands.Cog):
         description=phrases_cmd.get("cmd_groups_list_desc", "List the budget groups and what is in them"),
     )
     async def groups_list(self, inter: disnake.ApplicationCommandInteraction, scope: str = scope_param()):
-        await inter.response.defer(ephemeral=True)
-        phrases = get_phrases(inter)
         guild_id = inter.guild.id if inter.guild else None
 
-        try:
-            owner_id, owner_scope = resolve_owner(inter, scope, write=False)
-        except ChannelSetupError as e:
-            await inter.edit_original_response(content=e.text(phrases))
-            return
+        def run(owner_id, owner_scope, phrases):
+            return build_group_list(owner_id, guild_id, owner_scope)
 
-        try:
-            content = build_group_list(owner_id, guild_id, owner_scope)
-        except Exception as e:
-            await report_error(inter, phrases, e, "group list")
-            return
-
-        await inter.edit_original_response(content=content)
+        await self.run_group_action(inter, scope, "group list", run, write=False)
 
     # ------------------------------------------------------------------
     # Deposits

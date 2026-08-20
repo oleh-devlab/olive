@@ -2,7 +2,6 @@ import datetime
 import sys
 import types
 import unittest
-from decimal import Decimal
 from pathlib import Path
 
 # Setup path so we can import from src
@@ -16,6 +15,15 @@ sys.path.insert(0, str(src_root))
 # resolve, so a bare stub stands in for it.
 sys.modules.setdefault("settings", types.ModuleType("settings"))
 
+from tests.inflation_fixtures import (  # noqa: E402
+    JAN,
+    make_consumed,
+    make_deposit,
+    make_node,
+    make_record,
+    make_report,
+    make_withdrawal,
+)
 from modules import inflation_report  # noqa: E402
 from modules.inflation_report import (  # noqa: E402
     MESSAGE_LIMIT,
@@ -31,70 +39,6 @@ from modules.inflation_report import (  # noqa: E402
     build_summary,
     build_view_pages,
 )
-
-JAN = datetime.date(2024, 1, 15)
-
-
-def make_record(record_id: int, amount: str, comment: str = "") -> dict:
-    return {
-        "id": record_id,
-        "amount": Decimal(amount),
-        "date": JAN,
-        "comment": comment,
-        "group_id": None,
-        "source": "manual",
-        "count": 1,
-        "adjusted_value": Decimal(amount) * Decimal("1.5"),
-        "loss_percent": Decimal("50"),
-    }
-
-
-def make_deposit(matured: bool = False) -> dict:
-    """The `deposit` block `describe_group_deposit` hangs on a group node."""
-    return {
-        "annual_rate_percent": Decimal("15"),
-        "capitalization": "monthly",
-        "start_date": datetime.date(2025, 1, 1),
-        "end_date": datetime.date(2026, 1, 1),
-        "comment": "",
-        "matured": matured,
-        "net_interest_so_far": Decimal("1234.5"),
-        "balance_so_far": Decimal("101234.5"),
-        "projected_net_interest": Decimal("12687.23"),
-        "projected_final_amount": Decimal("112687.23"),
-        "effective_annual_rate_percent": Decimal("16.08"),
-        "at_risk_if_broken_now": Decimal("1000"),
-    }
-
-
-def make_node(name: str, records: list[dict], group_id: int | None = 1, deposit: dict | None = None) -> dict:
-    return {
-        "id": group_id,
-        "name": name,
-        "comment": "",
-        "records_count": len(records),
-        "total_nominal": sum((r["amount"] for r in records), Decimal("0")),
-        "total_adjusted": sum((r["adjusted_value"] for r in records), Decimal("0")),
-        "loss_percent": Decimal("50"),
-        "oldest_date": min((r["date"] for r in records), default=None),
-        "records": records,
-        "deposit": deposit,
-    }
-
-
-def make_report(groups: list[dict], ungrouped: list[dict] | None = None) -> dict:
-    """A report in the shape `InflationCalculator.get_groups_report()` returns."""
-    ungrouped_node = make_node("(ungrouped)", ungrouped or [], group_id=None)
-    nodes = [*groups, ungrouped_node]
-
-    return {
-        "total_nominal": sum((n["total_nominal"] for n in nodes), Decimal("0")),
-        "total_adjusted": sum((n["total_adjusted"] for n in nodes), Decimal("0")),
-        "loss_percent": Decimal("50"),
-        "oldest_date": min((n["oldest_date"] for n in nodes if n["oldest_date"]), default=None),
-        "groups": groups,
-        "ungrouped": ungrouped_node,
-    }
 
 
 class FakeProvider:
@@ -416,26 +360,6 @@ class TestGroupListWithDeposits(ReportTestCase):
         self.use(FakeProvider(make_report(groups)))
 
         self.assertLessEqual(len(build_group_list(1)), MESSAGE_LIMIT)
-
-
-def make_consumed(record_id, date: datetime.date, taken: str, remaining: str, source: str = "manual") -> dict:
-    return {
-        "id": record_id,
-        "date": date,
-        "source": source,
-        "taken": Decimal(taken),
-        "remaining": Decimal(remaining),
-    }
-
-
-def make_withdrawal(consumed: list[dict], warning: str | None = None) -> dict:
-    """What `InflationCalculator.withdraw()` hands back."""
-    return {
-        "amount": sum((c["taken"] for c in consumed), Decimal("0")),
-        "group_id": 1,
-        "consumed": consumed,
-        "warning": warning,
-    }
 
 
 class TestBuildWithdrawalMessage(ReportTestCase):

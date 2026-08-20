@@ -16,6 +16,7 @@ one — which the library never closes by itself — is named in the summary, th
 one part of the message every mode shows.
 """
 
+from collections.abc import Callable
 from typing import NamedTuple
 
 from core.utils import format_phrase, get_phrases
@@ -386,6 +387,44 @@ def render_page(
     )
 
 
+def fit_into_message(
+    blocks: list[str],
+    wrap: Callable[[str], str],
+    note: Callable[[int], str],
+    *,
+    reserved: str = "",
+    fallback: Callable[[], str] | None = None,
+) -> str:
+    """
+    Fit a list of blocks into one Discord message, trimming rather than failing.
+
+    Discord refuses an over-long message instead of truncating it, so the reader
+    would get nothing at all. Every part of the frame — the wrapper and the note
+    alike — comes from `phrases.json` and can be rewritten to any length, so what
+    they cost is measured rather than guessed at.
+
+    Args:
+        blocks: The listing, one block per entry.
+        wrap: Renders the finished page into its frame; called with "" to price
+              that frame.
+        note: Renders "only N of M fit" for the number of blocks shown, and ""
+              when nothing was cut.
+        reserved: Text appended after the note and reserved before the listing
+              competes for room — for anything that must survive being trimmed.
+        fallback: What to say when the frame alone is over budget. Defaults to
+              the note by itself: cutting into the listing would leave its code
+              fence unclosed, so it goes entirely.
+    """
+    overhead = len(wrap("")) + len(note(0)) + len(reserved)
+    page, shown = pack_single_page(blocks, max(MIN_RECORD_BLOCK, MESSAGE_LIMIT - overhead))
+
+    content = wrap(page) + note(shown) + reserved
+    if len(content) <= MESSAGE_LIMIT:
+        return content
+
+    return trim_to_whole_lines(fallback() if fallback else note(0).lstrip("\n"), MESSAGE_LIMIT)
+
+
 def build_group_list(owner_id: int, guild_id: int | None = None, scope: str = USER_SCOPE) -> str:
     """
     The owner's groups, a line each plus any deposit, trimmed to fit one message.
@@ -424,19 +463,7 @@ def build_group_list(owner_id: int, guild_id: int | None = None, scope: str = US
             total=len(blocks),
         )
 
-    # Both the wrapper and the note come from `phrases.json` and can be rewritten
-    # to any length, so what they cost is measured rather than guessed at.
-    overhead = len(wrap("")) + len(truncation_note(0))
-    page, shown = pack_single_page(blocks, max(MIN_RECORD_BLOCK, MESSAGE_LIMIT - overhead))
-
-    content = wrap(page) + truncation_note(shown)
-    if len(content) <= MESSAGE_LIMIT:
-        return content
-
-    # Rewritten phrases are over budget on their own. Cutting into the listing
-    # would leave its code fence unclosed, so it goes entirely and the note is
-    # all that is left to say.
-    return trim_to_whole_lines(truncation_note(0).lstrip("\n"), MESSAGE_LIMIT)
+    return fit_into_message(blocks, wrap, truncation_note)
 
 
 def build_consumed_line(entry: dict, guild_id: int | None = None) -> str:
@@ -508,19 +535,12 @@ def build_withdrawal_message(result: dict, guild_id: int | None = None) -> str:
     if result["warning"]:
         warning = "\n" + format_phrase(phrases, "withdraw_warning", "⚠️ {warning}", warning=result["warning"])
 
-    overhead = len(wrap("")) + len(truncation_note(0)) + len(warning)
-    page, shown = pack_single_page(blocks, max(MIN_RECORD_BLOCK, MESSAGE_LIMIT - overhead))
+    # What must survive a rewritten phrase is that the money left, and what
+    # breaking the deposit cost — not the listing of which records paid for it.
+    def bare_confirmation() -> str:
+        return f"{format_money(result['amount'], currency)}\n{result['warning'] or ''}".strip()
 
-    content = wrap(page) + truncation_note(shown) + warning
-    if len(content) <= MESSAGE_LIMIT:
-        return content
-
-    # Rewritten phrases are over budget on their own. Cutting into the listing
-    # would leave its code fence unclosed, so it goes entirely; what must
-    # survive is that the money left, and what breaking the deposit costs.
-    return trim_to_whole_lines(
-        f"{format_money(result['amount'], currency)}\n{result['warning'] or ''}".strip(), MESSAGE_LIMIT
-    )
+    return fit_into_message(blocks, wrap, truncation_note, reserved=warning, fallback=bare_confirmation)
 
 
 def build_deposit_overview(owner_id: int, guild_id: int | None = None, scope: str = USER_SCOPE) -> str:
@@ -558,14 +578,7 @@ def build_deposit_overview(owner_id: int, guild_id: int | None = None, scope: st
             total=len(blocks),
         )
 
-    overhead = len(wrap("")) + len(truncation_note(0))
-    page, shown = pack_single_page(blocks, max(MIN_RECORD_BLOCK, MESSAGE_LIMIT - overhead))
-
-    content = wrap(page) + truncation_note(shown)
-    if len(content) <= MESSAGE_LIMIT:
-        return content
-
-    return trim_to_whole_lines(truncation_note(0).lstrip("\n"), MESSAGE_LIMIT)
+    return fit_into_message(blocks, wrap, truncation_note)
 
 
 def build_server_report(guild_id: int, reserve: int = 0, mode: str | None = None) -> str:
