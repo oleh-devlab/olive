@@ -21,13 +21,14 @@ from modules.inflation_provider import (
     inflation_provider,
 )
 from modules.inflation_formatter import (
-    fold_consumed_lots,
     format_date,
     format_money,
     format_rate,
 )
 from modules.inflation_report import (
+    build_deposit_overview,
     build_group_list,
+    build_withdrawal_message,
     build_rates_warning,
     build_report,
     build_server_report,
@@ -270,53 +271,12 @@ class InflationTools(commands.Cog):
         group: str = group_param("param_group"),
         scope: str = scope_param(),
     ):
-        currency = get_currency(inter.guild.id if inter.guild else None)
+        guild_id = inter.guild.id if inter.guild else None
 
         def run(owner_id, owner_scope, phrases):
             result = inflation_provider.withdraw(owner_id, amount, group or None, owner_scope)
 
-            lines = []
-            for entry in fold_consumed_lots(result["consumed"]):
-                if entry.get("count", 1) > 1:
-                    lines.append(
-                        format_phrase(
-                            phrases,
-                            "withdraw_consumed_folded",
-                            "{first_date}…{last_date}: took {taken} from {count} interest record(s)",
-                            first_date=format_date(entry["first_date"]),
-                            last_date=format_date(entry["last_date"]),
-                            taken=format_money(entry["taken"], currency),
-                            count=entry["count"],
-                        )
-                    )
-                else:
-                    lines.append(
-                        format_phrase(
-                            phrases,
-                            "withdraw_consumed_line",
-                            "ID {record_id} ({date}): took {taken}, {remaining} left",
-                            record_id=entry.get("id"),
-                            date=format_date(entry["date"]),
-                            taken=format_money(entry["taken"], currency),
-                            remaining=format_money(entry["remaining"], currency),
-                        )
-                    )
-
-            content = format_phrase(
-                phrases,
-                "withdrawn",
-                "Withdrew {amount}, oldest money first:\n```text\n{consumed}\n```",
-                amount=format_money(result["amount"], currency),
-                consumed="\n".join(lines),
-            )
-
-            if result["warning"]:
-                # The library writes this warning itself, in English, because it
-                # is the one that knows what the deposit costs. Wrapping beats
-                # restating it: a translation here would drift from the numbers.
-                content += "\n" + format_phrase(phrases, "withdraw_warning", "⚠️ {warning}", warning=result["warning"])
-
-            return content
+            return build_withdrawal_message(result, guild_id)
 
         await self.run_group_action(inter, scope, "withdraw", run)
 
@@ -997,19 +957,30 @@ class InflationTools(commands.Cog):
     async def deposit_status(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        group: str = group_param("param_group", required=True),
+        group: str = group_param("param_group"),
         scope: str = scope_param(),
     ):
-        currency = get_currency(inter.guild.id if inter.guild else None)
+        guild_id = inter.guild.id if inter.guild else None
+        currency = get_currency(guild_id)
 
         def run(owner_id, owner_scope, phrases):
+            # No group named is a request for all of them, which the report
+            # already knows how to describe.
+            if not group:
+                return build_deposit_overview(owner_id, guild_id, owner_scope)
+
+            # The stored name, not what was typed: a group picked by id would
+            # otherwise be reported back as a bare number.
+            found = inflation_provider.find_group(owner_id, group, owner_scope)
+            name = found["name"] if found else group
+
             terms = inflation_provider.get_deposit_terms(owner_id, group, owner_scope)
             if terms is None:
                 return format_phrase(
                     phrases,
                     "deposit_status_none",
                     "`{group}` has no deposit. Attach one with `/inflation_deposit attach`.",
-                    group=group,
+                    group=name,
                 )
 
             so_far = inflation_provider.get_deposit_projection(owner_id, group, scope=owner_scope)
@@ -1021,7 +992,7 @@ class InflationTools(commands.Cog):
                 "**{group}** — {rate} until {end_date} ({capitalization} capitalization)\n"
                 "Earned so far: `{earned}` (balance `{balance}`)\n"
                 "Projected at maturity: `{projected}` (total `{projected_total}`, effective `{effective_rate}`)",
-                group=group,
+                group=name,
                 rate=format_rate(terms.annual_rate_percent),
                 end_date=format_date(terms.end_date),
                 capitalization=terms.capitalization.value,

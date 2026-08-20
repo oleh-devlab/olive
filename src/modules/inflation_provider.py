@@ -379,6 +379,12 @@ class InflationProvider:
         """Drop a deposit without crediting anything — for undoing a mistake."""
         return dict(self._get_calculator(owner_id, scope).detach_deposit(as_group_ref(group)))
 
+    def find_group(self, owner_id: int, group: int | str, scope: str = USER_SCOPE) -> dict | None:
+        """The stored group behind a reference, or None. Copied, like `list_groups`."""
+        found = self._get_calculator(owner_id, scope).find_group(as_group_ref(group))
+
+        return dict(found) if found else None
+
     def get_deposit_terms(self, owner_id: int, group: int | str, scope: str = USER_SCOPE) -> DepositTerms | None:
         return self._get_calculator(owner_id, scope).get_deposit_terms(as_group_ref(group))
 

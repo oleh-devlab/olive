@@ -22,8 +22,11 @@ from modules.inflation_report import (  # noqa: E402
     VIEW_SUMMARY,
     VIEW_TREE,
     build_deposit_lines,
+    build_deposit_marker,
+    build_deposit_overview,
     build_deposits_warning,
     build_group_list,
+    build_withdrawal_message,
     build_rates_warning,
     build_summary,
     build_view_pages,
@@ -413,3 +416,166 @@ class TestGroupListWithDeposits(ReportTestCase):
         self.use(FakeProvider(make_report(groups)))
 
         self.assertLessEqual(len(build_group_list(1)), MESSAGE_LIMIT)
+
+
+def make_consumed(record_id, date: datetime.date, taken: str, remaining: str, source: str = "manual") -> dict:
+    return {
+        "id": record_id,
+        "date": date,
+        "source": source,
+        "taken": Decimal(taken),
+        "remaining": Decimal(remaining),
+    }
+
+
+def make_withdrawal(consumed: list[dict], warning: str | None = None) -> dict:
+    """What `InflationCalculator.withdraw()` hands back."""
+    return {
+        "amount": sum((c["taken"] for c in consumed), Decimal("0")),
+        "group_id": 1,
+        "consumed": consumed,
+        "warning": warning,
+    }
+
+
+class TestBuildWithdrawalMessage(ReportTestCase):
+    def make_lots(self, count: int, source: str = "manual") -> list[dict]:
+        return [
+            make_consumed(i, JAN + datetime.timedelta(days=i), "100", "0", source=source) for i in range(1, count + 1)
+        ]
+
+    def test_a_small_withdrawal_lists_every_lot(self):
+        message = build_withdrawal_message(make_withdrawal(self.make_lots(3)))
+
+        self.assertEqual(message.count("took"), 3)
+
+    def test_eating_every_record_still_fits_into_one_message(self):
+        """A withdrawal can consume the owner's whole limit, and Discord
+        refuses an over-long message instead of truncating it — with the money
+        already gone, that would leave no confirmation at all."""
+        message = build_withdrawal_message(make_withdrawal(self.make_lots(200)))
+
+        self.assertLessEqual(len(message), MESSAGE_LIMIT)
+
+    def test_a_truncated_listing_says_how_much_it_left_out(self):
+        message = build_withdrawal_message(make_withdrawal(self.make_lots(200)))
+
+        self.assertIn("200", message)
+        self.assertTrue(message.startswith("Withdrew"))
+
+    def test_interest_lots_are_folded(self):
+        message = build_withdrawal_message(make_withdrawal(self.make_lots(12, source="deposit_interest")))
+
+        self.assertIn("12 interest record(s)", message)
+
+    def test_the_warning_survives_a_truncated_listing(self):
+        """It names real money at risk, so it must not lose to the listing."""
+        message = build_withdrawal_message(make_withdrawal(self.make_lots(200), warning="Breaking it costs 500 UAH."))
+
+        self.assertIn("Breaking it costs 500 UAH.", message)
+        self.assertLessEqual(len(message), MESSAGE_LIMIT)
+
+    def test_phrases_so_long_they_leave_no_room_still_produce_a_valid_message(self):
+        import core.cache
+
+        core.cache._phrases["global"] = {"inflation": {"withdrawn": "x" * 2500 + "{consumed}"}}
+        self.addCleanup(core.cache._phrases.clear)
+
+        message = build_withdrawal_message(make_withdrawal(self.make_lots(5), warning="At risk: 10 UAH."))
+
+        self.assertLessEqual(len(message), MESSAGE_LIMIT)
+        self.assertIn("At risk: 10 UAH.", message)
+
+
+class TestDepositsWarningIsBounded(ReportTestCase):
+    def test_a_handful_of_matured_deposits_are_named(self):
+        groups = [
+            make_node(f"G{i}", [make_record(i, "100")], group_id=i, deposit=make_deposit(matured=True))
+            for i in range(1, 4)
+        ]
+
+        self.assertIn("G1", build_deposits_warning(make_report(groups)))
+
+    def test_a_server_full_of_them_falls_back_to_a_count(self):
+        """Fifty group names would blow the message limit on the warning alone."""
+        groups = [
+            make_node(
+                f"Group number {i} with a longish name",
+                [make_record(i, "100")],
+                group_id=i,
+                deposit=make_deposit(matured=True),
+            )
+            for i in range(1, 51)
+        ]
+        report = make_report(groups)
+        self.use(FakeProvider(report))
+
+        warning = build_deposits_warning(report)
+
+        self.assertIn("50", warning)
+        self.assertNotIn("Group number 1 with", warning)
+        self.assertLessEqual(len(build_summary(report)), MESSAGE_LIMIT)
+
+
+class TestGroupListMarker(ReportTestCase):
+    def test_the_marker_stays_on_the_group_line(self):
+        """A full deposit line would cost `/inflation_groups list` two thirds of
+        the groups it can fit; the marker is a suffix, not a second line."""
+        node = make_node("Salary", [make_record(1, "100")], deposit=make_deposit())
+        marker = build_deposit_marker(node, None)
+
+        self.assertNotIn("\n", marker)
+        self.assertLess(len(marker), 40)
+        self.assertIn("15.00%", marker)
+
+    def test_it_keeps_most_of_the_listing_s_capacity(self):
+        def shown(with_deposit):
+            groups = [
+                make_node(
+                    f"Group {i}",
+                    [make_record(i, "100")],
+                    group_id=i,
+                    deposit=make_deposit() if with_deposit else None,
+                )
+                for i in range(1, 60)
+            ]
+            self.use(FakeProvider(make_report(groups)))
+            return build_group_list(1).count("[Group")
+
+        without = shown(False)
+        self.assertGreaterEqual(shown(True), without // 2)
+
+    def test_a_matured_deposit_is_marked_differently(self):
+        groups = [make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))]
+        self.use(FakeProvider(make_report(groups)))
+
+        self.assertIn("MATURED", build_group_list(1))
+
+
+class TestBuildDepositOverview(ReportTestCase):
+    def test_no_deposits_says_so(self):
+        self.use(FakeProvider(make_report([make_node("Salary", [make_record(1, "100")])])))
+
+        self.assertIn("No group", build_deposit_overview(1))
+
+    def test_every_group_under_a_deposit_is_listed(self):
+        groups = [
+            make_node("Salary", [make_record(1, "100")], group_id=1, deposit=make_deposit()),
+            make_node("Savings", [make_record(2, "100")], group_id=2, deposit=make_deposit(matured=True)),
+            make_node("Cash", [make_record(3, "100")], group_id=3),
+        ]
+        self.use(FakeProvider(make_report(groups)))
+
+        overview = build_deposit_overview(1)
+
+        self.assertIn("Salary", overview)
+        self.assertIn("Savings", overview)
+        self.assertNotIn("Cash", overview)
+
+    def test_a_server_full_of_deposits_still_fits(self):
+        groups = [
+            make_node(f"Group {i}", [make_record(i, "100")], group_id=i, deposit=make_deposit()) for i in range(1, 51)
+        ]
+        self.use(FakeProvider(make_report(groups)))
+
+        self.assertLessEqual(len(build_deposit_overview(1)), MESSAGE_LIMIT)
