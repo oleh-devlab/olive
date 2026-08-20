@@ -10,15 +10,19 @@ src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
 from modules.inflation_formatter import (  # noqa: E402
+    LOT_SOURCE_DEPOSIT_INTEREST,
     MAX_COMMENT_LENGTH,
     Section,
     build_record_pages,
     build_single_record_page,
+    deposit_fields,
+    fold_consumed_lots,
     format_grand_total,
     format_group_heading,
     format_group_summary_line,
     format_money,
     format_percent,
+    format_rate,
     format_record,
     indent_blocks,
     pack_blocks,
@@ -35,8 +39,58 @@ def make_record(record_id: int, amount: str, date: datetime.date, comment: str =
         "amount": Decimal(amount),
         "date": date,
         "comment": comment,
+        "source": "manual",
+        "count": 1,
         "adjusted_value": Decimal(amount) * Decimal("1.5"),
         "loss_percent": Decimal("50"),
+    }
+
+
+def make_folded_record(amount: str, first: datetime.date, last: datetime.date, count: int = 12) -> dict:
+    """The summary row `collapse_interest_rows` puts in place of several lots.
+
+    Its `id` is present and None — the trap `format_record` has to sidestep.
+    """
+    return {
+        "id": None,
+        "amount": Decimal(amount),
+        "date": first,
+        "first_date": first,
+        "last_date": last,
+        "comment": f"deposit interest x{count}",
+        "source": LOT_SOURCE_DEPOSIT_INTEREST,
+        "count": count,
+        "adjusted_value": Decimal(amount) * Decimal("1.5"),
+        "loss_percent": Decimal("50"),
+    }
+
+
+def make_deposit(matured: bool = False) -> dict:
+    """The `deposit` block `describe_group_deposit` hangs on a group node."""
+    return {
+        "annual_rate_percent": Decimal("15"),
+        "capitalization": "monthly",
+        "start_date": datetime.date(2025, 1, 1),
+        "end_date": datetime.date(2026, 1, 1),
+        "comment": "Monobank",
+        "matured": matured,
+        "net_interest_so_far": Decimal("1234.5"),
+        "balance_so_far": Decimal("101234.5"),
+        "projected_net_interest": Decimal("12687.23"),
+        "projected_final_amount": Decimal("112687.23"),
+        "effective_annual_rate_percent": Decimal("16.075"),
+        "at_risk_if_broken_now": Decimal("1000"),
+    }
+
+
+def make_consumed(record_id, date: datetime.date, taken: str, remaining: str, source: str = "manual") -> dict:
+    """One entry of the `consumed` list `InflationCalculator.withdraw()` returns."""
+    return {
+        "id": record_id,
+        "date": date,
+        "source": source,
+        "taken": Decimal(taken),
+        "remaining": Decimal(remaining),
     }
 
 
@@ -374,3 +428,131 @@ class TestGroupRendering(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFormatRate(unittest.TestCase):
+    def test_no_explicit_sign(self):
+        """A deposit rate is not a delta, so it must not carry `format_percent`'s `+`."""
+        self.assertEqual(format_rate(Decimal("15")), "15.00%")
+        self.assertEqual(format_percent(Decimal("15")), "+15.00%")
+
+    def test_rounds_half_up(self):
+        self.assertEqual(format_rate(Decimal("16.075")), "16.08%")
+
+    def test_accepts_plain_numbers(self):
+        self.assertEqual(format_rate(18), "18.00%")
+        self.assertEqual(format_rate("0"), "0.00%")
+
+
+class TestDepositFields(unittest.TestCase):
+    def test_every_field_is_a_string(self):
+        fields = deposit_fields(make_deposit(), "UAH")
+
+        self.assertTrue(all(isinstance(value, str) for value in fields.values()))
+
+    def test_money_carries_the_currency(self):
+        fields = deposit_fields(make_deposit(), "UAH")
+
+        self.assertEqual(fields["earned"], "1 234.50 UAH")
+        self.assertEqual(fields["projected"], "12 687.23 UAH")
+        self.assertEqual(fields["projected_total"], "112 687.23 UAH")
+        self.assertEqual(fields["at_risk"], "1 000.00 UAH")
+
+    def test_rates_are_unsigned(self):
+        fields = deposit_fields(make_deposit())
+
+        self.assertEqual(fields["rate"], "15.00%")
+        self.assertEqual(fields["effective_rate"], "16.08%")
+
+    def test_dates_use_the_report_format(self):
+        fields = deposit_fields(make_deposit())
+
+        self.assertEqual(fields["start_date"], "01.01.2025")
+        self.assertEqual(fields["end_date"], "01.01.2026")
+
+    def test_missing_comment_is_empty_not_none(self):
+        deposit = make_deposit()
+        deposit["comment"] = None
+
+        self.assertEqual(deposit_fields(deposit)["comment"], "")
+
+
+class TestFormatCollapsedRecord(unittest.TestCase):
+    def test_folded_row_shows_the_count_and_the_date_range(self):
+        text = format_record(
+            make_folded_record("12687.23", datetime.date(2025, 2, 1), datetime.date(2026, 1, 1)), "UAH"
+        )
+
+        self.assertIn("x12.", text)
+        self.assertIn("01.02.2025…01.01.2026", text)
+        self.assertIn("12 687.23 UAH", text)
+
+    def test_folded_row_never_prints_a_null_id(self):
+        """`id` is present and None on a folded row, so `.get(id, '?')` would leak `None`."""
+        text = format_record(make_folded_record("100", datetime.date(2025, 2, 1), datetime.date(2026, 1, 1)))
+
+        self.assertNotIn("None", text)
+        self.assertNotIn("ID", text)
+
+    def test_folded_row_keeps_the_adjusted_line(self):
+        text = format_record(make_folded_record("100", datetime.date(2025, 2, 1), datetime.date(2026, 1, 1)), "UAH")
+
+        self.assertIn("-> 150.00 UAH (+50.00%)", text)
+
+    def test_single_record_is_unchanged(self):
+        text = format_record(make_record(7, "100", datetime.date(2025, 2, 1), "lunch"), "UAH")
+
+        self.assertIn("ID 7.", text)
+        self.assertIn("01.02.2025", text)
+        self.assertNotIn("x1.", text)
+
+    def test_record_without_a_count_key_still_renders(self):
+        """Records built before the library tagged them carry no `count`."""
+        record = make_record(7, "100", datetime.date(2025, 2, 1))
+        del record["count"]
+
+        self.assertIn("ID 7.", format_record(record))
+
+
+class TestFoldConsumedLots(unittest.TestCase):
+    def make_interest(self, count: int) -> list[dict]:
+        return [
+            make_consumed(None, datetime.date(2025, month, 1), "100", "0", source=LOT_SOURCE_DEPOSIT_INTEREST)
+            for month in range(1, count + 1)
+        ]
+
+    def test_interest_lots_fold_into_one_entry(self):
+        folded = fold_consumed_lots(self.make_interest(12))
+
+        self.assertEqual(len(folded), 1)
+        self.assertEqual(folded[0]["count"], 12)
+        self.assertEqual(folded[0]["taken"], Decimal("1200"))
+        self.assertEqual(folded[0]["first_date"], datetime.date(2025, 1, 1))
+        self.assertEqual(folded[0]["last_date"], datetime.date(2025, 12, 1))
+
+    def test_manual_lots_are_passed_through(self):
+        manual = [
+            make_consumed(1, datetime.date(2024, 1, 1), "500", "0"),
+            make_consumed(2, datetime.date(2024, 6, 1), "200", "300"),
+        ]
+
+        folded = fold_consumed_lots(manual + self.make_interest(3))
+
+        self.assertEqual(len(folded), 3)
+        self.assertEqual([entry["id"] for entry in folded[:2]], [1, 2])
+        self.assertEqual(folded[-1]["count"], 3)
+
+    def test_one_interest_lot_is_not_worth_folding(self):
+        one = self.make_interest(1)
+
+        self.assertEqual(fold_consumed_lots(one), one)
+
+    def test_nothing_consumed_folds_to_nothing(self):
+        self.assertEqual(fold_consumed_lots([]), [])
+
+    def test_the_original_list_is_not_mutated(self):
+        consumed = self.make_interest(3)
+
+        fold_consumed_lots(consumed)
+
+        self.assertEqual(len(consumed), 3)

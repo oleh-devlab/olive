@@ -11,8 +11,21 @@ from core import cache, utils
 from core.utils import format_phrase
 from core.personal_channels import ChannelSetupError, create_channel_pair, create_public_channel
 from modules.inflation_calculator.modules.exceptions import InflationCalculatorError, ValidationError
-from modules.inflation_provider import SERVER_SCOPE, USER_SCOPE, VIEW_MODES, inflation_provider
-from modules.inflation_formatter import format_money
+from modules.inflation_provider import (
+    CAPITALIZATION_MODES,
+    DEFAULT_CAPITALIZATION,
+    DEFAULT_TAX_PERCENT,
+    SERVER_SCOPE,
+    USER_SCOPE,
+    VIEW_MODES,
+    inflation_provider,
+)
+from modules.inflation_formatter import (
+    fold_consumed_lots,
+    format_date,
+    format_money,
+    format_rate,
+)
 from modules.inflation_report import (
     build_group_list,
     build_rates_warning,
@@ -65,6 +78,19 @@ def group_param(description_key: str, *, required: bool = False):
         kwargs["default"] = ""
 
     return commands.Param(**kwargs)
+
+
+def parse_date(value: str) -> datetime.date:
+    """Read a DD.MM.YYYY option, raising `ChannelSetupError` on anything else.
+
+    Reusing that error rather than `ValueError` is what lets every command route
+    a bad date through the same reply path as a refused scope, phrases key and
+    all, instead of repeating the message at each call site.
+    """
+    try:
+        return datetime.datetime.strptime(value, DATE_FORMAT).date()
+    except ValueError as e:
+        raise ChannelSetupError("invalid_date", "Invalid date format. Please use DD.MM.YYYY") from e
 
 
 async def autocomplete_group(inter: disnake.ApplicationCommandInteraction, value: str) -> list[str]:
@@ -177,11 +203,9 @@ class InflationTools(commands.Cog):
             return
 
         try:
-            date_obj = datetime.datetime.strptime(date_str, DATE_FORMAT).date()
-        except ValueError:
-            await inter.edit_original_response(
-                content=phrases.get("invalid_date", "Invalid date format. Please use DD.MM.YYYY")
-            )
+            date_obj = parse_date(date_str)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
             return
 
         try:
@@ -232,6 +256,69 @@ class InflationTools(commands.Cog):
                 amount=format_money(record.get("amount", 0), currency),
             )
         )
+
+    @inflation.sub_command(
+        name="withdraw",
+        description=phrases_cmd.get("cmd_withdraw_desc", "Spend money out of a group, oldest records first"),
+    )
+    async def withdraw(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        amount: str = commands.Param(
+            description=phrases_cmd.get("param_withdraw_amount", "How much to withdraw (e.g. 5000)")
+        ),
+        group: str = group_param("param_group"),
+        scope: str = scope_param(),
+    ):
+        currency = get_currency(inter.guild.id if inter.guild else None)
+
+        def run(owner_id, owner_scope, phrases):
+            result = inflation_provider.withdraw(owner_id, amount, group or None, owner_scope)
+
+            lines = []
+            for entry in fold_consumed_lots(result["consumed"]):
+                if entry.get("count", 1) > 1:
+                    lines.append(
+                        format_phrase(
+                            phrases,
+                            "withdraw_consumed_folded",
+                            "{first_date}…{last_date}: took {taken} from {count} interest record(s)",
+                            first_date=format_date(entry["first_date"]),
+                            last_date=format_date(entry["last_date"]),
+                            taken=format_money(entry["taken"], currency),
+                            count=entry["count"],
+                        )
+                    )
+                else:
+                    lines.append(
+                        format_phrase(
+                            phrases,
+                            "withdraw_consumed_line",
+                            "ID {record_id} ({date}): took {taken}, {remaining} left",
+                            record_id=entry.get("id"),
+                            date=format_date(entry["date"]),
+                            taken=format_money(entry["taken"], currency),
+                            remaining=format_money(entry["remaining"], currency),
+                        )
+                    )
+
+            content = format_phrase(
+                phrases,
+                "withdrawn",
+                "Withdrew {amount}, oldest money first:\n```text\n{consumed}\n```",
+                amount=format_money(result["amount"], currency),
+                consumed="\n".join(lines),
+            )
+
+            if result["warning"]:
+                # The library writes this warning itself, in English, because it
+                # is the one that knows what the deposit costs. Wrapping beats
+                # restating it: a translation here would drift from the numbers.
+                content += "\n" + format_phrase(phrases, "withdraw_warning", "⚠️ {warning}", warning=result["warning"])
+
+            return content
+
+        await self.run_group_action(inter, scope, "withdraw", run)
 
     @inflation.sub_command(
         name="report",
@@ -285,8 +372,15 @@ class InflationTools(commands.Cog):
         self,
         inter: disnake.ApplicationCommandInteraction,
         mode: str = commands.Param(
+            default=None,
             choices=list(VIEW_MODES),
             description=phrases_cmd.get("param_view", "Full tree of records, or group totals only"),
+        ),
+        collapse_interest: bool = commands.Param(
+            default=None,
+            description=phrases_cmd.get(
+                "param_collapse_interest", "Fold a group's deposit interest into one row (default: on)"
+            ),
         ),
         scope: str = scope_param(),
     ):
@@ -299,8 +393,26 @@ class InflationTools(commands.Cog):
             await inter.edit_original_response(content=e.text(phrases))
             return
 
+        # Both options are optional because the command now sets two independent
+        # things; naming neither is a request to be told the current state.
+        if mode is None and collapse_interest is None:
+            await inter.edit_original_response(
+                content=format_phrase(
+                    phrases,
+                    "view_state",
+                    "Report view is `{mode}`, deposit interest folded: `{collapse_interest}`.",
+                    mode=inflation_provider.get_view_mode(owner_id, owner_scope),
+                    collapse_interest=inflation_provider.get_collapse_interest(owner_id, owner_scope),
+                )
+            )
+            return
+
         try:
-            saved = inflation_provider.set_view_mode(owner_id, mode, owner_scope)
+            saved = True
+            if mode is not None:
+                saved = inflation_provider.set_view_mode(owner_id, mode, owner_scope)
+            if collapse_interest is not None:
+                saved = inflation_provider.set_collapse_interest(owner_id, collapse_interest, owner_scope) and saved
         except Exception as e:
             await report_error(inter, phrases, e, "view")
             return
@@ -319,7 +431,13 @@ class InflationTools(commands.Cog):
 
         self.notify_update(owner_id, owner_scope)
         await inter.edit_original_response(
-            content=format_phrase(phrases, "view_changed", "Report view set to `{mode}`.", mode=mode)
+            content=format_phrase(
+                phrases,
+                "view_changed",
+                "Report view set to `{mode}`, deposit interest folded: `{collapse_interest}`.",
+                mode=inflation_provider.get_view_mode(owner_id, owner_scope),
+                collapse_interest=inflation_provider.get_collapse_interest(owner_id, owner_scope),
+            )
         )
 
     @commands.slash_command(
@@ -571,30 +689,38 @@ class InflationTools(commands.Cog):
     async def inflation_groups(self, inter: disnake.ApplicationCommandInteraction):
         pass
 
-    async def run_group_action(self, inter, scope: str, action: str, run):
+    async def run_group_action(self, inter, scope: str, action: str, run, *, write: bool = True):
         """
         The shape every group subcommand shares: resolve the owner, act, refresh.
 
         `run(owner_id, owner_scope, phrases)` returns the reply text; anything it raises
         becomes a user-facing message, and a successful call refreshes the
         report, because every one of these changes what the report says.
+
+        `write=False` is for a subcommand that only reads: it takes the laxer
+        permission check on the server budget and leaves the report alone.
         """
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
 
         try:
-            owner_id, owner_scope = resolve_owner(inter, scope, write=True)
+            owner_id, owner_scope = resolve_owner(inter, scope, write=write)
         except ChannelSetupError as e:
             await inter.edit_original_response(content=e.text(phrases))
             return
 
         try:
             content = run(owner_id, owner_scope, phrases)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
         except Exception as e:
             await report_error(inter, phrases, e, action)
             return
 
-        self.notify_update(owner_id, owner_scope)
+        if write:
+            self.notify_update(owner_id, owner_scope)
+
         await inter.edit_original_response(content=content)
 
     @inflation_groups.sub_command(
@@ -723,6 +849,190 @@ class InflationTools(commands.Cog):
             return
 
         await inter.edit_original_response(content=content)
+
+    # ------------------------------------------------------------------
+    # Deposits
+    # ------------------------------------------------------------------
+
+    @commands.slash_command(
+        name="inflation_deposit",
+        description=phrases_cmd.get("cmd_deposit_desc", "Put a budget group under a bank deposit"),
+        test_guilds=settings.guilds,
+    )
+    async def inflation_deposit(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    @inflation_deposit.sub_command(
+        name="attach",
+        description=phrases_cmd.get("cmd_deposit_attach_desc", "Put a group under a deposit"),
+    )
+    async def deposit_attach(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group: str = group_param("param_group", required=True),
+        rate: str = commands.Param(
+            description=phrases_cmd.get("param_rate", "Nominal annual rate the bank advertises, % (e.g. 15.5)")
+        ),
+        start_date: str = commands.Param(description=phrases_cmd.get("param_start_date", "Opening date, DD.MM.YYYY")),
+        end_date: str = commands.Param(description=phrases_cmd.get("param_end_date", "Maturity date, DD.MM.YYYY")),
+        capitalization: str = commands.Param(
+            default=DEFAULT_CAPITALIZATION,
+            choices=list(CAPITALIZATION_MODES),
+            description=phrases_cmd.get("param_capitalization", "How often interest is added to the balance"),
+        ),
+        tax_percent: str = commands.Param(
+            default="",
+            description=phrases_cmd.get("param_tax_percent", f"Tax on interest, % (default {DEFAULT_TAX_PERCENT})"),
+        ),
+        early_withdrawal_rate: str = commands.Param(
+            default="",
+            description=phrases_cmd.get("param_early_rate", "Rate if broken early, % (default 0)"),
+        ),
+        tax_on_payout: bool = commands.Param(
+            default=True,
+            description=phrases_cmd.get("param_tax_on_payout", "Bank withholds tax at every payout (default: on)"),
+        ),
+        comment: str = commands.Param(
+            default="", description=phrases_cmd.get("param_deposit_comment", "Optional note about this deposit")
+        ),
+        scope: str = scope_param(),
+    ):
+        currency = get_currency(inter.guild.id if inter.guild else None)
+
+        def run(owner_id, owner_scope, phrases):
+            attached = inflation_provider.attach_deposit(
+                owner_id,
+                group,
+                annual_rate_percent=rate,
+                start_date=parse_date(start_date),
+                end_date=parse_date(end_date),
+                capitalization=capitalization,
+                # An unset option must reach the library as None so its own
+                # Ukrainian defaults apply, rather than an empty string.
+                tax_percent=tax_percent or None,
+                early_withdrawal_rate_percent=early_withdrawal_rate or None,
+                tax_withheld_on_payout=tax_on_payout,
+                comment=comment,
+                scope=owner_scope,
+            )
+
+            projection = inflation_provider.get_deposit_projection(owner_id, group, scope=owner_scope)
+            terms = inflation_provider.get_deposit_terms(owner_id, group, owner_scope)
+
+            return format_phrase(
+                phrases,
+                "deposit_attached",
+                "Group `{group}` is under a deposit at {rate} until {end_date}. Projected interest: {projected}.",
+                group=attached["name"],
+                rate=format_rate(terms.annual_rate_percent),
+                end_date=format_date(terms.end_date),
+                projected=format_money(projection.net_interest if projection else 0, currency),
+            )
+
+        await self.run_group_action(inter, scope, "deposit attach", run)
+
+    @inflation_deposit.sub_command(
+        name="close",
+        description=phrases_cmd.get("cmd_deposit_close_desc", "Close a deposit and credit its interest"),
+    )
+    async def deposit_close(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group: str = group_param("param_group", required=True),
+        on_date: str = commands.Param(
+            default="",
+            description=phrases_cmd.get("param_close_date", "Close early on this date, DD.MM.YYYY (default: maturity)"),
+        ),
+        scope: str = scope_param(),
+    ):
+        currency = get_currency(inter.guild.id if inter.guild else None)
+
+        def run(owner_id, owner_scope, phrases):
+            result = inflation_provider.close_deposit(
+                owner_id, group, parse_date(on_date) if on_date else None, owner_scope
+            )
+
+            # One record per capitalization period that actually paid, which is
+            # why this is worth naming: a year of monthly capitalization is
+            # twelve new records against the owner's limit.
+            credited = sum(1 for period in result.periods if period.net_interest > 0)
+
+            return format_phrase(
+                phrases,
+                "deposit_closed",
+                "Deposit closed. {interest} of interest added as {count} dated record(s).",
+                interest=format_money(result.net_interest, currency),
+                count=credited,
+                total=format_money(result.final_amount, currency),
+            )
+
+        await self.run_group_action(inter, scope, "deposit close", run)
+
+    @inflation_deposit.sub_command(
+        name="detach",
+        description=phrases_cmd.get("cmd_deposit_detach_desc", "Drop a deposit without crediting interest"),
+    )
+    async def deposit_detach(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group: str = group_param("param_group", required=True),
+        scope: str = scope_param(),
+    ):
+        def run(owner_id, owner_scope, phrases):
+            detached = inflation_provider.detach_deposit(owner_id, group, owner_scope)
+
+            return format_phrase(
+                phrases,
+                "deposit_detached",
+                "Deposit dropped from `{group}`. No interest was credited — use `close` for that.",
+                group=detached["name"],
+            )
+
+        await self.run_group_action(inter, scope, "deposit detach", run)
+
+    @inflation_deposit.sub_command(
+        name="status",
+        description=phrases_cmd.get("cmd_deposit_status_desc", "What a group's deposit has earned and will earn"),
+    )
+    async def deposit_status(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group: str = group_param("param_group", required=True),
+        scope: str = scope_param(),
+    ):
+        currency = get_currency(inter.guild.id if inter.guild else None)
+
+        def run(owner_id, owner_scope, phrases):
+            terms = inflation_provider.get_deposit_terms(owner_id, group, owner_scope)
+            if terms is None:
+                return format_phrase(
+                    phrases,
+                    "deposit_status_none",
+                    "`{group}` has no deposit. Attach one with `/inflation_deposit attach`.",
+                    group=group,
+                )
+
+            so_far = inflation_provider.get_deposit_projection(owner_id, group, scope=owner_scope)
+            projected = inflation_provider.get_deposit_projection(owner_id, group, terms.end_date, scope=owner_scope)
+
+            return format_phrase(
+                phrases,
+                "deposit_status",
+                "**{group}** — {rate} until {end_date} ({capitalization} capitalization)\n"
+                "Earned so far: `{earned}` (balance `{balance}`)\n"
+                "Projected at maturity: `{projected}` (total `{projected_total}`, effective `{effective_rate}`)",
+                group=group,
+                rate=format_rate(terms.annual_rate_percent),
+                end_date=format_date(terms.end_date),
+                capitalization=terms.capitalization.value,
+                earned=format_money(so_far.net_interest, currency),
+                balance=format_money(so_far.final_amount, currency),
+                projected=format_money(projected.net_interest, currency),
+                projected_total=format_money(projected.final_amount, currency),
+                effective_rate=format_rate(projected.effective_annual_rate_percent),
+            )
+
+        await self.run_group_action(inter, scope, "deposit status", run, write=False)
 
 
 def setup(bot):

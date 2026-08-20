@@ -21,6 +21,8 @@ from modules.inflation_report import (  # noqa: E402
     MESSAGE_LIMIT,
     VIEW_SUMMARY,
     VIEW_TREE,
+    build_deposit_lines,
+    build_deposits_warning,
     build_group_list,
     build_rates_warning,
     build_summary,
@@ -37,12 +39,32 @@ def make_record(record_id: int, amount: str, comment: str = "") -> dict:
         "date": JAN,
         "comment": comment,
         "group_id": None,
+        "source": "manual",
+        "count": 1,
         "adjusted_value": Decimal(amount) * Decimal("1.5"),
         "loss_percent": Decimal("50"),
     }
 
 
-def make_node(name: str, records: list[dict], group_id: int | None = 1) -> dict:
+def make_deposit(matured: bool = False) -> dict:
+    """The `deposit` block `describe_group_deposit` hangs on a group node."""
+    return {
+        "annual_rate_percent": Decimal("15"),
+        "capitalization": "monthly",
+        "start_date": datetime.date(2025, 1, 1),
+        "end_date": datetime.date(2026, 1, 1),
+        "comment": "",
+        "matured": matured,
+        "net_interest_so_far": Decimal("1234.5"),
+        "balance_so_far": Decimal("101234.5"),
+        "projected_net_interest": Decimal("12687.23"),
+        "projected_final_amount": Decimal("112687.23"),
+        "effective_annual_rate_percent": Decimal("16.08"),
+        "at_risk_if_broken_now": Decimal("1000"),
+    }
+
+
+def make_node(name: str, records: list[dict], group_id: int | None = 1, deposit: dict | None = None) -> dict:
     return {
         "id": group_id,
         "name": name,
@@ -53,6 +75,7 @@ def make_node(name: str, records: list[dict], group_id: int | None = 1) -> dict:
         "loss_percent": Decimal("50"),
         "oldest_date": min((r["date"] for r in records), default=None),
         "records": records,
+        "deposit": deposit,
     }
 
 
@@ -72,7 +95,7 @@ def make_report(groups: list[dict], ungrouped: list[dict] | None = None) -> dict
 
 
 class FakeProvider:
-    """The two provider calls this module makes, without any storage behind them."""
+    """The provider calls this module makes, without any storage behind them."""
 
     def __init__(self, report: dict | None = None, has_rates: bool = True, gaps: list[str] | None = None):
         self.report = report or make_report([])
@@ -82,11 +105,14 @@ class FakeProvider:
     def get_rate_status(self) -> tuple[bool, list[str]]:
         return self.has_rates, self.gaps
 
-    def get_groups_report(self, owner_id, scope="user", *, detailed=True) -> dict:
+    def get_groups_report(self, owner_id, scope="user", *, detailed=True, collapse_interest=True) -> dict:
         return self.report
 
     def get_view_mode(self, owner_id, scope="user") -> str:
         return VIEW_TREE
+
+    def get_collapse_interest(self, owner_id, scope="user") -> bool:
+        return True
 
 
 class ReportTestCase(unittest.TestCase):
@@ -263,3 +289,127 @@ class TestBuildGroupList(ReportTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBuildDepositLines(ReportTestCase):
+    def test_a_group_without_a_deposit_says_nothing(self):
+        self.assertEqual(build_deposit_lines(make_node("Salary", [make_record(1, "100")])), [])
+
+    def test_a_missing_deposit_key_is_not_an_error(self):
+        """Reports built before deposits existed have no `deposit` key at all."""
+        node = make_node("Salary", [make_record(1, "100")])
+        del node["deposit"]
+
+        self.assertEqual(build_deposit_lines(node), [])
+
+    def test_a_running_deposit_names_its_rate_and_both_numbers(self):
+        node = make_node("Salary", [make_record(1, "100")], deposit=make_deposit())
+
+        (line,) = build_deposit_lines(node)
+
+        self.assertIn("15.00%", line)
+        self.assertIn("01.01.2026", line)
+        self.assertIn("1 234.50", line)
+        self.assertIn("12 687.23", line)
+        self.assertNotIn("MATURED", line)
+
+    def test_a_matured_deposit_says_so_and_names_what_is_waiting(self):
+        node = make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))
+
+        (line,) = build_deposit_lines(node)
+
+        self.assertIn("MATURED", line)
+        self.assertIn("12 687.23", line)
+
+
+class TestDepositsInViews(ReportTestCase):
+    def test_the_tree_hangs_the_deposit_under_the_group_heading(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
+        self.use(FakeProvider(report))
+
+        (page,) = build_view_pages(report, mode=VIEW_TREE)
+
+        # The heading itself is two lines — the label, then the sub-totals.
+        label, totals, deposit, *_ = page.split("\n")
+        self.assertIn("[Salary]", label)
+        self.assertIn("->", totals)
+        self.assertIn("15.00%", deposit)
+
+    def test_the_summary_carries_it_too(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
+        self.use(FakeProvider(report))
+
+        (page,) = build_view_pages(report, mode=VIEW_SUMMARY)
+
+        self.assertIn("[Salary] (1)", page)
+        self.assertIn("15.00%", page)
+
+    def test_a_deposit_free_report_renders_exactly_as_before(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")])])
+        self.use(FakeProvider(report))
+
+        (page,) = build_view_pages(report, mode=VIEW_SUMMARY)
+
+        self.assertEqual(len(page.split("\n")), 3)
+
+    def test_a_spilled_group_repeats_its_deposit_with_the_heading(self):
+        """The deposit belongs to the heading, so it must follow it onto page two."""
+        records = [make_record(i, "100", comment="x" * 100) for i in range(1, 40)]
+        report = make_report([make_node("Salary", records, deposit=make_deposit())])
+        self.use(FakeProvider(report))
+
+        pages = build_view_pages(report, mode=VIEW_TREE)
+
+        self.assertGreater(len(pages), 1)
+        for page in pages:
+            self.assertIn("15.00%", page)
+
+
+class TestBuildDepositsWarning(ReportTestCase):
+    def test_nothing_matured_means_no_warning(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
+
+        self.assertEqual(build_deposits_warning(report), "")
+
+    def test_no_deposits_at_all_means_no_warning(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")])])
+
+        self.assertEqual(build_deposits_warning(report), "")
+
+    def test_a_matured_deposit_is_named(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))])
+
+        self.assertIn("Salary", build_deposits_warning(report))
+
+    def test_the_warning_reaches_the_summary_in_both_modes(self):
+        """The summary is the one part `tree` and `summary` always share."""
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))])
+        self.use(FakeProvider(report))
+
+        self.assertIn("Salary", build_summary(report))
+
+    def test_it_sits_alongside_the_rates_warning_rather_than_replacing_it(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))])
+        self.use(FakeProvider(report, has_rates=False))
+
+        summary = build_summary(report)
+
+        self.assertIn("Salary", summary)
+        self.assertIn(build_rates_warning(), summary)
+
+
+class TestGroupListWithDeposits(ReportTestCase):
+    def test_a_deposit_shows_in_the_listing(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
+        self.use(FakeProvider(report))
+
+        self.assertIn("15.00%", build_group_list(1))
+
+    def test_the_message_limit_still_holds(self):
+        groups = [
+            make_node(f"Group {i}", [make_record(i, "100")], group_id=i, deposit=make_deposit(matured=i % 2 == 0))
+            for i in range(1, 60)
+        ]
+        self.use(FakeProvider(make_report(groups)))
+
+        self.assertLessEqual(len(build_group_list(1)), MESSAGE_LIMIT)
