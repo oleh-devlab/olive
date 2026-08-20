@@ -38,7 +38,7 @@ def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem]
 
             id_str = f"[id:{item.item_id}] " if item.item_id is not None else ""
             task_line = f"{prefix}{id_str}{item.tag}{item.task_name} ({item.duration_min}m)"
-            
+
             if item.total_sessions > 1:
                 task_line += f" [s. {item.session_index}/{item.total_sessions}]"
 

@@ -5,7 +5,6 @@ class RateLimitExceeded(Exception):
     """Raised when all models have exhausted their rate limits."""
 
 
-
 @dataclass
 class ModelConfig:
     """Configuration and rate-limit state for a single model."""
