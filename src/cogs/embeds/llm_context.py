@@ -39,8 +39,7 @@ def _add_context_fields(embed: disnake.Embed, manager, label: str) -> None:
             max_messages = "unknown"
 
         field_value = (
-            f"`Tokens: {total_tokens:,} / {max_tokens:,} ({pct:.1f}%)`\n"
-            f"`Messages: {msg_count} / {max_messages}`"
+            f"`Tokens: {total_tokens:,} / {max_tokens:,} ({pct:.1f}%)`\n" f"`Messages: {msg_count} / {max_messages}`"
         )
         embed.add_field(name=f"- {label} ...{str(context_id)[-3:]}", value=field_value, inline=False)
 
