@@ -1,12 +1,9 @@
-from datetime import datetime, timezone
 from typing import ClassVar
 
-import disnake
 import psutil
 from disnake.ext import commands
 
 from core.embed_cog import BaseEmbedCog
-from core.utils import format_embed_data, get_phrases, u_decline
 
 
 async def get_memory_info():
@@ -29,62 +26,6 @@ class Hosting(BaseEmbedCog):
     settings_key = "hosting_update_seconds"
     default_seconds = 10
     fallback_embed: ClassVar[dict] = {"title": ":nut_and_bolt: | Server"}
-
-    async def get_taimer_embed(self):
-        test_datetime = datetime(2025, 5, 14, 0, 0, 0)
-        sleep_hours_per_day = 8.5
-
-        now = datetime.now(timezone.utc)
-        delta = test_datetime - now
-
-        total_seconds = int(delta.total_seconds())
-        total_days = delta.days
-        total_hours = total_seconds // 3600
-
-        # --- Without sleep ---
-        weeks = total_days // 7
-        days = total_days % 7
-        hours = (total_seconds % (24 * 3600)) // 3600
-
-        active_hours_total = total_hours - int(total_days * sleep_hours_per_day)
-        active_days_total = active_hours_total // 24
-        active_weeks = active_days_total // 7
-        active_days = active_days_total % 7
-        active_hours = active_hours_total % 24
-
-        # For now, for the Ukrainian language
-        weeks_start = await u_decline(weeks, ["тиждень", "тижні", "тижнів"])
-        days_start = await u_decline(days, ["день", "дні", "днів"])
-        hours_start = await u_decline(hours, ["година", "години", "годин"])
-        total_days_start = await u_decline(total_days, ["день", "дні", "днів"])
-        total_hours_start = await u_decline(total_hours, ["година", "години", "годин"])
-
-        active_weeks_start = await u_decline(active_weeks, ["тиждень", "тижні", "тижнів"])
-        active_days_start = await u_decline(active_days, ["день", "дні", "днів"])
-        active_hours_start = await u_decline(active_hours, ["година", "години", "годин"])
-        active_days_total_start = await u_decline(active_days_total, ["день", "дні", "днів"])
-        active_hours_total_start = await u_decline(active_hours_total, ["година", "години", "годин"])
-
-        raw_embed_data = (
-            get_phrases().get("hosting_embed", {}).get("nmt_taimer_embed_data", {"title": ":newspaper: | NMT"})
-        )
-        formatted_embed_data = format_embed_data(
-            raw_embed_data,
-            weeks_start=weeks_start,
-            days_start=days_start,
-            hours_start=hours_start,
-            total_days_start=total_days_start,
-            total_hours_start=total_hours_start,
-            active_weeks_start=active_weeks_start,
-            active_days_start=active_days_start,
-            active_hours_start=active_hours_start,
-            active_days_total_start=active_days_total_start,
-            active_hours_total_start=active_hours_total_start,
-        )
-
-        embed = disnake.Embed.from_dict(formatted_embed_data)
-
-        return embed
 
     async def get_data(self):
         memory_info = await get_memory_info()

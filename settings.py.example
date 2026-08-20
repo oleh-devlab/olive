@@ -52,8 +52,6 @@ max_safe_percent_charge = 70
 battery_update_seconds = 180 # (Seconds) The number of seconds between each update of the battery status (charge, current, etc.)
 
 # --- Other ---
-is_processor_info = 1
-
 safe_seconds_before_start = 60 # (Seconds) Minimum time between bot launch notifications
 
 olive_bot_whitelist = [] # List of bot user IDs that the LLM is allowed to respond to

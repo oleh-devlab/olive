@@ -267,21 +267,6 @@ class LLMContextManager:
         # Fallback approximation
         return sum(len(str(p.get("text") or "")) for p in message.get("parts", [])) // 2
 
-    def add_model_message(self, discord_id: str, text: str, tokens: int = 0, timestamp_ms: int = 0):
-        if discord_id not in self.llm_context:
-            self.llm_context[discord_id] = []
-        if discord_id not in self.database_context:
-            self.database_context[discord_id] = []
-
-        entry = {
-            "role": "model",
-            "parts": [{"text": text}],
-            "tokens": tokens,
-            "timestamp_ms": timestamp_ms,
-        }
-        self.llm_context[discord_id].append(entry)
-        self.database_context[discord_id].append(entry)
-
     def update_latest_user_message_tokens(self, discord_id: str, prompt_token_count: int):
         if discord_id not in self.llm_context or not self.llm_context[discord_id]:
             return
