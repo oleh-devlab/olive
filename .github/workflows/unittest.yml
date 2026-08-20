@@ -16,6 +16,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # The tests for the inflation report reach the vendored calculator
+          # through `inflation_provider`, so the submodules have to be there.
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5

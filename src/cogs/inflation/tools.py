@@ -11,9 +11,17 @@ from core import cache, utils
 from core.utils import format_phrase
 from core.personal_channels import ChannelSetupError, create_channel_pair, create_public_channel
 from modules.inflation_calculator.modules.exceptions import InflationCalculatorError, ValidationError
-from modules.inflation_provider import SERVER_SCOPE, USER_SCOPE, inflation_provider
+from modules.inflation_provider import SERVER_SCOPE, USER_SCOPE, VIEW_MODES, inflation_provider
 from modules.inflation_formatter import format_money
-from modules.inflation_report import build_rates_warning, build_report, build_server_report, get_currency, render_page
+from modules.inflation_report import (
+    build_group_list,
+    build_rates_warning,
+    build_report,
+    build_server_report,
+    get_currency,
+    node_name,
+    render_page,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +36,9 @@ DATE_FORMAT = "%d.%m.%Y"
 PERSONAL_CHOICE = "personal"
 SCOPE_CHOICES = [PERSONAL_CHOICE, SERVER_SCOPE]
 
+# Discord shows at most 25 autocomplete suggestions.
+AUTOCOMPLETE_LIMIT = 25
+
 
 def scope_param(default: str = PERSONAL_CHOICE):
     """The `scope` option, spelled the same way in every subcommand."""
@@ -36,6 +47,46 @@ def scope_param(default: str = PERSONAL_CHOICE):
         choices=SCOPE_CHOICES,
         description=phrases_cmd.get("param_scope", "Whose records to use: your own, or the server's shared budget"),
     )
+
+
+def group_param(description_key: str, *, required: bool = False):
+    """
+    A group name option, autocompleted from the owner's own groups.
+
+    Optional by default, where an empty value means "no group"; `required=True`
+    omits the default entirely, which is how disnake is told the option must be
+    filled in — a `default=None` would let it through as `None` instead.
+    """
+    kwargs = {
+        "description": phrases_cmd.get(description_key, "Budget group name"),
+        "autocomplete": autocomplete_group,
+    }
+    if not required:
+        kwargs["default"] = ""
+
+    return commands.Param(**kwargs)
+
+
+async def autocomplete_group(inter: disnake.ApplicationCommandInteraction, value: str) -> list[str]:
+    """
+    Suggest the groups of whichever budget the `scope` option points at.
+
+    Autocomplete fires before the command runs, so the scope has to be read off
+    the half-filled interaction; anything the reader may not touch simply
+    produces no suggestions rather than an error they cannot act on.
+    """
+    scope = inter.filled_options.get("scope", PERSONAL_CHOICE)
+
+    try:
+        owner_id, owner_scope = resolve_owner(inter, scope, write=False)
+        names = [group["name"] for group in inflation_provider.list_groups(owner_id, owner_scope)]
+    except Exception as e:
+        logger.debug("No group suggestions for %s in scope %r: %s", inter.author.id, scope, e)
+        return []
+
+    wanted = value.strip().casefold()
+
+    return [name for name in names if wanted in name.casefold()][:AUTOCOMPLETE_LIMIT]
 
 
 def resolve_owner(inter: disnake.ApplicationCommandInteraction, scope: str, *, write: bool) -> tuple[int, str]:
@@ -113,6 +164,7 @@ class InflationTools(commands.Cog):
         comment: str = commands.Param(
             default="", description=phrases_cmd.get("param_comment", "Optional comment for this record")
         ),
+        group: str = group_param("param_group"),
         scope: str = scope_param(),
     ):
         await inter.response.defer(ephemeral=True)
@@ -133,7 +185,7 @@ class InflationTools(commands.Cog):
             return
 
         try:
-            record = inflation_provider.add_record(owner_id, amount, date_obj, comment, owner_scope)
+            record = inflation_provider.add_record(owner_id, amount, date_obj, comment, owner_scope, group=group)
         except Exception as e:
             await report_error(inter, phrases, e, "add")
             return
@@ -185,7 +237,16 @@ class InflationTools(commands.Cog):
         name="report",
         description=phrases_cmd.get("cmd_report_desc", "Get your personal inflation report"),
     )
-    async def report(self, inter: disnake.ApplicationCommandInteraction, scope: str = scope_param()):
+    async def report(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        view: str = commands.Param(
+            default=None,
+            choices=list(VIEW_MODES),
+            description=phrases_cmd.get("param_view", "How to render this report; defaults to your saved choice"),
+        ),
+        scope: str = scope_param(),
+    ):
         await inter.response.defer(ephemeral=True)
         phrases = get_phrases(inter)
         guild_id = inter.guild.id if inter.guild else None
@@ -198,15 +259,15 @@ class InflationTools(commands.Cog):
 
         try:
             if owner_scope == SERVER_SCOPE:
-                await inter.edit_original_response(content=build_server_report(owner_id))
+                await inter.edit_original_response(content=build_server_report(owner_id, mode=view))
                 return
 
-            summary, pages = build_report(owner_id, guild_id)
+            summary, pages, mode = build_report(owner_id, guild_id, mode=view)
         except Exception as e:
             await report_error(inter, phrases, e, "report")
             return
 
-        content = render_page(summary, pages, 0, guild_id)
+        content = render_page(summary, pages, 0, guild_id, mode)
 
         if len(pages) > 1:
             content += "\n" + phrases.get(
@@ -215,6 +276,51 @@ class InflationTools(commands.Cog):
             )
 
         await inter.edit_original_response(content=content)
+
+    @inflation.sub_command(
+        name="view",
+        description=phrases_cmd.get("cmd_view_desc", "Choose how your report channel renders records"),
+    )
+    async def view(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        mode: str = commands.Param(
+            choices=list(VIEW_MODES),
+            description=phrases_cmd.get("param_view", "Full tree of records, or group totals only"),
+        ),
+        scope: str = scope_param(),
+    ):
+        await inter.response.defer(ephemeral=True)
+        phrases = get_phrases(inter)
+
+        try:
+            owner_id, owner_scope = resolve_owner(inter, scope, write=True)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
+
+        try:
+            saved = inflation_provider.set_view_mode(owner_id, mode, owner_scope)
+        except Exception as e:
+            await report_error(inter, phrases, e, "view")
+            return
+
+        if not saved:
+            # The preference belongs to a report channel, so there is nowhere to
+            # keep it yet; a one-off rendering is still a command away.
+            await inter.edit_original_response(
+                content=phrases.get(
+                    "view_no_channel",
+                    "There is no report channel to set this for yet. Create one with `/inflation_channel create`, "
+                    "or render one report with `/inflation report view:`.",
+                )
+            )
+            return
+
+        self.notify_update(owner_id, owner_scope)
+        await inter.edit_original_response(
+            content=format_phrase(phrases, "view_changed", "Report view set to `{mode}`.", mode=mode)
+        )
 
     @commands.slash_command(
         name="inflation_channel",
@@ -452,6 +558,171 @@ class InflationTools(commands.Cog):
         )
 
         await self.notify_all_updates()
+
+    # ------------------------------------------------------------------
+    # Budget groups
+    # ------------------------------------------------------------------
+
+    @commands.slash_command(
+        name="inflation_groups",
+        description=phrases_cmd.get("cmd_groups_desc", "Manage budget groups"),
+        test_guilds=settings.guilds,
+    )
+    async def inflation_groups(self, inter: disnake.ApplicationCommandInteraction):
+        pass
+
+    async def run_group_action(self, inter, scope: str, action: str, run):
+        """
+        The shape every group subcommand shares: resolve the owner, act, refresh.
+
+        `run(owner_id, owner_scope, phrases)` returns the reply text; anything it raises
+        becomes a user-facing message, and a successful call refreshes the
+        report, because every one of these changes what the report says.
+        """
+        await inter.response.defer(ephemeral=True)
+        phrases = get_phrases(inter)
+
+        try:
+            owner_id, owner_scope = resolve_owner(inter, scope, write=True)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
+
+        try:
+            content = run(owner_id, owner_scope, phrases)
+        except Exception as e:
+            await report_error(inter, phrases, e, action)
+            return
+
+        self.notify_update(owner_id, owner_scope)
+        await inter.edit_original_response(content=content)
+
+    @inflation_groups.sub_command(
+        name="create",
+        description=phrases_cmd.get("cmd_groups_create_desc", "Create a budget group"),
+    )
+    async def groups_create(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        name: str = commands.Param(description=phrases_cmd.get("param_group_name", "Name of the new group")),
+        comment: str = commands.Param(
+            default="", description=phrases_cmd.get("param_group_comment", "Optional description")
+        ),
+        scope: str = scope_param(),
+    ):
+        def run(owner_id, owner_scope, phrases):
+            group = inflation_provider.create_group(owner_id, name, comment, owner_scope)
+
+            return format_phrase(
+                phrases,
+                "group_created",
+                "Group `{name}` created (ID {group_id}).",
+                name=group["name"],
+                group_id=group["id"],
+            )
+
+        await self.run_group_action(inter, scope, "group create", run)
+
+    @inflation_groups.sub_command(
+        name="rename",
+        description=phrases_cmd.get("cmd_groups_rename_desc", "Rename a budget group"),
+    )
+    async def groups_rename(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group: str = group_param("param_group", required=True),
+        new_name: str = commands.Param(description=phrases_cmd.get("param_new_name", "The new name")),
+        scope: str = scope_param(),
+    ):
+        def run(owner_id, owner_scope, phrases):
+            renamed = inflation_provider.rename_group(owner_id, group, new_name, owner_scope)
+
+            return format_phrase(phrases, "group_renamed", "Group renamed to `{name}`.", name=renamed["name"])
+
+        await self.run_group_action(inter, scope, "group rename", run)
+
+    @inflation_groups.sub_command(
+        name="delete",
+        description=phrases_cmd.get("cmd_groups_delete_desc", "Delete a budget group"),
+    )
+    async def groups_delete(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        group: str = group_param("param_group", required=True),
+        delete_records: bool = commands.Param(
+            default=False,
+            description=phrases_cmd.get("param_delete_records", "Delete its records too (off: they become ungrouped)"),
+        ),
+        scope: str = scope_param(),
+    ):
+        def run(owner_id, owner_scope, phrases):
+            deleted = inflation_provider.delete_group(owner_id, group, delete_records=delete_records, scope=owner_scope)
+            key = "group_deleted_with_records" if delete_records else "group_deleted"
+            default = (
+                "Group `{name}` and its records are gone."
+                if delete_records
+                else "Group `{name}` deleted; its records are now ungrouped."
+            )
+
+            return format_phrase(phrases, key, default, name=deleted["name"])
+
+        await self.run_group_action(inter, scope, "group delete", run)
+
+    @inflation_groups.sub_command(
+        name="assign",
+        description=phrases_cmd.get("cmd_groups_assign_desc", "Move a record into a group, or out of one"),
+    )
+    async def groups_assign(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        record_id: int = commands.Param(description=phrases_cmd.get("param_record_id", "ID of the record to move")),
+        group: str = group_param("param_group"),
+        scope: str = scope_param(),
+    ):
+        def run(owner_id, owner_scope, phrases):
+            record = inflation_provider.assign_record(owner_id, record_id, group, owner_scope)
+
+            # Report where it actually landed, under the group's stored name —
+            # the reader may have typed it in a different case, or detached it.
+            group_id = record["group_id"]
+            stored = next(
+                (g["name"] for g in inflation_provider.list_groups(owner_id, owner_scope) if g["id"] == group_id),
+                "",
+            )
+            where = node_name({"id": group_id, "name": stored}, inter.guild.id if inter.guild else None)
+
+            return format_phrase(
+                phrases,
+                "record_assigned",
+                "Record {record_id} is now in `{group}`.",
+                record_id=record_id,
+                group=where,
+            )
+
+        await self.run_group_action(inter, scope, "group assign", run)
+
+    @inflation_groups.sub_command(
+        name="list",
+        description=phrases_cmd.get("cmd_groups_list_desc", "List the budget groups and what is in them"),
+    )
+    async def groups_list(self, inter: disnake.ApplicationCommandInteraction, scope: str = scope_param()):
+        await inter.response.defer(ephemeral=True)
+        phrases = get_phrases(inter)
+        guild_id = inter.guild.id if inter.guild else None
+
+        try:
+            owner_id, owner_scope = resolve_owner(inter, scope, write=False)
+        except ChannelSetupError as e:
+            await inter.edit_original_response(content=e.text(phrases))
+            return
+
+        try:
+            content = build_group_list(owner_id, guild_id, owner_scope)
+        except Exception as e:
+            await report_error(inter, phrases, e, "group list")
+            return
+
+        await inter.edit_original_response(content=content)
 
 
 def setup(bot):

@@ -2,6 +2,12 @@
 
 Cogs never touch `modules.inflation_calculator` directly — they go through the
 `inflation_provider` singleton exported at the bottom of this module.
+
+The view mode of an owner's report is kept here too, in the channel registry
+entry next to the channel ids. `PersonalChannelRegistry` preserves keys it does
+not know about precisely so a module can do this — the schedule keeps its solver
+settings in the same record — and it means the choice survives a restart without
+a file of its own.
 """
 
 import datetime
@@ -33,6 +39,15 @@ FALLBACK_ANNUAL_PERCENT = (FALLBACK_ANNUAL_INFLATION_RATE * 100).normalize()
 # whole and would otherwise count server budgets as users.
 USER_SCOPE = "user"
 SERVER_SCOPE = "server"
+
+# How a report renders its records. `tree` lists every record under the group it
+# belongs to; `summary` reports only each group's sub-total. Stored per owner, so
+# the strings are part of the on-disk format and must stay stable.
+VIEW_TREE = "tree"
+VIEW_SUMMARY = "summary"
+VIEW_MODES = (VIEW_TREE, VIEW_SUMMARY)
+
+VIEW_MODE_KEY = "view_mode"
 
 
 def get_base_data_dir() -> Path:
@@ -86,6 +101,32 @@ def get_channels_file() -> Path:
 def get_server_channels_file() -> Path:
     """Registry of the public per-guild report channels."""
     return get_base_data_dir() / "inflation_server_channels.json"
+
+
+def get_default_view() -> str:
+    """The view mode an owner who never chose one gets."""
+    mode = getattr(settings, "inflation_default_view", VIEW_TREE)
+
+    return mode if mode in VIEW_MODES else VIEW_TREE
+
+
+def as_group_ref(group: int | str | None) -> int | str | None:
+    """
+    Turn a Discord option into something the calculator can look a group up by.
+
+    Slash options arrive as strings, and the calculator matches a string against
+    group names only. Group ids are shown to the reader — `/inflation_groups
+    create` replies with one — so a digits-only value is taken as an id, the way
+    records are already addressed. `None` stays `None`: no group at all.
+    """
+    if isinstance(group, str):
+        group = group.strip()
+        if not group:
+            return None
+        if group.isdigit():
+            return int(group)
+
+    return group
 
 
 class InflationProvider:
@@ -144,7 +185,13 @@ class InflationProvider:
     # ------------------------------------------------------------------
 
     def add_record(
-        self, owner_id: int, amount: str, date: datetime.date, comment: str = "", scope: str = USER_SCOPE
+        self,
+        owner_id: int,
+        amount: str,
+        date: datetime.date,
+        comment: str = "",
+        scope: str = USER_SCOPE,
+        group: int | str | None = None,
     ) -> dict:
         calculator = self._get_calculator(owner_id, scope)
 
@@ -156,7 +203,8 @@ class InflationProvider:
         if calculator.records_count >= max_records:
             raise ValidationError(f"Record limit reached ({max_records}). Delete something first.")
 
-        return calculator.add_record(amount, date, comment)
+        # Keyword, not positional: the calculator's third positional is `comment`.
+        return calculator.add_record(amount, date, comment, group=as_group_ref(group))
 
     def delete_record(self, owner_id: int, record_id: int, scope: str = USER_SCOPE) -> dict:
         return self._get_calculator(owner_id, scope).delete_record(record_id)
@@ -167,8 +215,94 @@ class InflationProvider:
     def count_records(self, owner_id: int, scope: str = USER_SCOPE) -> int:
         return self._get_calculator(owner_id, scope).records_count
 
-    def get_report(self, owner_id: int, scope: str = USER_SCOPE) -> dict:
-        return self._get_calculator(owner_id, scope).get_report()
+    def get_groups_report(self, owner_id: int, scope: str = USER_SCOPE, *, detailed: bool = True) -> dict:
+        """
+        Every group's sub-total plus the grand total, records included when asked.
+
+        This is the only report the bot builds: with no groups it degenerates to
+        one `ungrouped` node holding everything, and its totals are the same ones
+        `InflationCalculator.get_report()` would produce.
+        """
+        return self._get_calculator(owner_id, scope).get_groups_report(detailed=detailed)
+
+    # ------------------------------------------------------------------
+    # Budget groups
+    # ------------------------------------------------------------------
+
+    def create_group(self, owner_id: int, name: str, comment: str = "", scope: str = USER_SCOPE) -> dict:
+        calculator = self._get_calculator(owner_id, scope)
+
+        if scope == SERVER_SCOPE:
+            max_groups = getattr(settings, "inflation_max_groups_per_server", 50)
+        else:
+            max_groups = getattr(settings, "inflation_max_groups_per_user", 20)
+
+        if calculator.groups_count >= max_groups:
+            raise ValidationError(f"Group limit reached ({max_groups}). Delete one first.")
+
+        return dict(calculator.create_group(name, comment))
+
+    def rename_group(self, owner_id: int, group: int | str, new_name: str, scope: str = USER_SCOPE) -> dict:
+        return dict(self._get_calculator(owner_id, scope).rename_group(as_group_ref(group), new_name))
+
+    def delete_group(
+        self,
+        owner_id: int,
+        group: int | str,
+        *,
+        delete_records: bool = False,
+        scope: str = USER_SCOPE,
+    ) -> dict:
+        calculator = self._get_calculator(owner_id, scope)
+
+        return dict(calculator.delete_group(as_group_ref(group), delete_records=delete_records))
+
+    def assign_record(self, owner_id: int, record_id: int, group: int | str | None, scope: str = USER_SCOPE) -> dict:
+        return dict(self._get_calculator(owner_id, scope).assign_record_to_group(record_id, as_group_ref(group)))
+
+    def list_groups(self, owner_id: int, scope: str = USER_SCOPE) -> list[dict]:
+        """
+        The owner's groups, as copies.
+
+        The calculator hands out its live inner dicts, and a cog mutating one
+        would change stored state without ever firing the save callback.
+        """
+        return [dict(group) for group in self._get_calculator(owner_id, scope).get_groups()]
+
+    # ------------------------------------------------------------------
+    # View mode
+    # ------------------------------------------------------------------
+
+    def _registry(self, scope: str = USER_SCOPE) -> PersonalChannelRegistry:
+        return self.server_channels if scope == SERVER_SCOPE else self.channels
+
+    def get_view_mode(self, owner_id: int, scope: str = USER_SCOPE) -> str:
+        """The owner's chosen view mode, or the configured default."""
+        entry = self._registry(scope).get(owner_id) or {}
+        mode = entry.get(VIEW_MODE_KEY)
+
+        return mode if mode in VIEW_MODES else get_default_view()
+
+    def set_view_mode(self, owner_id: int, mode: str, scope: str = USER_SCOPE) -> bool:
+        """
+        Remember how this owner's report should render.
+
+        Returns False when the owner has no registry entry — the preference is
+        about a report channel, so there is nowhere to keep it until one exists.
+        """
+        if mode not in VIEW_MODES:
+            raise ValidationError(f"Unknown view mode: {mode!r}")
+
+        registry = self._registry(scope)
+        data = registry.load()
+        entry = data.get(str(owner_id))
+        if entry is None:
+            return False
+
+        entry[VIEW_MODE_KEY] = mode
+        registry.save(data)
+
+        return True
 
     def count_users_with_records(self) -> int:
         """
@@ -188,10 +322,18 @@ class InflationProvider:
         for path in records_dir.glob("*.json"):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    if json.load(f):
-                        count += 1
+                    profile = json.load(f)
             except (OSError, json.JSONDecodeError) as e:
                 logger.warning(f"Could not read records file {path}: {e}")
+                continue
+
+            # A profile is `{"records": [...], "groups": [...]}`; the legacy
+            # format was a bare list of records. Either way it is the records
+            # that decide, not the file being non-empty — a profile holding
+            # nothing but groups is truthy and has nothing to report on.
+            records = profile.get("records", []) if isinstance(profile, dict) else profile
+            if records:
+                count += 1
 
         return count
 
@@ -214,6 +356,17 @@ class InflationProvider:
 
     def get_rates(self) -> dict[str, Decimal]:
         return self._rates_calculator().get_inflation_rates()
+
+    def get_rate_status(self) -> tuple[bool, list[str]]:
+        """
+        `(has any CPI data, missing "YYYY-MM" months)`.
+
+        Both answers come off one calculator because building it re-reads the
+        rates file, and every report render asks this question.
+        """
+        calculator = self._rates_calculator()
+
+        return calculator.has_inflation_data, calculator.find_data_gaps()
 
     def set_rate(self, year_month: str, rate_percent: str) -> None:
         """

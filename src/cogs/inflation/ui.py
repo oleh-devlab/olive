@@ -32,14 +32,20 @@ class InflationPageSource(PageSource):
         return get_phrases(guild_id).get(self.phrases_section, {})
 
     async def build_pages(self, user_id: int, guild_id: int | None) -> list[Page]:
-        summary, record_pages = build_report(user_id, guild_id)
+        # Which rendering the reader gets is their stored preference, set with
+        # `/inflation view`; the source itself is shared by every channel and so
+        # must not hold it.
+        summary, record_pages, mode = build_report(user_id, guild_id)
 
         # With no records `render_page` still has something to say (the summary
         # plus a hint), so a single page is returned rather than none.
         if not record_pages:
-            return [Page(content=render_page(summary, [], 0, guild_id))]
+            return [Page(content=render_page(summary, [], 0, guild_id, mode))]
 
-        return [Page(content=render_page(summary, record_pages, index, guild_id)) for index in range(len(record_pages))]
+        return [
+            Page(content=render_page(summary, record_pages, index, guild_id, mode))
+            for index in range(len(record_pages))
+        ]
 
     def welcome_text(self, guild_id: int | None) -> str:
         return self.phrases(guild_id).get("welcome_message", "Initializing the inflation report...")

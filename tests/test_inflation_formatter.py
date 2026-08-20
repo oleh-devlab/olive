@@ -11,12 +11,20 @@ sys.path.insert(0, str(src_root))
 
 from modules.inflation_formatter import (  # noqa: E402
     MAX_COMMENT_LENGTH,
+    Section,
     build_record_pages,
     build_single_record_page,
-    find_rate_gaps,
+    format_grand_total,
+    format_group_heading,
+    format_group_summary_line,
     format_money,
     format_percent,
     format_record,
+    indent_blocks,
+    pack_blocks,
+    pack_sections,
+    pack_sections_single_page,
+    pack_single_page,
     trim_to_whole_lines,
 )
 
@@ -29,6 +37,24 @@ def make_record(record_id: int, amount: str, date: datetime.date, comment: str =
         "comment": comment,
         "adjusted_value": Decimal(amount) * Decimal("1.5"),
         "loss_percent": Decimal("50"),
+    }
+
+
+def make_node(name: str, records: list[dict], group_id: int | None = 1) -> dict:
+    """A group node in the shape `InflationCalculator.get_groups_report()` returns."""
+    nominal = sum(r["amount"] for r in records)
+    adjusted = sum(r["adjusted_value"] for r in records)
+
+    return {
+        "id": group_id,
+        "name": name,
+        "comment": "",
+        "records_count": len(records),
+        "total_nominal": nominal,
+        "total_adjusted": adjusted,
+        "loss_percent": Decimal("50"),
+        "oldest_date": min((r["date"] for r in records), default=None),
+        "records": records,
     }
 
 
@@ -175,41 +201,175 @@ class TestTrimToWholeLines(unittest.TestCase):
             self.assertLessEqual(len(trim_to_whole_lines(text, limit)), limit)
 
 
-class TestFindRateGaps(unittest.TestCase):
-    today = datetime.date(2024, 6, 15)
+class TestPackBlocks(unittest.TestCase):
+    """The packer `build_record_pages` and `build_single_record_page` sit on."""
 
-    def rates(self, *keys: str) -> dict:
-        return dict.fromkeys(keys, Decimal("1.01"))
+    def blocks(self, count: int) -> list[str]:
+        return [f"block-{n}" for n in range(count)]
 
-    def test_empty_rates_report_no_gaps(self):
-        # "No data at all" is a different condition and is reported separately.
-        self.assertEqual(find_rate_gaps({}, today=self.today), [])
+    def test_nothing_in_nothing_out(self):
+        self.assertEqual(pack_blocks([]), [])
+        self.assertEqual(pack_single_page([]), ("", 0))
 
-    def test_complete_history_has_no_gaps(self):
-        rates = self.rates("2024-01", "2024-02", "2024-03", "2024-04", "2024-05")
+    def test_one_page_when_everything_fits(self):
+        self.assertEqual(pack_blocks(self.blocks(3)), ["block-0\nblock-1\nblock-2"])
 
-        self.assertEqual(find_rate_gaps(rates, today=self.today), [])
+    def test_pages_respect_the_limit(self):
+        pages = pack_blocks(self.blocks(20), page_limit=30)
 
-    def test_reports_missing_months(self):
-        rates = self.rates("2024-01", "2024-04", "2024-05")
+        self.assertGreater(len(pages), 1)
+        for page in pages:
+            self.assertLessEqual(len(page), 30)
 
-        self.assertEqual(find_rate_gaps(rates, today=self.today), ["2024-02", "2024-03"])
+    def test_no_block_is_lost(self):
+        blocks = self.blocks(20)
+        joined = "\n".join(pack_blocks(blocks, page_limit=30))
 
-    def test_current_month_is_not_a_gap(self):
-        # June CPI is not published while June is still running.
-        rates = self.rates("2024-05")
+        for block in blocks:
+            self.assertIn(block, joined)
 
-        self.assertEqual(find_rate_gaps(rates, today=self.today), [])
+    def test_an_oversized_block_gets_its_own_page(self):
+        # Nothing here can make it smaller, and dropping it would lose data.
+        pages = pack_blocks(["a", "x" * 200, "b"], page_limit=50)
 
-    def test_months_before_the_oldest_rate_are_not_gaps(self):
-        rates = self.rates("2024-04", "2024-05")
+        self.assertEqual(pages, ["a", "x" * 200, "b"])
 
-        self.assertEqual(find_rate_gaps(rates, today=self.today), [])
+    def test_single_page_stops_at_the_limit_and_says_how_many_fit(self):
+        page, shown = pack_single_page(self.blocks(20), page_limit=30)
 
-    def test_gap_spanning_a_year_boundary(self):
-        rates = self.rates("2023-11", "2024-02", "2024-03", "2024-04", "2024-05")
+        self.assertGreater(shown, 0)
+        self.assertLess(shown, 20)
+        self.assertLessEqual(len(page), 30)
+        self.assertEqual(shown, len(page.split("\n")))
 
-        self.assertEqual(find_rate_gaps(rates, today=self.today), ["2023-12", "2024-01"])
+    def test_single_page_never_drops_an_oversized_first_block(self):
+        # A page saying only "0 of 1 shown" would be worse than one long line.
+        page, shown = pack_single_page(["x" * 200], page_limit=50)
+
+        self.assertEqual((page, shown), ("x" * 200, 1))
+
+    def test_the_record_wrappers_are_exactly_this_packer(self):
+        # The two wrappers were extracted onto these packers; keep them honest.
+        records = [make_record(i, "100", datetime.date(2024, 1, 1)) for i in range(1, 21)]
+        blocks = [format_record(record, "UAH") for record in records]
+
+        self.assertEqual(build_record_pages(records, "UAH", 200), pack_blocks(blocks, 200))
+        self.assertEqual(build_single_record_page(records, "UAH", 200), pack_single_page(blocks, 200))
+
+
+class TestPackSections(unittest.TestCase):
+    """Group headings and the records filed under them."""
+
+    def sections(self, count: int, blocks_each: int) -> list[Section]:
+        return [
+            Section(
+                header=f"HEAD{index}",
+                blocks=[f"block-{index}-{n}" for n in range(blocks_each)],
+                continued_header=f"HEAD{index} (cont.)",
+            )
+            for index in range(count)
+        ]
+
+    def test_no_sections_yields_no_pages(self):
+        self.assertEqual(pack_sections([]), [])
+
+    def test_one_page_when_everything_fits(self):
+        pages = pack_sections(self.sections(2, 2))
+
+        self.assertEqual(len(pages), 1)
+        self.assertIn("HEAD0", pages[0])
+        self.assertIn("HEAD1", pages[0])
+
+    def test_a_spilling_section_repeats_its_header(self):
+        # Otherwise the reader sees records on page two with no idea whose they are.
+        pages = pack_sections(self.sections(1, 20), page_limit=60)
+
+        self.assertGreater(len(pages), 1)
+        self.assertTrue(pages[0].startswith("HEAD0"))
+        for page in pages[1:]:
+            self.assertTrue(page.startswith("HEAD0 (cont.)"))
+
+    def test_a_header_is_never_the_last_line_of_a_page(self):
+        # A heading stranded at the bottom of a page is worse than a short page.
+        pages = pack_sections(self.sections(4, 3), page_limit=70)
+
+        for page in pages:
+            self.assertFalse(page.split("\n")[-1].startswith("HEAD"))
+
+    def test_every_block_survives(self):
+        sections = self.sections(3, 4)
+        joined = "\n".join(pack_sections(sections, page_limit=50))
+
+        for section in sections:
+            for block in section.blocks:
+                self.assertIn(block, joined)
+
+    def test_an_empty_section_is_still_announced(self):
+        # An empty group is worth seeing: it explains where nothing landed.
+        pages = pack_sections([Section(header="HEAD", blocks=[])])
+
+        self.assertEqual(pages, ["HEAD"])
+
+    def test_single_page_variant_counts_blocks_not_headers(self):
+        page, shown = pack_sections_single_page(self.sections(3, 3), page_limit=80)
+
+        self.assertGreater(shown, 0)
+        self.assertLess(shown, 9)
+        self.assertLessEqual(len(page), 80)
+        self.assertEqual(shown, len([line for line in page.split("\n") if line.startswith("block-")]))
+
+
+class TestGroupRendering(unittest.TestCase):
+    def setUp(self):
+        self.records = [
+            make_record(1, "100", datetime.date(2024, 1, 1)),
+            make_record(2, "200", datetime.date(2024, 2, 1)),
+        ]
+        self.node = make_node("Salary", self.records)
+
+    def test_heading_carries_the_name_the_count_and_the_totals(self):
+        heading = format_group_heading(self.node, "UAH")
+
+        self.assertIn("[Salary] (2)", heading)
+        self.assertIn("300.00", heading)
+        self.assertIn("450.00 UAH", heading)
+        self.assertEqual(len(heading.split("\n")), 2)
+
+    def test_a_name_override_localises_the_ungrouped_bucket(self):
+        # The library names it "(ungrouped)" in English; the bot has its own word.
+        ungrouped = make_node("(ungrouped)", self.records, group_id=None)
+
+        self.assertIn("[без групи]", format_group_heading(ungrouped, "UAH", "без групи"))
+
+    def test_summary_line_is_one_line_with_the_same_numbers(self):
+        line = format_group_summary_line(self.node, "UAH")
+        heading = format_group_heading(self.node, "UAH")
+
+        self.assertNotIn("\n", line)
+        self.assertEqual(line, " ".join(part.strip() for part in heading.split("\n")))
+
+    def test_grand_total_sums_every_node(self):
+        report = {
+            "groups": [self.node],
+            "ungrouped": make_node("(ungrouped)", [make_record(3, "50", datetime.date(2024, 3, 1))], group_id=None),
+            "total_nominal": Decimal("350"),
+            "total_adjusted": Decimal("525"),
+            "loss_percent": Decimal("50"),
+        }
+
+        total = format_grand_total(report, "TOTAL", "UAH")
+
+        self.assertIn("[TOTAL] (3)", total)
+        self.assertIn("525.00 UAH", total)
+
+    def test_indenting_pushes_every_line_of_a_block_in(self):
+        # A record is two lines; indenting only the first would break the column.
+        block = format_record(self.records[0], "UAH")
+        indented = indent_blocks([block])[0]
+
+        self.assertEqual(len(indented.split("\n")), 2)
+        for line in indented.split("\n"):
+            self.assertTrue(line.startswith("    "))
 
 
 if __name__ == "__main__":

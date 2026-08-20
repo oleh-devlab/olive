@@ -88,6 +88,13 @@ inflation_server_categories = {
     123456789: 987654321 # guild_id: category_id
 }
 inflation_max_records_per_server = 500
+inflation_max_groups_per_user = 20
+inflation_max_groups_per_server = 50
+
+# How a report renders records until its owner picks with `/inflation view`:
+# "tree" lists every record under its group, "summary" shows group totals only.
+inflation_default_view = "tree"
+
 inflation_loop_update_seconds = 3600 # (Seconds) Safety-net refresh; records update the report on change anyway
 
 # Where records and CPI data live. Defaults to `<repo>/data/inflation`.
