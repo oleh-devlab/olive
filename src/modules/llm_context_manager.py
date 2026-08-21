@@ -17,9 +17,12 @@ class LLMContextManager:
         token_budget: LLMTokenBudget,
         context_file_name="llm_context.json",
         budget_name: str = "default",
+        database_token_limit: int | None = None,
     ):
         self.token_budget = token_budget
         self.context_file_name = context_file_name
+        # Total per-context cap for the on-disk database; None means the file grows unbounded.
+        self.database_token_limit = database_token_limit
 
         self.llm_context = {}  # {"discord_id": [...]} (trimmed cache)
         self.database_context = {}  # {"discord_id": [...]} (full database)
@@ -65,6 +68,7 @@ class LLMContextManager:
 
         temp_path = self.context_file_name + ".tmp"
         try:
+            self.apply_database_limit()
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.database_context, f, ensure_ascii=False, separators=(",", ":"))
             os.replace(temp_path, self.context_file_name)
@@ -310,6 +314,27 @@ class LLMContextManager:
         step = msg.get("interaction_step", {})
         return not (isinstance(step, dict) and step.get("type") == "function_result")
 
+    def _trim_messages(self, messages: list, limit: int) -> None:
+        """
+        Drops messages from the head of `messages` in place until the total fits `limit`.
+        Keeps each context starting with a valid first message.
+        """
+        total_tokens = sum(self.get_message_tokens(m) for m in messages)
+        if total_tokens <= limit:
+            return
+
+        drop_index = 0
+        # Find how many leading messages must go
+        while drop_index < len(messages) and total_tokens > limit:
+            total_tokens -= self.get_message_tokens(messages[drop_index])
+            drop_index += 1
+
+        # Advance to the nearest valid first message
+        while drop_index < len(messages) and not self.is_valid_first_message(messages[drop_index]):
+            drop_index += 1
+
+        del messages[:drop_index]
+
     def apply_restrictions(self):
         """
         Maintains the context size within the configured token budget.
@@ -318,13 +343,16 @@ class LLMContextManager:
         effective_limit = self.token_budget.context_tokens
 
         for messages in self.llm_context.values():
-            total_tokens = sum(self.get_message_tokens(m) for m in messages)
+            self._trim_messages(messages, effective_limit)
 
-            while messages and total_tokens > effective_limit:
-                removed_msg = messages.pop(0)
-                total_tokens -= self.get_message_tokens(removed_msg)
+    def apply_database_limit(self):
+        """
+        Trims every context in `database_context` down to `database_token_limit`, independently.
+        Called before serialization so the on-disk file never exceeds the cap.
+        Does not touch `llm_context` — the working cache has its own budget.
+        """
+        if self.database_token_limit is None:
+            return
 
-                # Remove leading messages until we find a valid first message
-                while messages and not self.is_valid_first_message(messages[0]):
-                    removed_msg = messages.pop(0)
-                    total_tokens -= self.get_message_tokens(removed_msg)
+        for messages in self.database_context.values():
+            self._trim_messages(messages, self.database_token_limit)

@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 budget_name = "private"
 token_budget = BudgetRepository.get_by_name(budget_name)
 schedule_context_manager = LLMContextManager(
-    token_budget=token_budget, context_file_name="schedule_agent_context.json", budget_name=budget_name
+    token_budget=token_budget,
+    context_file_name="schedule_agent_context.json",
+    budget_name=budget_name,
+    database_token_limit=1_000_000,  # cap the on-disk agent history per context
 )
 
 UNDO_TIMEOUT_MINUTES = 15
