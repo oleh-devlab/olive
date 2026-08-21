@@ -1,103 +1,38 @@
-import datetime
+"""Tests for the report itself — the message a reader watches in their channel."""
+
+import unittest
+
+from tests.inflation_fixtures import (
+    FakeProvider,
+    RenderingTestCase,
+    make_deposit,
+    make_node,
+    make_record,
+    make_report,
+)
 import sys
 import types
-import unittest
-from decimal import Decimal
-from pathlib import Path
 
-# Setup path so we can import from src
-# TODO: fix paths
-src_root = Path(__file__).resolve().parent.parent / "src"
-sys.path.insert(0, str(src_root))
-
-# `inflation_provider` reads `settings` at call time, and the module is created
-# by the operator, so it does not exist in a checkout. Nothing here reaches the
-# filesystem — the provider itself is replaced below — but the import has to
-# resolve, so a bare stub stands in for it.
+# Reached through `inflation_provider`, which imports the operator's `settings`
+# module — absent from a checkout. Stubbed here rather than relying on another
+# test module having done it first, so this one runs on its own.
 sys.modules.setdefault("settings", types.ModuleType("settings"))
 
 from modules import inflation_report  # noqa: E402
+from modules.inflation_formatter import MESSAGE_LIMIT  # noqa: E402
+from modules.inflation_provider import VIEW_SUMMARY, VIEW_TREE  # noqa: E402
 from modules.inflation_report import (  # noqa: E402
-    MESSAGE_LIMIT,
-    VIEW_SUMMARY,
-    VIEW_TREE,
-    build_group_list,
+    build_deposits_warning,
     build_rates_warning,
     build_summary,
     build_view_pages,
 )
 
-JAN = datetime.date(2024, 1, 15)
 
+class ReportTestCase(RenderingTestCase):
+    """Every test here reaches the provider through `inflation_report`."""
 
-def make_record(record_id: int, amount: str, comment: str = "") -> dict:
-    return {
-        "id": record_id,
-        "amount": Decimal(amount),
-        "date": JAN,
-        "comment": comment,
-        "group_id": None,
-        "adjusted_value": Decimal(amount) * Decimal("1.5"),
-        "loss_percent": Decimal("50"),
-    }
-
-
-def make_node(name: str, records: list[dict], group_id: int | None = 1) -> dict:
-    return {
-        "id": group_id,
-        "name": name,
-        "comment": "",
-        "records_count": len(records),
-        "total_nominal": sum((r["amount"] for r in records), Decimal("0")),
-        "total_adjusted": sum((r["adjusted_value"] for r in records), Decimal("0")),
-        "loss_percent": Decimal("50"),
-        "oldest_date": min((r["date"] for r in records), default=None),
-        "records": records,
-    }
-
-
-def make_report(groups: list[dict], ungrouped: list[dict] | None = None) -> dict:
-    """A report in the shape `InflationCalculator.get_groups_report()` returns."""
-    ungrouped_node = make_node("(ungrouped)", ungrouped or [], group_id=None)
-    nodes = [*groups, ungrouped_node]
-
-    return {
-        "total_nominal": sum((n["total_nominal"] for n in nodes), Decimal("0")),
-        "total_adjusted": sum((n["total_adjusted"] for n in nodes), Decimal("0")),
-        "loss_percent": Decimal("50"),
-        "oldest_date": min((n["oldest_date"] for n in nodes if n["oldest_date"]), default=None),
-        "groups": groups,
-        "ungrouped": ungrouped_node,
-    }
-
-
-class FakeProvider:
-    """The two provider calls this module makes, without any storage behind them."""
-
-    def __init__(self, report: dict | None = None, has_rates: bool = True, gaps: list[str] | None = None):
-        self.report = report or make_report([])
-        self.has_rates = has_rates
-        self.gaps = gaps or []
-
-    def get_rate_status(self) -> tuple[bool, list[str]]:
-        return self.has_rates, self.gaps
-
-    def get_groups_report(self, owner_id, scope="user", *, detailed=True) -> dict:
-        return self.report
-
-    def get_view_mode(self, owner_id, scope="user") -> str:
-        return VIEW_TREE
-
-
-class ReportTestCase(unittest.TestCase):
-    """Swaps in a fake provider for the duration of one test."""
-
-    def use(self, provider: FakeProvider) -> FakeProvider:
-        original = inflation_report.inflation_provider
-        inflation_report.inflation_provider = provider
-        self.addCleanup(setattr, inflation_report, "inflation_provider", original)
-
-        return provider
+    modules = (inflation_report,)
 
 
 class TestBuildRatesWarning(ReportTestCase):
@@ -191,74 +126,102 @@ class TestBuildViewPages(ReportTestCase):
         self.assertNotIn("ungrouped", page)
 
 
-class TestBuildGroupList(ReportTestCase):
-    def report_with(self, count: int, name_length: int = 8) -> dict:
-        return make_report(
-            [
-                make_node(
-                    ("G" * (name_length - 3)) + f"{index:03d}", [make_record(index, "1234567.89")], group_id=index
-                )
-                for index in range(1, count + 1)
-            ]
-        )
+class TestDepositsInViews(ReportTestCase):
+    def test_the_tree_hangs_the_deposit_under_the_group_heading(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
+        self.use(FakeProvider(report))
 
-    def test_no_groups_says_so_even_when_there_are_records(self):
-        # The question is "which groups do I have"; the ungrouped bucket is not
-        # one, and `/inflation report` is where its records are.
-        self.use(FakeProvider(make_report([], ungrouped=[make_record(1, "100")])))
+        (page,) = build_view_pages(report, mode=VIEW_TREE)
 
-        self.assertIn("No groups yet", build_group_list(1))
+        # The heading itself is two lines — the label, then the sub-totals.
+        label, totals, deposit, *_ = page.split("\n")
+        self.assertIn("[Salary]", label)
+        self.assertIn("->", totals)
+        self.assertIn("15.00%", deposit)
 
-    def test_every_group_is_listed_when_they_fit(self):
-        self.use(FakeProvider(self.report_with(3)))
-        listing = build_group_list(1)
+    def test_the_summary_carries_it_too(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
+        self.use(FakeProvider(report))
 
-        for index in range(1, 4):
-            self.assertIn(f"{index:03d}", listing)
-        self.assertNotIn("Only the first", listing)
+        (page,) = build_view_pages(report, mode=VIEW_SUMMARY)
 
-    def test_too_many_groups_are_cut_and_said_to_be_cut(self):
-        self.use(FakeProvider(self.report_with(50, name_length=100)))
-        listing = build_group_list(1)
+        self.assertIn("[Salary] (1)", page)
+        self.assertIn("15.00%", page)
 
-        self.assertLessEqual(len(listing), MESSAGE_LIMIT)
-        self.assertIn("Only the first", listing)
-        self.assertTrue(listing.startswith("```text"))
+    def test_a_spilled_group_repeats_its_deposit_with_the_heading(self):
+        """The deposit belongs to the heading, so it must follow it onto page two."""
+        records = [make_record(i, "100", comment="x" * 100) for i in range(1, 40)]
+        report = make_report([make_node("Salary", records, deposit=make_deposit())])
+        self.use(FakeProvider(report))
 
-    def test_the_limit_holds_even_when_the_phrases_are_rewritten(self):
-        # `phrases.json` is hand-edited per guild: the wrapper and the note can
-        # be any length, so their cost has to be measured, not assumed.
-        import core.cache
+        pages = build_view_pages(report, mode=VIEW_TREE)
 
-        core.cache._phrases["global"] = {
-            "inflation": {
-                "group_list": "**" + ("Бюджетні групи " * 20) + "**\n```text\n{groups}\n```",
-                "group_list_truncated": "*" + ("не вміщується " * 30) + "({shown}/{total})*",
-            }
-        }
-        self.addCleanup(core.cache._phrases.clear)
+        self.assertGreater(len(pages), 1)
+        for page in pages:
+            self.assertIn("15.00%", page)
 
-        self.use(FakeProvider(self.report_with(50, name_length=100)))
 
-        self.assertLessEqual(len(build_group_list(1)), MESSAGE_LIMIT)
+class TestBuildDepositsWarning(ReportTestCase):
+    def test_nothing_matured_means_no_warning(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
 
-    def test_phrases_so_long_they_leave_no_room_still_produce_a_valid_message(self):
-        import core.cache
+        self.assertEqual(build_deposits_warning(report), "")
 
-        core.cache._phrases["global"] = {
-            "inflation": {
-                "group_list": "x" * 2500 + "{groups}",
-                "group_list_truncated": "y" * 2500,
-            }
-        }
-        self.addCleanup(core.cache._phrases.clear)
+    def test_no_deposits_at_all_means_no_warning(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")])])
 
-        self.use(FakeProvider(self.report_with(50, name_length=100)))
-        listing = build_group_list(1)
+        self.assertEqual(build_deposits_warning(report), "")
 
-        # The code fence must never be cut open, so the listing goes entirely.
-        self.assertLessEqual(len(listing), MESSAGE_LIMIT)
-        self.assertNotIn("x", listing)
+    def test_a_matured_deposit_is_named(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))])
+
+        self.assertIn("Salary", build_deposits_warning(report))
+
+    def test_the_warning_reaches_the_summary_in_both_modes(self):
+        """The summary is the one part `tree` and `summary` always share."""
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))])
+        self.use(FakeProvider(report))
+
+        self.assertIn("Salary", build_summary(report))
+
+    def test_it_sits_alongside_the_rates_warning_rather_than_replacing_it(self):
+        report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit(matured=True))])
+        self.use(FakeProvider(report, has_rates=False))
+
+        summary = build_summary(report)
+
+        self.assertIn("Salary", summary)
+        self.assertIn(build_rates_warning(), summary)
+
+
+class TestDepositsWarningIsBounded(ReportTestCase):
+    def test_a_handful_of_matured_deposits_are_named(self):
+        groups = [
+            make_node(f"G{i}", [make_record(i, "100")], group_id=i, deposit=make_deposit(matured=True))
+            for i in range(1, 4)
+        ]
+
+        self.assertIn("G1", build_deposits_warning(make_report(groups)))
+
+    def test_a_server_full_of_them_falls_back_to_a_count(self):
+        """Fifty group names would blow the message limit on the warning alone."""
+        groups = [
+            make_node(
+                f"Group number {i} with a longish name",
+                [make_record(i, "100")],
+                group_id=i,
+                deposit=make_deposit(matured=True),
+            )
+            for i in range(1, 51)
+        ]
+        report = make_report(groups)
+        self.use(FakeProvider(report))
+
+        warning = build_deposits_warning(report)
+
+        self.assertIn("50", warning)
+        self.assertNotIn("Group number 1 with", warning)
+        self.assertLessEqual(len(build_summary(report)), MESSAGE_LIMIT)
 
 
 if __name__ == "__main__":

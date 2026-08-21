@@ -29,15 +29,21 @@ ruff check .                                # CI pins ruff==0.16.2
 black .                                     # line-length 120, auto-applied by CI
 ```
 
+Both submodule directories are excluded from ruff and black — never reformat or lint-fix inside them.
+
 The three workflows do not cover the same branches: `unittest.yml` runs on every branch and PR (Python 3.14, `pip install -r requirements.txt`, submodules checked out), while `code_check.yml` (ruff, 3.12) and `black-formatter.yml` (opens an auto-format PR) only fire on `main` and `mk*`. So a feature branch gets tests but no lint feedback until it targets one of those — run `ruff check .` locally.
 
-Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. `test_personal_channels`, `test_paged_message` and `test_inflation_report` import `disnake` (directly or through a provider) and fail to load without it; `test_inflation_report` additionally needs the submodules checked out. `test_migrations`, `test_phrases` and `test_inflation_formatter` are pure-Python. Both submodule directories are excluded from ruff and black — never reformat or lint-fix inside them.
+Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. `test_migrations`, `test_phrases` and `test_inflation_formatter` are pure-Python. `test_personal_channels` and `test_paged_message` import `disnake` and fail to load without it, and so does every inflation module except the formatter — anything reaching `inflation_provider` pulls in `core.personal_channels` for `disnake` and the vendored calculator for the submodules, so those four need both. `tests/inflation_fixtures.py` holds the shared report/record/deposit builders and the fake provider; it is deliberately free of `settings` so the formatter suite stays dependency-free.
+
+When writing one: `tests/` is a real package, so a test module importing a sibling writes `from tests.inflation_fixtures import ...`, and the suite is run from the repo root. Stub `settings` in the module itself rather than relying on another one having done it — discovery order is not a contract, and every module has to run alone. Anything exercising a provider for real must first point `inflation_provider.get_base_data_dir` at a temporary directory: it is the single root the record files, the rates file and both channel registries hang off, and `settings.inflation_data_dir` redirects only the first two — a test that patches nothing writes into the repository's own gitignored `data/`.
 
 ## Architecture
 
 `src/main.py` builds `core.bot.OliveBot`, calls `load_phrases()`, then `load_extensions("cogs")`, which recursively imports every `.py` under `src/cogs/` (subpackages like `cogs/schedule/` have empty `__init__.py`; each leaf module has its own `setup(bot)`). `OliveBot.load_extension` is overridden to honour `settings.cogs_blacklist` (dotted name minus the `cogs.` prefix, e.g. `"embeds.battery"`) and to record load times in `core.cache.active_cogs_list`.
 
 Layering is `cogs/` → `modules/` → `core/`. Cogs hold Discord commands and listeners only; domain logic and all access to the vendored submodules go through a *provider* in `modules/` (`ScheduleProvider`, `inflation_provider`). No cog imports `modules.automatic_timetable_py` or `modules.inflation_calculator` directly.
+
+The inflation rendering below that provider is four modules, and the line between them is what each may know: `inflation_formatter` knows numbers and text only — no phrases, no `settings`, no filesystem, which is what keeps its suite dependency-free; `inflation_phrases` knows `phrases.json` and returns one localized fragment per call, composing nothing; `inflation_report` builds the report a reader watches in their channel (paginated) and its single-message form for a guild; `inflation_replies` builds the one-off answers to a slash command, which Discord refuses rather than truncates when they run long, so they all go through `fit_into_message`. `report` and `replies` are siblings and must not import each other — anything both need belongs one layer down.
 
 `core/cache.py` is the shared mutable state between cogs — embeds awaiting publication, the `config.ini` lock, the LLM client pool, loaded phrases, channel pager state. Cross-cog communication otherwise happens through disnake's dispatcher: a command mutates data and calls `bot.dispatch("schedule_update", channel_id)`; the UI cog listens with `@commands.Cog.listener("on_schedule_update")`. This is what lets the writer and the renderer live in different files.
 
@@ -64,7 +70,7 @@ Two stores, split by kind of data:
 
 ### Phrases
 
-Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a `"global"` fallback; guild sections are deep-merged over global at load time. Use `get_phrases(guild_id)` when a guild is in scope and `get_phrases()` otherwise, always with an inline fallback string. `format_phrase()` / `format_embed_data()` fall back rather than raise when a hand-edited placeholder does not match. Editable live via `/edit_phrases` + `/reload_phrases`.
+Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a `"global"` fallback; guild sections are deep-merged over global at load time. Use `get_phrases(guild_id)` when a guild is in scope and `get_phrases()` otherwise, always with an inline fallback string. `format_phrase()` / `format_embed_data()` fall back rather than raise when a hand-edited placeholder does not match. Editable live via `/edit_phrases` + `/reload_phrases` — but only the text looked up at call time. A cog that reads a `*_cmd` section into a module-level dict (`cogs/inflation/tools.py`, `cogs/schedule/tools.py`) does so at import, and those strings are the command and parameter descriptions Discord already registered, so reloading phrases cannot change them.
 
 ### LLM subsystem
 
@@ -74,5 +80,6 @@ Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a 
 
 - Read tunables with `getattr(settings, "name", default)` — operators' `settings.py` files predate newly added keys.
 - Reloading a cog via `/reload_cogs` does **not** pick up changes in `core/` or `modules/`; those need a full restart (`docs/EN/cog_hot_reloading.md`).
+- Only the eternal message in a personal channel has a pager. A slash-command reply is a single message, and Discord refuses one over 2000 characters instead of truncating it — so anything whose length grows with the user's data has to be measured and trimmed, not hoped about (`inflation_replies.fit_into_message`).
 - `PERF203` (try/except inside a loop) is ignored in ruff config on purpose: per-item error isolation is intended.
 - Docs are bilingual, `docs/EN/` and `docs/UK/`; `docs/UK/architecture.md` is the fuller architecture write-up but predates the schedule/inflation subsystems.

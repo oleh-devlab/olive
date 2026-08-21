@@ -18,6 +18,13 @@ from decimal import ROUND_HALF_UP, Decimal
 
 CENT = Decimal("0.01")
 
+# Discord's own limit on a message, and the floor a listing is never squeezed
+# below: however little room a summary leaves, showing one entry beats showing
+# none. Both live here rather than with either caller, because the report and
+# the slash-command replies have to agree on them.
+MESSAGE_LIMIT = 2000
+MIN_RECORD_BLOCK = 200
+
 # Records are rendered into a code block inside a message that also carries the
 # timestamp header, the summary and possibly a CPI warning, so a page has to stay
 # well below the 2000-character Discord limit to leave room for all of that.
@@ -31,6 +38,11 @@ RECORD_INDENT = "    "
 
 # Rule drawn above the grand total in the group-totals view.
 TOTAL_RULE = "-" * 40
+
+# The library's own tag for a lot credited by closing a deposit. Mirrored rather
+# than imported so this module stays free of the vendored package and testable
+# without it; the value is part of the library's stored format, so it is stable.
+LOT_SOURCE_DEPOSIT_INTEREST = "deposit_interest"
 
 
 def format_money(value: Decimal | int | float | str, currency: str = "") -> str:
@@ -50,19 +62,40 @@ def format_percent(value: Decimal | int | float | str) -> str:
     return f"{percent:+.2f}%"
 
 
+def format_rate(value: Decimal | int | float | str) -> str:
+    """Format an interest rate. Unsigned, unlike `format_percent`.
+
+    A deposit rate is never a gain or a loss relative to anything, so the
+    explicit `+` that makes an inflation delta readable reads as a bug here.
+    """
+    return f"{Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP):.2f}%"
+
+
 def format_date(value: datetime.date) -> str:
     return value.strftime("%d.%m.%Y")
 
 
 def format_record(record: dict, currency: str = "") -> str:
-    """Render a single report record as a two-line block."""
-    record_id = record.get("id", "?")
+    """Render a single report record as a two-line block.
+
+    A row standing for several folded lots is told apart by its `count`, never
+    by its comment and never by `id` being None — the id key is present and
+    null on a folded row, so `.get("id", "?")` would print `ID None`.
+    """
     comment = record.get("comment") or ""
     if len(comment) > MAX_COMMENT_LENGTH:
         comment = comment[: MAX_COMMENT_LENGTH - 1] + "…"
     comment_part = f" | {comment}" if comment else ""
 
-    head = f"ID {record_id}. {format_money(record['amount'], currency)} | {format_date(record['date'])}{comment_part}"
+    if record.get("count", 1) > 1:
+        when = f"{format_date(record['first_date'])}…{format_date(record['last_date'])}"
+        head = f"x{record['count']}. {format_money(record['amount'], currency)} | {when}{comment_part}"
+    else:
+        head = (
+            f"ID {record.get('id', '?')}. {format_money(record['amount'], currency)}"
+            f" | {format_date(record['date'])}{comment_part}"
+        )
+
     tail = f"   -> {format_money(record['adjusted_value'], currency)} ({format_percent(record['loss_percent'])})"
 
     return f"{head}\n{tail}"
@@ -114,6 +147,81 @@ def format_grand_total(report: dict, label: str, currency: str = "") -> str:
     total = {"name": label, "records_count": sum(node["records_count"] for node in nodes)}
 
     return f"{TOTAL_RULE}\n{format_node_label(total)} {format_node_totals(report, currency)}"
+
+
+def report_nodes(report: dict) -> list[dict]:
+    """
+    Every group, plus the ungrouped bucket when it actually holds something.
+
+    The report is indexed rather than `.get()`-ed: its shape is
+    `InflationCalculator.get_groups_report()`'s contract, pinned by that
+    library's own tests. A malformed report should raise and surface as
+    "could not build the report", not quietly render zero money.
+    """
+    nodes = list(report["groups"])
+    ungrouped = report["ungrouped"]
+
+    if ungrouped["records_count"]:
+        nodes.append(ungrouped)
+
+    return nodes
+
+
+# ----------------------------------------------------------------------
+# Deposits
+# ----------------------------------------------------------------------
+
+
+def deposit_fields(deposit: dict, currency: str = "") -> dict[str, str]:
+    """Every number of a group's deposit, pre-rendered for phrase interpolation.
+
+    The caller owns the prose: this returns named strings and never a sentence,
+    the same split `format_grand_total` makes by taking its label as an argument.
+    """
+    return {
+        "rate": format_rate(deposit["annual_rate_percent"]),
+        "capitalization": deposit["capitalization"],
+        "start_date": format_date(deposit["start_date"]),
+        "end_date": format_date(deposit["end_date"]),
+        "comment": deposit.get("comment") or "",
+        "earned": format_money(deposit["net_interest_so_far"], currency),
+        "balance": format_money(deposit["balance_so_far"], currency),
+        "projected": format_money(deposit["projected_net_interest"], currency),
+        "projected_total": format_money(deposit["projected_final_amount"], currency),
+        "effective_rate": format_rate(deposit["effective_annual_rate_percent"]),
+        "at_risk": format_money(deposit["at_risk_if_broken_now"], currency),
+    }
+
+
+def fold_consumed_lots(consumed: list[dict]) -> list[dict]:
+    """Fold the deposit-interest lots a withdrawal ate into one entry.
+
+    Spending a closed year of monthly capitalization consumes twelve interest
+    lots, which is twelve lines of a reply nobody reads. The folded entry carries
+    `count`, `first_date` and `last_date`; a manual lot is passed through
+    untouched, and one interest lot on its own is not worth folding.
+    """
+    interest = [entry for entry in consumed if entry.get("source") == LOT_SOURCE_DEPOSIT_INTEREST]
+    if len(interest) < 2:
+        return list(consumed)
+
+    rest = [entry for entry in consumed if entry.get("source") != LOT_SOURCE_DEPOSIT_INTEREST]
+    dates = [entry["date"] for entry in interest]
+
+    folded = {
+        "id": None,
+        "date": min(dates),
+        "first_date": min(dates),
+        "last_date": max(dates),
+        "source": LOT_SOURCE_DEPOSIT_INTEREST,
+        "count": len(interest),
+        "taken": sum((entry["taken"] for entry in interest), Decimal("0")),
+        # Only the last lot a withdrawal touches is ever left partly spent, so
+        # what remains across the folded ones is what remains in that one.
+        "remaining": sum((entry["remaining"] for entry in interest), Decimal("0")),
+    }
+
+    return [*rest, folded]
 
 
 def indent_blocks(blocks: list[str], indent: str = RECORD_INDENT) -> list[str]:

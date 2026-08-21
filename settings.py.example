@@ -95,6 +95,11 @@ inflation_max_groups_per_server = 50
 # "tree" lists every record under its group, "summary" shows group totals only.
 inflation_default_view = "tree"
 
+# Whether a report folds a group's deposit-interest records into a single row
+# until its owner picks with `/inflation view`. Closing a year of monthly
+# capitalization credits twelve of them; the totals are the same either way.
+inflation_collapse_interest = True
+
 inflation_loop_update_seconds = 3600 # (Seconds) Safety-net refresh; records update the report on change anyway
 
 # Where records and CPI data live. Defaults to `<repo>/data/inflation`.

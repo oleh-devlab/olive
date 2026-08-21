@@ -3,11 +3,12 @@
 Cogs never touch `modules.inflation_calculator` directly — they go through the
 `inflation_provider` singleton exported at the bottom of this module.
 
-The view mode of an owner's report is kept here too, in the channel registry
-entry next to the channel ids. `PersonalChannelRegistry` preserves keys it does
-not know about precisely so a module can do this — the schedule keeps its solver
-settings in the same record — and it means the choice survives a restart without
-a file of its own.
+An owner's report preferences — view mode, and whether deposit interest is
+folded into one row — are kept here too, in the channel registry entry next to
+the channel ids. `PersonalChannelRegistry` preserves keys it does not know about
+precisely so a module can do this — the schedule keeps its solver settings in the
+same record — and it means the choices survive a restart without a file of their
+own.
 """
 
 import datetime
@@ -20,7 +21,15 @@ import settings
 
 from core.personal_channels import PersonalChannelRegistry
 from modules.inflation_calculator.modules.api import InflationCalculator
-from modules.inflation_calculator.modules.config import FALLBACK_ANNUAL_INFLATION_RATE
+from modules.inflation_calculator.modules.config import (
+    DEFAULT_DEPOSIT_TAX_PERCENT,
+    FALLBACK_ANNUAL_INFLATION_RATE,
+)
+from modules.inflation_calculator.modules.deposit import (
+    CapitalizationPeriod,
+    DepositResult,
+    DepositTerms,
+)
 from modules.inflation_calculator.modules.exceptions import ValidationError
 from modules.inflation_calculator.modules.storage import (
     load_inflation_rates_from_file,
@@ -48,6 +57,21 @@ VIEW_SUMMARY = "summary"
 VIEW_MODES = (VIEW_TREE, VIEW_SUMMARY)
 
 VIEW_MODE_KEY = "view_mode"
+
+# How often a deposit adds its interest back to the balance. The values are the
+# library's own enum values, and they reach Discord as command choices.
+CAPITALIZATION_MODES = tuple(period.value for period in CapitalizationPeriod)
+DEFAULT_CAPITALIZATION = CapitalizationPeriod.MONTHLY.value
+
+# The tax the library assumes when a caller does not name one (18% PIT + 5%
+# military levy). Re-exported so a command can show it as its default.
+DEFAULT_TAX_PERCENT = DEFAULT_DEPOSIT_TAX_PERCENT
+
+# Whether a report folds a group's deposit-interest lots into one row. Closing a
+# year of monthly capitalization credits twelve of them, which is a page of
+# noise in a channel capped at 2000 characters. Stored per owner next to the
+# view mode, so it is part of the on-disk format too.
+COLLAPSE_INTEREST_KEY = "collapse_interest"
 
 
 def get_base_data_dir() -> Path:
@@ -181,6 +205,22 @@ class InflationProvider:
             self._calculators.pop((scope, owner_id), None)
 
     # ------------------------------------------------------------------
+    # Limits
+    # ------------------------------------------------------------------
+
+    def _max_records(self, scope: str = USER_SCOPE) -> int:
+        if scope == SERVER_SCOPE:
+            return getattr(settings, "inflation_max_records_per_server", 500)
+
+        return getattr(settings, "inflation_max_records_per_user", 200)
+
+    def _max_groups(self, scope: str = USER_SCOPE) -> int:
+        if scope == SERVER_SCOPE:
+            return getattr(settings, "inflation_max_groups_per_server", 50)
+
+        return getattr(settings, "inflation_max_groups_per_user", 20)
+
+    # ------------------------------------------------------------------
     # Records
     # ------------------------------------------------------------------
 
@@ -195,11 +235,7 @@ class InflationProvider:
     ) -> dict:
         calculator = self._get_calculator(owner_id, scope)
 
-        if scope == SERVER_SCOPE:
-            max_records = getattr(settings, "inflation_max_records_per_server", 500)
-        else:
-            max_records = getattr(settings, "inflation_max_records_per_user", 200)
-
+        max_records = self._max_records(scope)
         if calculator.records_count >= max_records:
             raise ValidationError(f"Record limit reached ({max_records}). Delete something first.")
 
@@ -209,21 +245,51 @@ class InflationProvider:
     def delete_record(self, owner_id: int, record_id: int, scope: str = USER_SCOPE) -> dict:
         return self._get_calculator(owner_id, scope).delete_record(record_id)
 
+    def withdraw(
+        self,
+        owner_id: int,
+        amount: str,
+        group: int | str | None = None,
+        scope: str = USER_SCOPE,
+    ) -> dict:
+        """
+        Spend money out of a group, oldest lots first.
+
+        `group=None` withdraws from the ungrouped lots. A deposit covering the
+        group never blocks the call — the returned `warning` names the interest
+        it puts at risk and the owner decides.
+        """
+        return self._get_calculator(owner_id, scope).withdraw(amount, as_group_ref(group))
+
     def list_records(self, owner_id: int, scope: str = USER_SCOPE) -> list[dict]:
         return self._get_calculator(owner_id, scope).get_records()
 
     def count_records(self, owner_id: int, scope: str = USER_SCOPE) -> int:
         return self._get_calculator(owner_id, scope).records_count
 
-    def get_groups_report(self, owner_id: int, scope: str = USER_SCOPE, *, detailed: bool = True) -> dict:
+    def get_groups_report(
+        self,
+        owner_id: int,
+        scope: str = USER_SCOPE,
+        *,
+        detailed: bool = True,
+        collapse_interest: bool = True,
+    ) -> dict:
         """
         Every group's sub-total plus the grand total, records included when asked.
 
         This is the only report the bot builds: with no groups it degenerates to
         one `ungrouped` node holding everything, and its totals are the same ones
         `InflationCalculator.get_report()` would produce.
+
+        `collapse_interest` folds a group's deposit-interest lots into one row.
+        It defaults on because a closed year of monthly capitalization is twelve
+        lots, and the totals are identical either way — the library sums the
+        individual adjusted values, so a folded node still reconciles.
         """
-        return self._get_calculator(owner_id, scope).get_groups_report(detailed=detailed)
+        return self._get_calculator(owner_id, scope).get_groups_report(
+            detailed=detailed, collapse_interest=collapse_interest
+        )
 
     # ------------------------------------------------------------------
     # Budget groups
@@ -232,11 +298,7 @@ class InflationProvider:
     def create_group(self, owner_id: int, name: str, comment: str = "", scope: str = USER_SCOPE) -> dict:
         calculator = self._get_calculator(owner_id, scope)
 
-        if scope == SERVER_SCOPE:
-            max_groups = getattr(settings, "inflation_max_groups_per_server", 50)
-        else:
-            max_groups = getattr(settings, "inflation_max_groups_per_user", 20)
-
+        max_groups = self._max_groups(scope)
         if calculator.groups_count >= max_groups:
             raise ValidationError(f"Group limit reached ({max_groups}). Delete one first.")
 
@@ -270,11 +332,129 @@ class InflationProvider:
         return [dict(group) for group in self._get_calculator(owner_id, scope).get_groups()]
 
     # ------------------------------------------------------------------
-    # View mode
+    # Deposits
+    # ------------------------------------------------------------------
+
+    def attach_deposit(
+        self,
+        owner_id: int,
+        group: int | str,
+        *,
+        annual_rate_percent: str,
+        start_date: datetime.date,
+        end_date: datetime.date,
+        capitalization: str = DEFAULT_CAPITALIZATION,
+        tax_percent: str | None = None,
+        early_withdrawal_rate_percent: str | None = None,
+        tax_withheld_on_payout: bool = True,
+        comment: str = "",
+        scope: str = USER_SCOPE,
+    ) -> dict:
+        """
+        Put a group under a deposit.
+
+        A deposit covers the group's whole balance: every lot is a contribution
+        dated when the money arrived, so a top-up earns from its own date. The
+        terms are validated by `DepositTerms` itself, which raises the same
+        `ValidationError` every other call here does.
+        """
+        terms = DepositTerms(
+            annual_rate_percent=annual_rate_percent,
+            start_date=start_date,
+            end_date=end_date,
+            capitalization=capitalization,
+            # The library's defaults are the Ukrainian ones, so an unset option
+            # has to fall through to them rather than to a value of our own.
+            tax_percent=DEFAULT_TAX_PERCENT if tax_percent is None else tax_percent,
+            early_withdrawal_rate_percent=(
+                Decimal("0") if early_withdrawal_rate_percent is None else early_withdrawal_rate_percent
+            ),
+            tax_withheld_on_payout=tax_withheld_on_payout,
+            comment=comment,
+        )
+
+        return dict(self._get_calculator(owner_id, scope).attach_deposit(as_group_ref(group), terms))
+
+    def detach_deposit(self, owner_id: int, group: int | str, scope: str = USER_SCOPE) -> dict:
+        """Drop a deposit without crediting anything — for undoing a mistake."""
+        return dict(self._get_calculator(owner_id, scope).detach_deposit(as_group_ref(group)))
+
+    def find_group(self, owner_id: int, group: int | str, scope: str = USER_SCOPE) -> dict | None:
+        """The stored group behind a reference, or None. Copied, like `list_groups`."""
+        found = self._get_calculator(owner_id, scope).find_group(as_group_ref(group))
+
+        return dict(found) if found else None
+
+    def get_deposit_terms(self, owner_id: int, group: int | str, scope: str = USER_SCOPE) -> DepositTerms | None:
+        return self._get_calculator(owner_id, scope).get_deposit_terms(as_group_ref(group))
+
+    def get_deposit_projection(
+        self,
+        owner_id: int,
+        group: int | str,
+        on_date: datetime.date | None = None,
+        scope: str = USER_SCOPE,
+    ) -> DepositResult | None:
+        """Value a running deposit without closing it. Nothing is stored."""
+        return self._get_calculator(owner_id, scope).get_deposit_projection(as_group_ref(group), on_date)
+
+    def close_deposit(
+        self,
+        owner_id: int,
+        group: int | str,
+        on_date: datetime.date | None = None,
+        scope: str = USER_SCOPE,
+    ) -> DepositResult:
+        """
+        Close a deposit and credit its interest into the group.
+
+        The interest lands as one dated lot per capitalization period, so a year
+        of monthly capitalization adds twelve records at once. The library adds
+        them through its own `add_record`, which does not know about this bot's
+        per-owner limits — so the limit is checked here, before the close, or it
+        would be silently exceeded.
+        """
+        calculator = self._get_calculator(owner_id, scope)
+        group_ref = as_group_ref(group)
+
+        projection = calculator.get_deposit_projection(group_ref, on_date)
+        if projection is None:
+            raise ValidationError("This group has no deposit to close.")
+
+        new_records = sum(1 for period in projection.periods if period.net_interest > 0)
+        max_records = self._max_records(scope)
+        if calculator.records_count + new_records > max_records:
+            raise ValidationError(
+                f"Closing this deposit would add {new_records} record(s) and pass the "
+                f"limit ({max_records}). Delete something first."
+            )
+
+        return calculator.close_deposit(group_ref, on_date)
+
+    # ------------------------------------------------------------------
+    # Report preferences
     # ------------------------------------------------------------------
 
     def _registry(self, scope: str = USER_SCOPE) -> PersonalChannelRegistry:
         return self.server_channels if scope == SERVER_SCOPE else self.channels
+
+    def _remember(self, owner_id: int, key: str, value, scope: str = USER_SCOPE) -> bool:
+        """
+        Store one preference in the owner's registry entry.
+
+        Returns False when the owner has no entry — every preference here is
+        about a report channel, so there is nowhere to keep it until one exists.
+        """
+        registry = self._registry(scope)
+        data = registry.load()
+        entry = data.get(str(owner_id))
+        if entry is None:
+            return False
+
+        entry[key] = value
+        registry.save(data)
+
+        return True
 
     def get_view_mode(self, owner_id: int, scope: str = USER_SCOPE) -> str:
         """The owner's chosen view mode, or the configured default."""
@@ -284,25 +464,25 @@ class InflationProvider:
         return mode if mode in VIEW_MODES else get_default_view()
 
     def set_view_mode(self, owner_id: int, mode: str, scope: str = USER_SCOPE) -> bool:
-        """
-        Remember how this owner's report should render.
-
-        Returns False when the owner has no registry entry — the preference is
-        about a report channel, so there is nowhere to keep it until one exists.
-        """
+        """Remember how this owner's report should render. False: no entry yet."""
         if mode not in VIEW_MODES:
             raise ValidationError(f"Unknown view mode: {mode!r}")
 
-        registry = self._registry(scope)
-        data = registry.load()
-        entry = data.get(str(owner_id))
-        if entry is None:
-            return False
+        return self._remember(owner_id, VIEW_MODE_KEY, mode, scope)
 
-        entry[VIEW_MODE_KEY] = mode
-        registry.save(data)
+    def get_collapse_interest(self, owner_id: int, scope: str = USER_SCOPE) -> bool:
+        """Whether this owner's report folds deposit-interest lots into one row."""
+        entry = self._registry(scope).get(owner_id) or {}
+        collapse = entry.get(COLLAPSE_INTEREST_KEY)
 
-        return True
+        if isinstance(collapse, bool):
+            return collapse
+
+        return bool(getattr(settings, "inflation_collapse_interest", True))
+
+    def set_collapse_interest(self, owner_id: int, collapse: bool, scope: str = USER_SCOPE) -> bool:
+        """Remember whether to fold interest rows. False: no entry yet."""
+        return self._remember(owner_id, COLLAPSE_INTEREST_KEY, bool(collapse), scope)
 
     def count_users_with_records(self) -> int:
         """
