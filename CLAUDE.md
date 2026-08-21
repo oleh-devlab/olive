@@ -27,13 +27,15 @@ ruff check .                                # CI pins ruff==0.16.2
 black .                                     # line-length 120, auto-applied on main by CI
 ```
 
-Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. `test_personal_channels` needs `disnake` installed and `test_inflation_report` needs the submodules checked out; the other test modules are pure-Python. Both submodule directories are excluded from ruff and black — never reformat or lint-fix inside them.
+Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. `test_personal_channels` needs `disnake` installed, and every inflation module except `test_inflation_formatter` needs the submodules checked out — anything that reaches `inflation_provider` imports the vendored library through it. `tests/inflation_fixtures.py` holds the shared report/record/deposit builders and the fake provider; it is deliberately free of `settings` so the formatter suite stays dependency-free. Both submodule directories are excluded from ruff and black — never reformat or lint-fix inside them.
 
 ## Architecture
 
 `src/main.py` builds `core.bot.OliveBot`, calls `load_phrases()`, then `load_extensions("cogs")`, which recursively imports every `.py` under `src/cogs/` (subpackages like `cogs/schedule/` have empty `__init__.py`; each leaf module has its own `setup(bot)`). `OliveBot.load_extension` is overridden to honour `settings.cogs_blacklist` (dotted name minus the `cogs.` prefix, e.g. `"embeds.battery"`) and to record load times in `core.cache.active_cogs_list`.
 
 Layering is `cogs/` → `modules/` → `core/`. Cogs hold Discord commands and listeners only; domain logic and all access to the vendored submodules go through a *provider* in `modules/` (`ScheduleProvider`, `inflation_provider`). No cog imports `modules.automatic_timetable_py` or `modules.inflation_calculator` directly.
+
+The inflation rendering below that provider is four modules, and the line between them is what each may know: `inflation_formatter` knows numbers and text only — no phrases, no `settings`, no filesystem, which is what keeps its suite dependency-free; `inflation_phrases` knows `phrases.json` and returns one localized fragment per call, composing nothing; `inflation_report` builds the report a reader watches in their channel (paginated) and its single-message form for a guild; `inflation_replies` builds the one-off answers to a slash command, which Discord refuses rather than truncates when they run long, so they all go through `fit_into_message`. `report` and `replies` are siblings and must not import each other — anything both need belongs one layer down.
 
 `core/cache.py` is the shared mutable state between cogs — embeds awaiting publication, the `config.ini` lock, the LLM client pool, loaded phrases, channel pager state. Cross-cog communication otherwise happens through disnake's dispatcher: a command mutates data and calls `bot.dispatch("schedule_update", channel_id)`; the UI cog listens with `@commands.Cog.listener("on_schedule_update")`. This is what lets the writer and the renderer live in different files.
 

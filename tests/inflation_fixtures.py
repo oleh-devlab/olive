@@ -10,6 +10,7 @@ runs without either, and importing these must not change that.
 
 import datetime
 import sys
+import unittest
 from decimal import Decimal
 from pathlib import Path
 
@@ -136,3 +137,43 @@ def make_withdrawal(consumed: list[dict], warning: str | None = None) -> dict:
         "consumed": consumed,
         "warning": warning,
     }
+
+
+class FakeProvider:
+    """Every provider call the rendering layers make, with no storage behind them."""
+
+    def __init__(self, report: dict | None = None, has_rates: bool = True, gaps: list[str] | None = None):
+        self.report = report or make_report([])
+        self.has_rates = has_rates
+        self.gaps = gaps or []
+
+    def get_rate_status(self) -> tuple[bool, list[str]]:
+        return self.has_rates, self.gaps
+
+    def get_groups_report(self, owner_id, scope="user", *, detailed=True, collapse_interest=True) -> dict:
+        return self.report
+
+    def get_view_mode(self, owner_id, scope="user") -> str:
+        return "tree"
+
+    def get_collapse_interest(self, owner_id, scope="user") -> bool:
+        return True
+
+
+class RenderingTestCase(unittest.TestCase):
+    """Swaps in a fake provider for the duration of one test.
+
+    `inflation_report` and `inflation_replies` each hold their own reference to
+    the provider singleton, so a subclass names the modules its tests reach
+    through and every one of them is patched together.
+    """
+
+    modules: tuple = ()
+
+    def use(self, provider: FakeProvider) -> FakeProvider:
+        for module in self.modules:
+            original = module.inflation_provider
+            module.inflation_provider = provider
+            self.addCleanup(setattr, module, "inflation_provider", original)
+
+        return provider

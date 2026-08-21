@@ -25,15 +25,16 @@ from modules.inflation_formatter import (
     format_money,
     format_rate,
 )
-from modules.inflation_report import (
+from modules.inflation_phrases import get_currency, node_name
+from modules.inflation_replies import (
     build_deposit_overview,
     build_group_list,
     build_withdrawal_message,
+)
+from modules.inflation_report import (
     build_rates_warning,
     build_report,
     build_server_report,
-    get_currency,
-    node_name,
     render_page,
 )
 

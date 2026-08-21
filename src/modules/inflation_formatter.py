@@ -18,6 +18,13 @@ from decimal import ROUND_HALF_UP, Decimal
 
 CENT = Decimal("0.01")
 
+# Discord's own limit on a message, and the floor a listing is never squeezed
+# below: however little room a summary leaves, showing one entry beats showing
+# none. Both live here rather than with either caller, because the report and
+# the slash-command replies have to agree on them.
+MESSAGE_LIMIT = 2000
+MIN_RECORD_BLOCK = 200
+
 # Records are rendered into a code block inside a message that also carries the
 # timestamp header, the summary and possibly a CPI warning, so a page has to stay
 # well below the 2000-character Discord limit to leave room for all of that.
@@ -140,6 +147,24 @@ def format_grand_total(report: dict, label: str, currency: str = "") -> str:
     total = {"name": label, "records_count": sum(node["records_count"] for node in nodes)}
 
     return f"{TOTAL_RULE}\n{format_node_label(total)} {format_node_totals(report, currency)}"
+
+
+def report_nodes(report: dict) -> list[dict]:
+    """
+    Every group, plus the ungrouped bucket when it actually holds something.
+
+    The report is indexed rather than `.get()`-ed: its shape is
+    `InflationCalculator.get_groups_report()`'s contract, pinned by that
+    library's own tests. A malformed report should raise and surface as
+    "could not build the report", not quietly render zero money.
+    """
+    nodes = list(report["groups"])
+    ungrouped = report["ungrouped"]
+
+    if ungrouped["records_count"]:
+        nodes.append(ungrouped)
+
+    return nodes
 
 
 # ----------------------------------------------------------------------

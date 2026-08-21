@@ -1,9 +1,9 @@
-"""User-facing composition of the inflation report.
+"""The inflation report: the message a reader watches, in both its shapes.
 
-`inflation_formatter` turns numbers into text; this module wraps that text into
-the message the bot actually shows, taking every string from `phrases.json`.
-Both the slash commands and the eternal report message go through here so the
-two never drift apart.
+A personal report lives in a channel of its own as an eternal message with a
+pager, so it is built as a list of pages. A guild's report has no pager, so
+`build_server_report` builds the same report to fit a single message. Both come
+through here, which is why the two can never drift apart.
 
 The report renders in one of two modes (`inflation_provider.VIEW_MODES`): the
 full tree, where every record is listed under the group it belongs to, or the
@@ -14,18 +14,20 @@ can never disagree.
 A group under a deposit carries it in its heading in both modes, and a matured
 one — which the library never closes by itself — is named in the summary, the
 one part of the message every mode shows.
+
+Wording comes from `inflation_phrases`; one-off answers to a slash command are
+`inflation_replies`.
 """
 
-from collections.abc import Callable
 from typing import NamedTuple
 
-from core.utils import format_phrase, get_phrases
+from core.utils import format_phrase
 from modules.inflation_formatter import (
+    MESSAGE_LIMIT,
+    MIN_RECORD_BLOCK,
     Section,
     build_record_pages,
     build_single_record_page,
-    deposit_fields,
-    fold_consumed_lots,
     format_date,
     format_grand_total,
     format_group_heading,
@@ -38,7 +40,15 @@ from modules.inflation_formatter import (
     pack_sections,
     pack_sections_single_page,
     pack_single_page,
+    report_nodes,
     trim_to_whole_lines,
+)
+from modules.inflation_phrases import (
+    build_group_block,
+    get_currency,
+    get_phrases_section,
+    get_view_label,
+    node_name,
 )
 from modules.inflation_provider import (
     FALLBACK_ANNUAL_PERCENT,
@@ -57,13 +67,9 @@ MAX_LISTED_GAPS = 7
 # naming every one of them would blow the message limit on the warning alone.
 MAX_LISTED_DEPOSITS = 7
 
-# Discord's message limit, and what the server report keeps back from it for the
-# code fence, the page header and a possible truncation note.
-MESSAGE_LIMIT = 2000
+# What the server report keeps back from the message limit for the code fence,
+# the page header and a possible truncation note.
 FENCE_RESERVE = 200
-
-# However little room the summary leaves, showing one record beats showing none.
-MIN_RECORD_BLOCK = 200
 
 
 class RenderedReport(NamedTuple):
@@ -72,14 +78,6 @@ class RenderedReport(NamedTuple):
     summary: str
     pages: list[str]
     mode: str
-
-
-def get_phrases_section(guild_id: int | None = None) -> dict:
-    return get_phrases(guild_id).get("inflation", {})
-
-
-def get_currency(guild_id: int | None = None) -> str:
-    return get_phrases_section(guild_id).get("currency", "UAH")
 
 
 def build_rates_warning(guild_id: int | None = None) -> str:
@@ -189,103 +187,6 @@ def build_summary(report: dict, guild_id: int | None = None) -> str:
     return "\n\n".join([summary, *[warning for warning in warnings if warning]])
 
 
-def get_view_label(mode: str, guild_id: int | None = None) -> str:
-    """What the page header calls the rendering the reader is looking at."""
-    phrases = get_phrases_section(guild_id)
-
-    if mode == VIEW_SUMMARY:
-        return phrases.get("view_summary_label", "Group totals")
-
-    return phrases.get("view_tree_label", "Records by group")
-
-
-def node_name(node: dict, guild_id: int | None = None) -> str:
-    """A node's display name, with the library's English bucket localised."""
-    if node.get("id") is None:
-        return get_phrases_section(guild_id).get("ungrouped_name", "(ungrouped)")
-
-    return node["name"]
-
-
-def report_nodes(report: dict) -> list[dict]:
-    """
-    Every group, plus the ungrouped bucket when it actually holds something.
-
-    Every function here indexes the report rather than `.get()`-ing it: the
-    shape is `InflationCalculator.get_groups_report()`'s contract, pinned by
-    that library's own tests. A malformed report should raise and surface as
-    "could not build the report", not quietly render zero money.
-    """
-    nodes = list(report["groups"])
-    ungrouped = report["ungrouped"]
-
-    if ungrouped["records_count"]:
-        nodes.append(ungrouped)
-
-    return nodes
-
-
-def build_deposit_lines(node: dict, guild_id: int | None = None) -> list[str]:
-    """The deposit covering a group, as lines to hang under its heading.
-
-    Empty for a group with no deposit, which is most of them. A matured deposit
-    gets its own phrase: the number that matters there is not what it is earning
-    but what is waiting to be credited.
-    """
-    deposit = node.get("deposit")
-    if not deposit:
-        return []
-
-    phrases = get_phrases_section(guild_id)
-    fields = deposit_fields(deposit, get_currency(guild_id))
-
-    if deposit["matured"]:
-        return [
-            format_phrase(
-                phrases,
-                "deposit_matured",
-                "Deposit {rate} MATURED on {end_date} — {projected} waiting, close it to add it here",
-                **fields,
-            )
-        ]
-
-    return [
-        format_phrase(
-            phrases,
-            "deposit_line",
-            "Deposit {rate} until {end_date} ({capitalization}): "
-            "earned {earned}, projected {projected} (effective {effective_rate})",
-            **fields,
-        )
-    ]
-
-
-def build_deposit_marker(node: dict, guild_id: int | None = None) -> str:
-    """The same deposit as one short suffix, for a listing rather than a report.
-
-    `/inflation_groups list` answers "which groups do I have", and the full
-    deposit line costs it two thirds of the groups it can fit into one message.
-    """
-    deposit = node.get("deposit")
-    if not deposit:
-        return ""
-
-    phrases = get_phrases_section(guild_id)
-    fields = deposit_fields(deposit, get_currency(guild_id))
-
-    if deposit["matured"]:
-        return format_phrase(phrases, "group_deposit_marker_matured", " [deposit {rate} MATURED]", **fields)
-
-    return format_phrase(phrases, "group_deposit_marker", " [deposit {rate} until {end_date}]", **fields)
-
-
-def build_group_block(node: dict, heading: str, guild_id: int | None = None) -> str:
-    """A group's heading with its deposit lines indented underneath."""
-    lines = build_deposit_lines(node, guild_id)
-
-    return "\n".join([heading, *[f"  {line}" for line in lines]])
-
-
 def build_tree_sections(report: dict, guild_id: int | None = None) -> list[Section]:
     """One section per group: its heading, then its records indented under it."""
     phrases = get_phrases_section(guild_id)
@@ -385,200 +286,6 @@ def render_page(
         max_pages=len(pages),
         page_content=pages[page_index],
     )
-
-
-def fit_into_message(
-    blocks: list[str],
-    wrap: Callable[[str], str],
-    note: Callable[[int], str],
-    *,
-    reserved: str = "",
-    fallback: Callable[[], str] | None = None,
-) -> str:
-    """
-    Fit a list of blocks into one Discord message, trimming rather than failing.
-
-    Discord refuses an over-long message instead of truncating it, so the reader
-    would get nothing at all. Every part of the frame — the wrapper and the note
-    alike — comes from `phrases.json` and can be rewritten to any length, so what
-    they cost is measured rather than guessed at.
-
-    Args:
-        blocks: The listing, one block per entry.
-        wrap: Renders the finished page into its frame; called with "" to price
-              that frame.
-        note: Renders "only N of M fit" for the number of blocks shown, and ""
-              when nothing was cut.
-        reserved: Text appended after the note and reserved before the listing
-              competes for room — for anything that must survive being trimmed.
-        fallback: What to say when the frame alone is over budget. Defaults to
-              the note by itself: cutting into the listing would leave its code
-              fence unclosed, so it goes entirely.
-    """
-    overhead = len(wrap("")) + len(note(0)) + len(reserved)
-    page, shown = pack_single_page(blocks, max(MIN_RECORD_BLOCK, MESSAGE_LIMIT - overhead))
-
-    content = wrap(page) + note(shown) + reserved
-    if len(content) <= MESSAGE_LIMIT:
-        return content
-
-    return trim_to_whole_lines(fallback() if fallback else note(0).lstrip("\n"), MESSAGE_LIMIT)
-
-
-def build_group_list(owner_id: int, guild_id: int | None = None, scope: str = USER_SCOPE) -> str:
-    """
-    The owner's groups, a line each plus any deposit, trimmed to fit one message.
-
-    Server budgets allow enough groups (and long enough names) to run past the
-    2000-character limit on their own, and an over-long reply is not truncated
-    by Discord — it is refused, so the reader gets nothing at all.
-    """
-    phrases = get_phrases_section(guild_id)
-    report = inflation_provider.get_groups_report(owner_id, scope, detailed=False)
-
-    # The question is "which groups do I have", so no groups is a complete
-    # answer: the ungrouped bucket is not one, and its records are what
-    # `/inflation report` is for.
-    if not report["groups"]:
-        return phrases.get("group_list_empty", "No groups yet. Create one with `/inflation_groups create`.")
-
-    blocks = [
-        format_group_summary_line(node, get_currency(guild_id), node_name(node, guild_id))
-        + build_deposit_marker(node, guild_id)
-        for node in report_nodes(report)
-    ]
-
-    def wrap(page: str) -> str:
-        return format_phrase(phrases, "group_list", "```text\n{groups}\n```", groups=page)
-
-    def truncation_note(shown: int) -> str:
-        if shown >= len(blocks):
-            return ""
-
-        return "\n" + format_phrase(
-            phrases,
-            "group_list_truncated",
-            "*Only the first {shown} of {total} lines fit into this message.*",
-            shown=shown,
-            total=len(blocks),
-        )
-
-    return fit_into_message(blocks, wrap, truncation_note)
-
-
-def build_consumed_line(entry: dict, guild_id: int | None = None) -> str:
-    """One line of what a withdrawal ate, folded or not."""
-    phrases = get_phrases_section(guild_id)
-    currency = get_currency(guild_id)
-
-    if entry.get("count", 1) > 1:
-        return format_phrase(
-            phrases,
-            "withdraw_consumed_folded",
-            "{first_date}…{last_date}: took {taken} from {count} interest record(s)",
-            first_date=format_date(entry["first_date"]),
-            last_date=format_date(entry["last_date"]),
-            taken=format_money(entry["taken"], currency),
-            count=entry["count"],
-        )
-
-    return format_phrase(
-        phrases,
-        "withdraw_consumed_line",
-        "ID {record_id} ({date}): took {taken}, {remaining} left",
-        record_id=entry.get("id"),
-        date=format_date(entry["date"]),
-        taken=format_money(entry["taken"], currency),
-        remaining=format_money(entry["remaining"], currency),
-    )
-
-
-def build_withdrawal_message(result: dict, guild_id: int | None = None) -> str:
-    """
-    What a withdrawal ate, trimmed to fit into a single message.
-
-    A withdrawal can consume every record an owner has — two hundred of them by
-    default — and Discord refuses an over-long message rather than truncating
-    it. Refused here would be the worst case in this module: the money has
-    already left and been saved, so the reader would be left with no
-    confirmation of a change that did happen.
-    """
-    phrases = get_phrases_section(guild_id)
-    currency = get_currency(guild_id)
-
-    blocks = [build_consumed_line(entry, guild_id) for entry in fold_consumed_lots(result["consumed"])]
-
-    def wrap(page: str) -> str:
-        return format_phrase(
-            phrases,
-            "withdrawn",
-            "Withdrew {amount}, oldest money first:\n```text\n{consumed}\n```",
-            amount=format_money(result["amount"], currency),
-            consumed=page,
-        )
-
-    def truncation_note(shown: int) -> str:
-        if shown >= len(blocks):
-            return ""
-
-        return "\n" + format_phrase(
-            phrases,
-            "withdraw_truncated",
-            "*Only the first {shown} of {total} lines fit into this message.*",
-            shown=shown,
-            total=len(blocks),
-        )
-
-    # The warning names real money at risk, so it is reserved before the listing
-    # rather than left to compete with it for room.
-    warning = ""
-    if result["warning"]:
-        warning = "\n" + format_phrase(phrases, "withdraw_warning", "⚠️ {warning}", warning=result["warning"])
-
-    # What must survive a rewritten phrase is that the money left, and what
-    # breaking the deposit cost — not the listing of which records paid for it.
-    def bare_confirmation() -> str:
-        return f"{format_money(result['amount'], currency)}\n{result['warning'] or ''}".strip()
-
-    return fit_into_message(blocks, wrap, truncation_note, reserved=warning, fallback=bare_confirmation)
-
-
-def build_deposit_overview(owner_id: int, guild_id: int | None = None, scope: str = USER_SCOPE) -> str:
-    """Every group under a deposit, one entry each, trimmed to fit one message.
-
-    Built from the report rather than from the calculator so it says exactly
-    what the report channel says, and so a group with no records — whose deposit
-    the library leaves unvalued — is reported as having nothing to show.
-    """
-    phrases = get_phrases_section(guild_id)
-    report = inflation_provider.get_groups_report(owner_id, scope, detailed=False)
-
-    blocks = [
-        "\n".join([f"[{node_name(node, guild_id)}]", *build_deposit_lines(node, guild_id)])
-        for node in report_nodes(report)
-        if node.get("deposit")
-    ]
-    if not blocks:
-        return phrases.get(
-            "deposit_overview_empty", "No group is under a deposit. Attach one with `/inflation_deposit attach`."
-        )
-
-    def wrap(page: str) -> str:
-        return format_phrase(phrases, "deposit_overview", "```text\n{deposits}\n```", deposits=page)
-
-    def truncation_note(shown: int) -> str:
-        if shown >= len(blocks):
-            return ""
-
-        return "\n" + format_phrase(
-            phrases,
-            "deposit_overview_truncated",
-            "*Only the first {shown} of {total} deposits fit into this message.*",
-            shown=shown,
-            total=len(blocks),
-        )
-
-    return fit_into_message(blocks, wrap, truncation_note)
 
 
 def build_server_report(guild_id: int, reserve: int = 0, mode: str | None = None) -> str:
