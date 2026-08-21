@@ -188,6 +188,46 @@ class TestDeposits(ProviderTestCase):
         self.assertIsNone(self.provider.get_deposit_terms(1, "Savings"))
         self.assertIsNone(self.provider.get_deposit_projection(1, "Savings"))
 
+    def test_round_each_period_defaults_to_true(self):
+        self.provider.create_group(1, "Savings")
+        self.provider.attach_deposit(
+            1,
+            "Savings",
+            annual_rate_percent="15",
+            start_date=datetime.date(2024, 1, 1),
+            end_date=datetime.date(2025, 1, 1),
+        )
+
+        self.assertTrue(self.provider.get_deposit_terms(1, "Savings").round_each_period)
+
+    def test_round_each_period_off_matches_a_bank_that_rounds_only_at_payout(self):
+        # A kopiyka a year, and only visible when periods stop being rounded
+        # one at a time -- the case the upstream fix exists for.
+        self.provider.create_group(1, "Savings")
+        self.provider.add_record(1, "220.12", datetime.date(2025, 8, 12), group="Savings")
+        self.provider.attach_deposit(
+            1,
+            "Savings",
+            annual_rate_percent="16",
+            start_date=datetime.date(2025, 8, 12),
+            end_date=datetime.date(2026, 8, 12),
+            round_each_period=False,
+        )
+
+        self.assertFalse(self.provider.get_deposit_terms(1, "Savings").round_each_period)
+        rounded = self.provider.get_deposit_projection(1, "Savings", datetime.date(2026, 8, 12))
+        self.provider.detach_deposit(1, "Savings")
+        self.provider.attach_deposit(
+            1,
+            "Savings",
+            annual_rate_percent="16",
+            start_date=datetime.date(2025, 8, 12),
+            end_date=datetime.date(2026, 8, 12),
+        )
+        unrounded = self.provider.get_deposit_projection(1, "Savings", datetime.date(2026, 8, 12))
+
+        self.assertNotEqual(rounded.final_amount, unrounded.final_amount)
+
 
 class TestGroupReferences(ProviderTestCase):
     """A Discord option is always a string; the library wants an id or a name."""

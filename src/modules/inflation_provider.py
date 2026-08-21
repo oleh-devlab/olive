@@ -347,6 +347,7 @@ class InflationProvider:
         tax_percent: str | None = None,
         early_withdrawal_rate_percent: str | None = None,
         tax_withheld_on_payout: bool = True,
+        round_each_period: bool = True,
         comment: str = "",
         scope: str = USER_SCOPE,
     ) -> dict:
@@ -370,6 +371,7 @@ class InflationProvider:
                 Decimal("0") if early_withdrawal_rate_percent is None else early_withdrawal_rate_percent
             ),
             tax_withheld_on_payout=tax_withheld_on_payout,
+            round_each_period=round_each_period,
             comment=comment,
         )
 

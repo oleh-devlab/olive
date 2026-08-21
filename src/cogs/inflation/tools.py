@@ -805,6 +805,12 @@ class InflationTools(commands.Cog):
             default=True,
             description=phrases_cmd.get("param_tax_on_payout", "Bank withholds tax at every payout (default: on)"),
         ),
+        round_each_period: bool = commands.Param(
+            default=True,
+            description=phrases_cmd.get(
+                "param_round_each_period", "Bank posts whole kopiykas each period (default: on)"
+            ),
+        ),
         comment: str = commands.Param(
             default="", description=phrases_cmd.get("param_deposit_comment", "Optional note about this deposit")
         ),
@@ -825,6 +831,7 @@ class InflationTools(commands.Cog):
                 tax_percent=tax_percent or None,
                 early_withdrawal_rate_percent=early_withdrawal_rate or None,
                 tax_withheld_on_payout=tax_on_payout,
+                round_each_period=round_each_period,
                 comment=comment,
                 scope=owner_scope,
             )
