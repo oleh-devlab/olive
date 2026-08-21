@@ -22,7 +22,6 @@ from tests.inflation_fixtures import (
 from modules import inflation_replies
 from modules.inflation_formatter import MESSAGE_LIMIT
 from modules.inflation_replies import (
-    build_deposit_overview,
     build_group_list,
     build_withdrawal_message,
 )
@@ -172,35 +171,6 @@ class TestBuildWithdrawalMessage(RepliesTestCase):
 
         self.assertLessEqual(len(message), MESSAGE_LIMIT)
         self.assertIn("At risk: 10 UAH.", message)
-
-
-class TestBuildDepositOverview(RepliesTestCase):
-    def test_no_deposits_says_so(self):
-        self.use(FakeProvider(make_report([make_node("Salary", [make_record(1, "100")])])))
-
-        self.assertIn("No group", build_deposit_overview(1))
-
-    def test_every_group_under_a_deposit_is_listed(self):
-        groups = [
-            make_node("Salary", [make_record(1, "100")], group_id=1, deposit=make_deposit()),
-            make_node("Savings", [make_record(2, "100")], group_id=2, deposit=make_deposit(matured=True)),
-            make_node("Cash", [make_record(3, "100")], group_id=3),
-        ]
-        self.use(FakeProvider(make_report(groups)))
-
-        overview = build_deposit_overview(1)
-
-        self.assertIn("Salary", overview)
-        self.assertIn("Savings", overview)
-        self.assertNotIn("Cash", overview)
-
-    def test_a_server_full_of_deposits_still_fits(self):
-        groups = [
-            make_node(f"Group {i}", [make_record(i, "100")], group_id=i, deposit=make_deposit()) for i in range(1, 51)
-        ]
-        self.use(FakeProvider(make_report(groups)))
-
-        self.assertLessEqual(len(build_deposit_overview(1)), MESSAGE_LIMIT)
 
 
 class TestGroupListCapacity(RepliesTestCase):

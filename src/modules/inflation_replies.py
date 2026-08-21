@@ -25,7 +25,6 @@ from modules.inflation_formatter import (
     trim_to_whole_lines,
 )
 from modules.inflation_phrases import (
-    build_deposit_lines,
     build_deposit_marker,
     get_currency,
     get_phrases_section,
@@ -188,41 +187,3 @@ def build_withdrawal_message(result: dict, guild_id: int | None = None) -> str:
         return f"{format_money(result['amount'], currency)}\n{result['warning'] or ''}".strip()
 
     return fit_into_message(blocks, wrap, truncation_note, reserved=warning, fallback=bare_confirmation)
-
-
-def build_deposit_overview(owner_id: int, guild_id: int | None = None, scope: str = USER_SCOPE) -> str:
-    """Every group under a deposit, one entry each, trimmed to fit one message.
-
-    Built from the report rather than from the calculator so it says exactly
-    what the report channel says, and so a group with no records — whose deposit
-    the library leaves unvalued — is reported as having nothing to show.
-    """
-    phrases = get_phrases_section(guild_id)
-    report = inflation_provider.get_groups_report(owner_id, scope, detailed=False)
-
-    blocks = [
-        "\n".join([f"[{node_name(node, guild_id)}]", *build_deposit_lines(node, guild_id)])
-        for node in report_nodes(report)
-        if node.get("deposit")
-    ]
-    if not blocks:
-        return phrases.get(
-            "deposit_overview_empty", "No group is under a deposit. Attach one with `/inflation_deposit attach`."
-        )
-
-    def wrap(page: str) -> str:
-        return format_phrase(phrases, "deposit_overview", "```text\n{deposits}\n```", deposits=page)
-
-    def truncation_note(shown: int) -> str:
-        if shown >= len(blocks):
-            return ""
-
-        return "\n" + format_phrase(
-            phrases,
-            "deposit_overview_truncated",
-            "*Only the first {shown} of {total} deposits fit into this message.*",
-            shown=shown,
-            total=len(blocks),
-        )
-
-    return fit_into_message(blocks, wrap, truncation_note)

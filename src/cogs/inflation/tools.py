@@ -26,11 +26,7 @@ from modules.inflation_formatter import (
     format_rate,
 )
 from modules.inflation_phrases import get_currency, node_name
-from modules.inflation_replies import (
-    build_deposit_overview,
-    build_group_list,
-    build_withdrawal_message,
-)
+from modules.inflation_replies import build_group_list, build_withdrawal_message
 from modules.inflation_report import (
     build_rates_warning,
     build_report,
@@ -914,18 +910,20 @@ class InflationTools(commands.Cog):
     async def deposit_status(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        group: str = group_param("param_group"),
+        group: str = group_param("param_group", required=True),
         scope: str = scope_param(),
     ):
-        guild_id = inter.guild.id if inter.guild else None
-        currency = get_currency(guild_id)
+        """One group's deposit, which is the question the report cannot answer.
+
+        The report says the same numbers, but it says them about every group at
+        once: past about ten groups a later one's deposit no longer fits on the
+        page a command reply can show, and only the report *channel* has a pager
+        to reach it. Naming a group keeps the answer one deposit long, so it
+        always fits.
+        """
+        currency = get_currency(inter.guild.id if inter.guild else None)
 
         def run(owner_id, owner_scope, phrases):
-            # No group named is a request for all of them, which the report
-            # already knows how to describe.
-            if not group:
-                return build_deposit_overview(owner_id, guild_id, owner_scope)
-
             # The stored name, not what was typed: a group picked by id would
             # otherwise be reported back as a bare number.
             found = inflation_provider.find_group(owner_id, group, owner_scope)
