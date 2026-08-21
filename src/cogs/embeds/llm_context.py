@@ -66,26 +66,24 @@ class LLMContextEmbed(BaseEmbedCog):
             return
 
         # -- Token budgets (default + private side-by-side) --
-        ctx_mgr = olive_cog.context_manager
-        embed.add_field(name="Budget: default", value=_budget_field(ctx_mgr.token_budget), inline=True)
+        default_ctx_mgr = olive_cog.context_manager
+        embed.add_field(name="Budget: default", value=_budget_field(default_ctx_mgr.token_budget), inline=True)
         embed.add_field(name="Budget: private", value=_budget_field(schedule_context_manager.token_budget), inline=True)
 
         # -- Context file sizes (cached at write time, no disk access here) --
         embed.add_field(
-            name="Context file: default",
-            value=_format_file_size(ctx_mgr.context_file_size),
+            name="Context files",
+            value=(
+                f"`Default: {_format_file_size(default_ctx_mgr.context_file_size)}`\n"
+                f"`Agent:   {_format_file_size(schedule_context_manager.context_file_size)}`"
+            ),
             inline=False,
         )
-        embed.add_field(
-            name="Context file: agent",
-            value=_format_file_size(schedule_context_manager.context_file_size),
-            inline=True,
-        )
 
-        _add_context_fields(embed, ctx_mgr, "ID")
+        _add_context_fields(embed, default_ctx_mgr, "ID")
         _add_context_fields(embed, schedule_context_manager, "Agent")
 
-        if not ctx_mgr.llm_context and not schedule_context_manager.llm_context:
+        if not default_ctx_mgr.llm_context and not schedule_context_manager.llm_context:
             embed.description = "No active contexts."
 
 
