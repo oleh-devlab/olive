@@ -19,9 +19,17 @@ from tests.inflation_fixtures import (
     make_report,
     make_withdrawal,
 )
-from modules import inflation_replies
-from modules.inflation_formatter import MESSAGE_LIMIT
-from modules.inflation_replies import (
+import sys
+import types
+
+# Reached through `inflation_provider`, which imports the operator's `settings`
+# module — absent from a checkout. Stubbed here rather than relying on another
+# test module having done it first, so this one runs on its own.
+sys.modules.setdefault("settings", types.ModuleType("settings"))
+
+from modules import inflation_replies  # noqa: E402
+from modules.inflation_formatter import MESSAGE_LIMIT  # noqa: E402
+from modules.inflation_replies import (  # noqa: E402
     build_group_list,
     build_withdrawal_message,
 )
@@ -81,8 +89,12 @@ class TestBuildGroupList(RepliesTestCase):
         self.addCleanup(core.cache._phrases.clear)
 
         self.use(FakeProvider(self.report_with(50, name_length=100)))
+        listing = build_group_list(1)
 
-        self.assertLessEqual(len(build_group_list(1)), MESSAGE_LIMIT)
+        self.assertLessEqual(len(listing), MESSAGE_LIMIT)
+        # Fitting is not enough: the bare fallback fits too. These phrases are
+        # long but not ruinous, so groups must still be listed.
+        self.assertIn("001", listing)
 
     def test_phrases_so_long_they_leave_no_room_still_produce_a_valid_message(self):
         import core.cache
@@ -103,10 +115,6 @@ class TestBuildGroupList(RepliesTestCase):
         self.assertNotIn("x", listing)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestGroupListWithDeposits(RepliesTestCase):
     def test_a_deposit_shows_in_the_listing(self):
         report = make_report([make_node("Salary", [make_record(1, "100")], deposit=make_deposit())])
@@ -120,8 +128,10 @@ class TestGroupListWithDeposits(RepliesTestCase):
             for i in range(1, 60)
         ]
         self.use(FakeProvider(make_report(groups)))
+        listing = build_group_list(1)
 
-        self.assertLessEqual(len(build_group_list(1)), MESSAGE_LIMIT)
+        self.assertLessEqual(len(listing), MESSAGE_LIMIT)
+        self.assertIn("[Group 1]", listing)
 
 
 class TestBuildWithdrawalMessage(RepliesTestCase):
@@ -142,6 +152,9 @@ class TestBuildWithdrawalMessage(RepliesTestCase):
         message = build_withdrawal_message(make_withdrawal(self.make_lots(200)))
 
         self.assertLessEqual(len(message), MESSAGE_LIMIT)
+        # The fallback fits as well, so a length check alone would pass on a
+        # confirmation that names nothing the withdrawal actually ate.
+        self.assertIn("ID 1 ", message)
 
     def test_a_truncated_listing_says_how_much_it_left_out(self):
         message = build_withdrawal_message(make_withdrawal(self.make_lots(200)))

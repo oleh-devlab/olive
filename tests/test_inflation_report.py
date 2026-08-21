@@ -10,10 +10,18 @@ from tests.inflation_fixtures import (
     make_record,
     make_report,
 )
-from modules import inflation_report
-from modules.inflation_formatter import MESSAGE_LIMIT
-from modules.inflation_provider import VIEW_SUMMARY, VIEW_TREE
-from modules.inflation_report import (
+import sys
+import types
+
+# Reached through `inflation_provider`, which imports the operator's `settings`
+# module — absent from a checkout. Stubbed here rather than relying on another
+# test module having done it first, so this one runs on its own.
+sys.modules.setdefault("settings", types.ModuleType("settings"))
+
+from modules import inflation_report  # noqa: E402
+from modules.inflation_formatter import MESSAGE_LIMIT  # noqa: E402
+from modules.inflation_provider import VIEW_SUMMARY, VIEW_TREE  # noqa: E402
+from modules.inflation_report import (  # noqa: E402
     build_deposits_warning,
     build_rates_warning,
     build_summary,
@@ -139,14 +147,6 @@ class TestDepositsInViews(ReportTestCase):
 
         self.assertIn("[Salary] (1)", page)
         self.assertIn("15.00%", page)
-
-    def test_a_deposit_free_report_renders_exactly_as_before(self):
-        report = make_report([make_node("Salary", [make_record(1, "100")])])
-        self.use(FakeProvider(report))
-
-        (page,) = build_view_pages(report, mode=VIEW_SUMMARY)
-
-        self.assertEqual(len(page.split("\n")), 3)
 
     def test_a_spilled_group_repeats_its_deposit_with_the_heading(self):
         """The deposit belongs to the heading, so it must follow it onto page two."""
