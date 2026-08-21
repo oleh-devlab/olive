@@ -17,6 +17,14 @@ def _budget_field(budget) -> str:
     )
 
 
+def _format_file_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
 def _add_context_fields(embed: disnake.Embed, manager, label: str) -> None:
     """
     Append one field per tracked context.
@@ -61,6 +69,18 @@ class LLMContextEmbed(BaseEmbedCog):
         ctx_mgr = olive_cog.context_manager
         embed.add_field(name="Budget: default", value=_budget_field(ctx_mgr.token_budget), inline=True)
         embed.add_field(name="Budget: private", value=_budget_field(schedule_context_manager.token_budget), inline=True)
+
+        # -- Context file sizes (cached at write time, no disk access here) --
+        embed.add_field(
+            name="Context file: default",
+            value=_format_file_size(ctx_mgr.context_file_size),
+            inline=False,
+        )
+        embed.add_field(
+            name="Context file: agent",
+            value=_format_file_size(schedule_context_manager.context_file_size),
+            inline=True,
+        )
 
         _add_context_fields(embed, ctx_mgr, "ID")
         _add_context_fields(embed, schedule_context_manager, "Agent")

@@ -23,6 +23,7 @@ class LLMContextManager:
 
         self.llm_context = {}  # {"discord_id": [...]} (trimmed cache)
         self.database_context = {}  # {"discord_id": [...]} (full database)
+        self.context_file_size = 0  # bytes, cached at load/write time
 
         LLMContextManager._registry[budget_name] = self
 
@@ -38,19 +39,23 @@ class LLMContextManager:
             self.llm_context = {discord_id: list(messages) for discord_id, messages in self.database_context.items()}
             # Trim the loaded cache so we don't blow up memory/limits on startup
             self.apply_restrictions()
+            self.context_file_size = os.path.getsize(self.context_file_name)
             logger.info("LLM context is loaded from file.")
         except FileNotFoundError:
             logger.warning("Context file not found. Starting with an empty context.")
             self.database_context = {}
             self.llm_context = {}
+            self.context_file_size = 0
         except json.JSONDecodeError:
             logger.error("Context file is invalid. Starting with an empty context.")
             self.database_context = {}
             self.llm_context = {}
+            self.context_file_size = 0
         except Exception as e:
             logger.error("Error loading LLM context from file: %s", e)
             self.database_context = {}
             self.llm_context = {}
+            self.context_file_size = 0
 
     async def write_to_file(self):
         # TODO: fix async
@@ -63,6 +68,7 @@ class LLMContextManager:
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.database_context, f, ensure_ascii=False, separators=(",", ":"))
             os.replace(temp_path, self.context_file_name)
+            self.context_file_size = os.path.getsize(self.context_file_name)
         except Exception as e:
             logger.error("Error writing LLM context file: %s", e)
             try:
