@@ -13,25 +13,29 @@ The bot runs from inside `src/` — relative paths (`config.ini`, `phrases.json`
 ```bash
 git submodule update --init --recursive   # tests for inflation need these present
 pip install -r requirements.txt
-cp settings.py.example src/settings.py    # plus tokens.json / llm_token_budget.json
+cp settings.py.example src/settings.py    # plus tokens.json
 cd src && python main.py
 ```
 
-`src/settings.py`, `src/tokens.json`, `src/phrases.json`, `src/llm_token_budget.json`, `config.ini`, `data/` and `*.sqlite3` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) but `settings.py` is imported directly and its absence is fatal.
+Two paths are exceptions to that rule and are resolved relative to the source tree instead: `core/token_manager.py` resolves `src/tokens.json` from its own `__file__`, and the providers write JSON under a repo-root `data/`.
+
+`src/settings.py`, `src/tokens.json`, `src/phrases.json`, `config.ini`, `data/` and `*.sqlite3` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) but `settings.py` is imported directly and its absence is fatal.
 
 ```bash
 python -m unittest discover                 # from repo root; CI runs exactly this
 python -m unittest tests.test_inflation_report                       # one module
 python -m unittest tests.test_migrations.TestMigrations.test_name    # one test
 ruff check .                                # CI pins ruff==0.16.2
-black .                                     # line-length 120, auto-applied on main by CI
+black .                                     # line-length 120, auto-applied by CI
 ```
 
 Both submodule directories are excluded from ruff and black — never reformat or lint-fix inside them.
 
-Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. `test_personal_channels` needs `disnake` installed, and every inflation module except `test_inflation_formatter` needs the submodules checked out — anything that reaches `inflation_provider` imports the vendored library through it. `tests/inflation_fixtures.py` holds the shared report/record/deposit builders and the fake provider; it is deliberately free of `settings` so the formatter suite stays dependency-free.
+The three workflows do not cover the same branches: `unittest.yml` runs on every branch and PR (Python 3.14, `pip install -r requirements.txt`, submodules checked out), while `code_check.yml` (ruff, 3.12) and `black-formatter.yml` (opens an auto-format PR) only fire on `main` and `mk*`. So a feature branch gets tests but no lint feedback until it targets one of those — run `ruff check .` locally.
 
-When writing one: `tests/` is a real package, so a test module importing a sibling writes `from tests.inflation_fixtures import ...`, and the suite is run from the repo root. Anything exercising a provider for real must first point `inflation_provider.get_base_data_dir` at a temporary directory: it is the single root the record files, the rates file and both channel registries hang off, and `settings.inflation_data_dir` redirects only the first two — a test that patches nothing writes into the repository's own gitignored `data/`.
+Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. `test_migrations`, `test_phrases` and `test_inflation_formatter` are pure-Python. `test_personal_channels` and `test_paged_message` import `disnake` and fail to load without it, and so does every inflation module except the formatter — anything reaching `inflation_provider` pulls in `core.personal_channels` for `disnake` and the vendored calculator for the submodules, so those four need both. `tests/inflation_fixtures.py` holds the shared report/record/deposit builders and the fake provider; it is deliberately free of `settings` so the formatter suite stays dependency-free.
+
+When writing one: `tests/` is a real package, so a test module importing a sibling writes `from tests.inflation_fixtures import ...`, and the suite is run from the repo root. Stub `settings` in the module itself rather than relying on another one having done it — discovery order is not a contract, and every module has to run alone. Anything exercising a provider for real must first point `inflation_provider.get_base_data_dir` at a temporary directory: it is the single root the record files, the rates file and both channel registries hang off, and `settings.inflation_data_dir` redirects only the first two — a test that patches nothing writes into the repository's own gitignored `data/`.
 
 ## Architecture
 
@@ -70,7 +74,7 @@ Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a 
 
 ### LLM subsystem
 
-`modules/llm_client.py` wraps Google GenAI with a client pool keyed by role (`default`, `private` — separate API keys from `tokens.json`) and a rate limiter whose model list comes from `phrases.json` → `olive` → `models`, ordered best-to-cheapest. Persistent state lives in `llm_limits_state.json` and a DB-backed token budget. `modules/schedule_agent.py` is an agentic loop over `ScheduleAgentTools` (capped at `MAX_ITERATIONS`, changes revertible for 15 minutes) using the `private` role.
+`modules/llm_client.py` wraps Google GenAI with a client pool keyed by role (`default`, `private` — separate API keys from `tokens.json`) and a rate limiter whose model list comes from `phrases.json` → `olive` → `models`, ordered best-to-cheapest. Persistent state lives in `llm_limits_state{role}.json` (CWD-relative, one file per role) and in the `llm_token_budgets` table — rows `default` and `private`, seeded by migration 2 and edited live with `/token_budget set`. The README still tells operators to copy `llm_token_budget.json.example`, but nothing reads that file any more; it is a leftover from before the budget moved into the database. `modules/schedule_agent.py` is an agentic loop over `ScheduleAgentTools` (capped at `MAX_ITERATIONS`, changes revertible for 15 minutes) using the `private` role.
 
 ## Conventions
 
