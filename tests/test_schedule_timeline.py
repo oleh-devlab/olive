@@ -10,11 +10,13 @@ sys.path.insert(0, str(src_root))
 
 from modules.schedule_timeline import (  # noqa: E402
     MIN_SHAFT,
+    ScheduleDay,
     ROUTINE_MARKERS,
     TRUNK,
     Columns,
     column_widths,
     format_day_blocks,
+    group_into_days,
     item_id_text,
     routine_marker,
 )
@@ -48,6 +50,10 @@ class FakeItem:
     @property
     def dt_end(self) -> datetime.datetime:
         return datetime.datetime.combine(self.day, datetime.time(*self.end))
+
+    @property
+    def date(self) -> datetime.date:
+        return self.dt_start.date()
 
     @property
     def is_task(self) -> bool:
@@ -240,6 +246,61 @@ class TestBlockContents(unittest.TestCase):
         blocks = format_day_blocks([FakeItem("gap", "", (9, 0), (9, 30))])
 
         self.assertIn("Break (30m)", blocks[0])
+
+
+class TestScheduleDay(unittest.TestCase):
+    def test_a_day_labels_itself_from_its_date(self):
+        day = ScheduleDay(date=datetime.date(2026, 1, 1))
+
+        self.assertEqual(day.date_str, "01.01.2026")
+        self.assertEqual(day.weekday, "Thursday")
+
+
+class TestGroupIntoDays(unittest.TestCase):
+    def test_items_land_on_their_own_day_in_order(self):
+        tomorrow = datetime.date(2026, 8, 27)
+        items = [
+            task("Tomorrow", (9, 0), (10, 0), day=tomorrow),
+            task("Today", (9, 0), (10, 0)),
+        ]
+
+        days = group_into_days(items)
+
+        self.assertEqual([day.date for day in days], [DAY, tomorrow])
+        self.assertIn("Today", days[0].blocks[0])
+        self.assertIn("Tomorrow", days[1].blocks[0])
+
+    def test_a_task_over_midnight_shows_on_both_days(self):
+        overnight = FakeItem("task", "Night shift", (23, 0), (23, 59), item_id=5)
+
+        # An item's own day comes from where it starts; the spillover is drawn
+        # again on the day it runs into.
+        days = group_into_days([overnight, task("Morning", (9, 0), (10, 0), day=datetime.date(2026, 8, 27))])
+
+        self.assertEqual(len(days), 2)
+        self.assertIn("Night shift", days[0].blocks[0])
+        self.assertNotIn("From yesterday", days[0].blocks[0])
+
+    def test_a_day_knows_which_routines_it_shows(self):
+        items = [routine("Morning run", item_id=3), task("Report", item_id=9)]
+
+        self.assertEqual(group_into_days(items)[0].routine_ids, {3})
+
+    def test_the_columns_are_measured_across_every_day(self):
+        # The wide id lives on the second day; the first day's column must still
+        # make room for it, or the reader would see it shift when paging.
+        items = [
+            task("Today", (9, 0), (10, 0), item_id=1),
+            task("Tomorrow", (9, 0), (10, 0), item_id=128, day=datetime.date(2026, 8, 27)),
+        ]
+
+        days = group_into_days(items)
+
+        self.assertIn("[id:  1]", days[0].blocks[0])
+        self.assertIn("[id:128]", days[1].blocks[0])
+
+    def test_nothing_scheduled_is_no_days(self):
+        self.assertEqual(group_into_days([]), [])
 
 
 if __name__ == "__main__":

@@ -10,7 +10,9 @@ Pure text handling — no disnake, no settings, no solver — so this stays
 unit-testable while `schedule_formatter` above it talks to the engine.
 """
 
-from dataclasses import dataclass
+import collections
+import datetime
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -182,3 +184,56 @@ def format_day_blocks(
         last_end = item.dt_end
 
     return blocks
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleDay:
+    """One day of the schedule: its blocks, and what a pager needs to label them."""
+
+    date: datetime.date
+    blocks: list[str] = field(default_factory=list)
+    # The routines shown on this day, which the pager offers to skip.
+    routine_ids: set = field(default_factory=set)
+
+    @property
+    def date_str(self) -> str:
+        return self.date.strftime("%d.%m.%Y")
+
+    @property
+    def weekday(self) -> str:
+        return self.date.strftime("%A")
+
+
+def group_into_days(items: list["ScheduleItem"]) -> list[ScheduleDay]:
+    """Split a solve into days, in order, each already rendered into blocks.
+
+    The columns are measured over every item first and handed to each day, so
+    they hold still across days — and so across the pages those days are cut
+    into, which is the whole point of measuring them here rather than there.
+    """
+    if not items:
+        return []
+
+    columns = column_widths(items)
+    by_day = collections.defaultdict(lambda: {"items": [], "spillovers": []})
+
+    for item in items:
+        by_day[item.date]["items"].append(item)
+
+        # Duplicate the task onto the next day if it crosses midnight
+        end_date = item.dt_end.date()
+        if end_date > item.date and (item.dt_end.hour > 0 or item.dt_end.minute > 0):
+            by_day[end_date]["spillovers"].append(item)
+
+    return [
+        ScheduleDay(
+            date=date,
+            blocks=format_day_blocks(day["items"], day["spillovers"], columns),
+            routine_ids={
+                item.item_id
+                for item in day["items"] + day["spillovers"]
+                if item.item_id is not None and "routine" in item.item_type
+            },
+        )
+        for date, day in sorted(by_day.items())
+    ]

@@ -1,5 +1,5 @@
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from modules.automatic_timetable_py.src.data_structs import (
     Routine as BaseRoutine,
@@ -58,3 +58,19 @@ class ScheduleItem:
     @property
     def date(self) -> datetime.date:
         return self.dt_start.date()
+
+
+@dataclass(frozen=True, slots=True)
+class SolvedSchedule:
+    """One solve: what the engine placed, and what it could not fit.
+
+    Every field has a default so a solve that never ran — no tasks at all, or a
+    solver that gave up — is the same shape as one that did.
+    """
+
+    items: list[ScheduleItem] = field(default_factory=list)
+    solve_time: float = 0.0
+    planning_days: int = 0
+    skipped_task_ids: list[int] = field(default_factory=list)
+    skipped_routines: list[str] = field(default_factory=list)
+    status: str = ""

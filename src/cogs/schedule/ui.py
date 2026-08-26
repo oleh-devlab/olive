@@ -6,11 +6,12 @@ import disnake
 import settings
 from disnake.ext import commands
 
-import modules.schedule_formatter as auto_timetable
 from core import cache
 from core.paged_message import Page, PageSource, PaginationView, ensure_controller
 from core.time_utils import tz
 from core.utils import get_phrases
+from modules.schedule_engine import solve_schedule
+from modules.schedule_models import SolvedSchedule
 from modules.schedule_pagination import (
     MESSAGE_LIMIT,
     SchedulePage,
@@ -20,6 +21,7 @@ from modules.schedule_pagination import (
     trim_to_whole_lines,
 )
 from modules.schedule_provider import ScheduleProvider
+from modules.schedule_timeline import group_into_days
 
 logger = logging.getLogger(__name__)
 
@@ -65,15 +67,7 @@ class SchedulePageSource(PageSource):
         return get_phrases(guild_id).get(self.phrases_section, {})
 
     async def build_pages(self, user_id: int, guild_id: int | None) -> list[Page]:
-        (
-            schedule_days,
-            perf_time,
-            planning_days,
-            skipped_tasks_ids,
-            skipped_routines,
-            status_text,
-        ) = await auto_timetable.get_schedule_by_day(user_id)
-
+        schedule = await solve_schedule(user_id)
         phrases = self.phrases(guild_id)
 
         # What a page can hold is what Discord's limit leaves once the frame is
@@ -82,28 +76,20 @@ class SchedulePageSource(PageSource):
         # length. Rendering it around an empty body is what prices it.
         source_header = self.header(guild_id)
         frame_cost = (
-            len(self._render(phrases, "", 1, 1, perf_time, planning_days, status_text))
+            len(self._render(phrases, "", 1, 1, schedule))
             + (len(source_header) + 2 if source_header else 0)
             + PAGE_COUNTER_RESERVE
         )
 
-        notes = build_notes(skipped_tasks_ids, skipped_routines, frame_cost)
-        schedule_pages = paginate_days(schedule_days, page_char_limit(frame_cost + len(notes))) or [
+        notes = build_notes(schedule.skipped_task_ids, schedule.skipped_routines, frame_cost)
+        days = group_into_days(schedule.items)
+        schedule_pages = paginate_days(days, page_char_limit(frame_cost + len(notes))) or [
             SchedulePage(content=NO_ITEMS_TEXT)
         ]
 
         return [
             Page(
-                content=self._render(
-                    phrases,
-                    schedule_page.content,
-                    index + 1,
-                    len(schedule_pages),
-                    perf_time,
-                    planning_days,
-                    status_text,
-                    notes,
-                ),
+                content=self._render(phrases, schedule_page.content, index + 1, len(schedule_pages), schedule, notes),
                 meta={"routine_ids": schedule_page.routine_ids, "date": schedule_page.date},
             )
             for index, schedule_page in enumerate(schedule_pages)
@@ -115,9 +101,7 @@ class SchedulePageSource(PageSource):
         body: str,
         current_page: int,
         max_pages: int,
-        perf_time: float,
-        planning_days: int,
-        status_text: str,
+        schedule: SolvedSchedule,
         notes: str = "",
     ) -> str:
         """One page's message text. Called with an empty body to price the frame."""
@@ -128,9 +112,9 @@ class SchedulePageSource(PageSource):
             current_page=current_page,
             max_pages=max_pages,
             page_content=body,
-            planning_days=planning_days,
-            perf_time=perf_time,
-            status_text=status_text,
+            planning_days=schedule.planning_days,
+            perf_time=schedule.solve_time,
+            status_text=schedule.status,
             update_mins=str(update_seconds // 60) if update_seconds else "N/A",
         )
 

@@ -7,6 +7,7 @@ from pathlib import Path
 src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
+from modules.schedule_timeline import ScheduleDay  # noqa: E402
 from modules.schedule_pagination import (  # noqa: E402
     MESSAGE_LIMIT,
     MIN_PAGE_CHARS,
@@ -26,15 +27,8 @@ def block(start: str, name: str, end: str) -> str:
     return f"{start}\n ├──> {name}\n{end}"
 
 
-def make_day(date_str: str = "01.01.2026", weekday: str = "Thursday", blocks: list[str] | None = None, **extra) -> dict:
-    return {
-        "date_obj": datetime.date(2026, 1, 1),
-        "date_str": date_str,
-        "weekday": weekday,
-        "blocks": blocks if blocks is not None else [],
-        "routine_ids": set(),
-        **extra,
-    }
+def make_day(date: datetime.date = datetime.date(2026, 1, 1), blocks: list[str] | None = None, **extra) -> ScheduleDay:
+    return ScheduleDay(date=date, blocks=blocks or [], **extra)
 
 
 class TestInvertScheduleBlocks(unittest.TestCase):
@@ -104,9 +98,8 @@ class TestPaginateDays(unittest.TestCase):
         )
 
     def test_days_keep_their_order_and_each_page_carries_its_day(self):
-        first = make_day(date_str="01.01.2026", blocks=[block("08:00", "one", "09:00")])
-        second = make_day(date_str="02.01.2026", weekday="Friday", blocks=[block("08:00", "two", "09:00")])
-        second["date_obj"] = datetime.date(2026, 1, 2)
+        first = make_day(blocks=[block("08:00", "one", "09:00")])
+        second = make_day(datetime.date(2026, 1, 2), blocks=[block("08:00", "two", "09:00")])
 
         pages = paginate_days([first, second], char_limit=200)
 
@@ -116,8 +109,7 @@ class TestPaginateDays(unittest.TestCase):
 
     def test_every_page_of_a_day_carries_that_day_s_routines(self):
         blocks = [block("08:00", "morning", "09:00"), block("19:00", "evening", "20:00")]
-        day = make_day(blocks=blocks)
-        day["routine_ids"] = {4, 7}
+        day = make_day(blocks=blocks, routine_ids={4, 7})
 
         pages = paginate_days([day], char_limit=60)
 

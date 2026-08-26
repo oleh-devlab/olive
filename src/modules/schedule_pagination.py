@@ -1,5 +1,7 @@
 """Cutting one user's schedule into pager-sized pages.
 
+Takes the days `schedule_timeline` built and gives back pages the pager turns.
+
 The pager renders a day bottom-up — its last block on top, its first at the
 bottom — so the reader's eye ends on the start of the day. That flip is applied
 per page, *after* the day has been cut: cutting the already-flipped blocks would
@@ -12,6 +14,10 @@ stays Discord-only and this stays unit-testable.
 import datetime
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from modules.schedule_timeline import ScheduleDay
 
 # Discord's own cap on a message's content. The inflation side keeps its own copy
 # of this number — the two subsystems render nothing in common and do not import
@@ -138,9 +144,9 @@ def _split_blocks(blocks: list[str], budget: int) -> list[list[str]]:
     return groups
 
 
-def _day_header(day: dict, part: int = 0, total_parts: int = 0) -> str:
+def _day_header(day: "ScheduleDay", part: int = 0, total_parts: int = 0) -> str:
     """`=== 01.01.2026 (Thursday) ===`, plus a part marker when the day was split."""
-    header = f"=== {day['date_str']} ({day['weekday']})"
+    header = f"=== {day.date_str} ({day.weekday})"
 
     if total_parts > 1:
         header += f" (Part {part}/{total_parts})"
@@ -148,7 +154,7 @@ def _day_header(day: dict, part: int = 0, total_parts: int = 0) -> str:
     return f"{header} ==="
 
 
-def paginate_days(days: list[dict], char_limit: int) -> list[SchedulePage]:
+def paginate_days(days: list["ScheduleDay"], char_limit: int) -> list[SchedulePage]:
     """One `SchedulePage` per pager page, days and parts alike in chronological order.
 
     `char_limit` is what a page's text may cost — `page_char_limit()` works it out
@@ -157,11 +163,10 @@ def paginate_days(days: list[dict], char_limit: int) -> list[SchedulePage]:
     pages: list[SchedulePage] = []
 
     for day in days:
-        blocks = day.get("blocks") or []
         # The part marker is measured against the same budget as the plain
         # header; it is a dozen characters against the slack `char_limit`
         # already leaves below Discord's own limit.
-        groups = _split_blocks(blocks, char_limit - len(_day_header(day)) - 1)
+        groups = _split_blocks(day.blocks, char_limit - len(_day_header(day)) - 1)
         total_parts = len(groups)
 
         for part, group in enumerate(groups, start=1):
@@ -171,8 +176,8 @@ def paginate_days(days: list[dict], char_limit: int) -> list[SchedulePage]:
             pages.append(
                 SchedulePage(
                     content=f"{header}\n{body}",
-                    routine_ids=day.get("routine_ids", set()),
-                    date=day.get("date_obj"),
+                    routine_ids=day.routine_ids,
+                    date=day.date,
                 )
             )
 

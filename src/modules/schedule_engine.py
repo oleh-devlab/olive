@@ -7,7 +7,7 @@ import settings
 
 from core.time_utils import tz
 from modules.automatic_timetable_py.src.scheduler import Scheduler
-from modules.schedule_models import ScheduleItem
+from modules.schedule_models import ScheduleItem, SolvedSchedule
 from modules.schedule_provider import ScheduleProvider
 
 _solver_lock = asyncio.Lock()
@@ -46,7 +46,7 @@ def format_skipped_routines(skipped) -> list[str]:
     ]
 
 
-def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], list[str], str]:
+def _solve_sync(client_ID: int) -> SolvedSchedule:
     provider = ScheduleProvider()
     tasks = provider.list_tasks(client_ID)
     time_blocks = provider.list_time_blocks(client_ID)
@@ -54,7 +54,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
 
     if not tasks and not routines:
         planning_days = provider.get_planning_days(client_ID)
-        return [], 0.0, planning_days, [], [], "NO_DATA"
+        return SolvedSchedule(planning_days=planning_days, status="NO_DATA")
     planning_days = provider.get_planning_days(client_ID)
     priority_threshold = provider.get_priority_threshold(client_ID)
     timeouts = provider.get_timeouts(client_ID)
@@ -151,15 +151,21 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
 
     items.sort(key=lambda x: x.dt_start)
 
-    return items, solve_time, planning_days, skipped_ids, skipped_routines, result.status
+    return SolvedSchedule(
+        items=items,
+        solve_time=solve_time,
+        planning_days=planning_days,
+        skipped_task_ids=skipped_ids,
+        skipped_routines=skipped_routines,
+        status=result.status,
+    )
 
 
-async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], list[str], str]:
+async def solve_schedule(client_ID: int) -> SolvedSchedule:
     """
     Main entry point for the schedule engine.
     Fetches the schedule using the current active algorithm.
     Runs the CPU-intensive solve operation in a background thread.
-    Returns: (items, solve_time_seconds, planning_days, skipped_ids, skipped_routines, status_text)
     """
     async with _solver_lock:
         return await asyncio.to_thread(_solve_sync, client_ID)
