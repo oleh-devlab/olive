@@ -28,6 +28,10 @@ MESSAGE_LIMIT = 2000
 # it gets trimmed instead of the schedule.
 MIN_PAGE_CHARS = 300
 
+# A frame is priced before the pages exist, so its page counter is measured as
+# "1/1". This is the room a counter that grows to three digits needs on top.
+PAGE_COUNTER_RESERVE = 8
+
 # The "didn't fit" note is one line under the schedule, and every character it
 # takes is one the schedule does not get. Hence the short labels, the ranges over
 # id lists and `+N` over spelling out how many entries were cut.
@@ -51,6 +55,17 @@ class SchedulePage:
 def invert_schedule_blocks(blocks: list[str]) -> list[str]:
     """Inverts the chronological order of blocks and lines for a bottom-up view."""
     return ["\n".join(reversed(block.split("\n"))) for block in reversed(blocks)]
+
+
+def frame_cost(frame: str, header: str = "") -> int:
+    """What one page's frame costs, measured rather than guessed at.
+
+    `frame` is the caller's own rendering around an empty body — its format
+    string comes from `phrases.json` and an operator can rewrite it to any
+    length, so it is priced by rendering it. `header` is what the page source
+    prepends to every page, blank line included.
+    """
+    return len(frame) + (len(header) + 2 if header else 0) + PAGE_COUNTER_RESERVE
 
 
 def page_char_limit(frame_cost: int) -> int:

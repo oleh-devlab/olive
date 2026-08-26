@@ -16,6 +16,7 @@ from modules.schedule_pagination import (
     MESSAGE_LIMIT,
     SchedulePage,
     build_notes,
+    frame_cost,
     page_char_limit,
     paginate_days,
     trim_to_whole_lines,
@@ -32,10 +33,6 @@ provider = ScheduleProvider()
 MAX_SKIP_BUTTONS = 19
 
 SKIP_PREFIX = "schedule_skip_"
-
-# The frame is priced before the pages exist, so its page counter is measured as
-# "1/1". This is the room a counter that grows to three digits needs on top.
-PAGE_COUNTER_RESERVE = 8
 
 DEFAULT_PAGE_FORMAT = (
     "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n"
@@ -70,20 +67,13 @@ class SchedulePageSource(PageSource):
         schedule = await solve_schedule(user_id)
         phrases = self.phrases(guild_id)
 
-        # What a page can hold is what Discord's limit leaves once the frame is
-        # paid for, and the frame is measured rather than guessed at: its format
-        # string comes from `phrases.json` and an operator can rewrite it to any
-        # length. Rendering it around an empty body is what prices it.
-        source_header = self.header(guild_id)
-        frame_cost = (
-            len(self._render(phrases, "", 1, 1, schedule))
-            + (len(source_header) + 2 if source_header else 0)
-            + PAGE_COUNTER_RESERVE
-        )
+        # What a page can hold is what Discord's limit leaves once the frame
+        # around it is paid for — priced by rendering that frame empty.
+        cost = frame_cost(self._render(phrases, "", 1, 1, schedule), self.header(guild_id))
+        notes = build_notes(schedule.skipped_task_ids, schedule.skipped_routines, cost)
 
-        notes = build_notes(schedule.skipped_task_ids, schedule.skipped_routines, frame_cost)
         days = group_into_days(schedule.items)
-        schedule_pages = paginate_days(days, page_char_limit(frame_cost + len(notes))) or [
+        schedule_pages = paginate_days(days, page_char_limit(cost + len(notes))) or [
             SchedulePage(content=NO_ITEMS_TEXT)
         ]
 

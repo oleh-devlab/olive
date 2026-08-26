@@ -11,10 +11,12 @@ from modules.schedule_timeline import ScheduleDay  # noqa: E402
 from modules.schedule_pagination import (  # noqa: E402
     MESSAGE_LIMIT,
     MIN_PAGE_CHARS,
+    PAGE_COUNTER_RESERVE,
     SchedulePage,
     build_notes,
     compress_id_runs,
     fit_items,
+    frame_cost,
     invert_schedule_blocks,
     page_char_limit,
     paginate_days,
@@ -135,6 +137,17 @@ class TestPaginateDays(unittest.TestCase):
 
         self.assertEqual(page.routine_ids, set())
         self.assertIsNone(page.date)
+
+
+class TestFrameCost(unittest.TestCase):
+    def test_a_frame_costs_what_it_measures_plus_room_for_the_counter(self):
+        self.assertEqual(frame_cost("x" * 200), 200 + PAGE_COUNTER_RESERVE)
+
+    def test_a_page_source_header_is_paid_for_with_its_blank_line(self):
+        self.assertEqual(frame_cost("x" * 200, "y" * 50), 200 + 50 + 2 + PAGE_COUNTER_RESERVE)
+
+    def test_no_header_costs_nothing(self):
+        self.assertEqual(frame_cost("x" * 200, ""), frame_cost("x" * 200))
 
 
 class TestPageCharLimit(unittest.TestCase):

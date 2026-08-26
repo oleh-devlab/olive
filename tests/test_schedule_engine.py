@@ -18,15 +18,15 @@ sys.path.insert(0, str(src_root))
 # Stubbed here rather than relying on another test module having done it first.
 sys.modules.setdefault("settings", types.ModuleType("settings"))
 
-from modules.schedule_engine import format_skipped_routines  # noqa: E402
+from modules.schedule_engine import format_skipped_routines, items_from_result  # noqa: E402
 
 
 class FakeTask:
     """One day's copy of a routine, the way the expander hands it to the solver."""
 
-    def __init__(self, routine_id=None, deadline=None, name="Routine"):
+    def __init__(self, routine_id=None, deadline=None, name="Routine", id=None):
         self.routine_id, self.deadline, self.name = routine_id, deadline, name
-        self.id = f"r_{routine_id}_2026-08-26" if routine_id else None
+        self.id = id if id is not None else (f"r_{routine_id}_2026-08-26" if routine_id else None)
 
 
 class FakeSkipped:
@@ -38,6 +38,78 @@ class FakeSkipped:
 
 def deadline(day: int, hour: int = 23, minute: int = 59) -> datetime.datetime:
     return datetime.datetime(2026, 8, day, hour, minute)
+
+
+class FakeSolved:
+    """A `ScheduledTask` / `ScheduledRoutine`: something placed, with its times."""
+
+    def __init__(self, task, start, end, chunks=(), **extra):
+        self.task, self.start_time, self.end_time, self.chunks = task, start, end, list(chunks)
+        self.__dict__.update(extra)
+
+
+class FakeBlock:
+    def __init__(self, name, start, end, id=None):
+        self.name, self.start_time, self.end_time, self.id = name, start, end, id
+
+
+class FakeResult:
+    def __init__(self, tasks=(), routines=(), blocks=()):
+        self.scheduled_tasks, self.scheduled_routines, self.scheduled_timeblocks = (
+            list(tasks),
+            list(routines),
+            list(blocks),
+        )
+
+
+def when(hour: int, minute: int = 0) -> datetime.datetime:
+    return datetime.datetime(2026, 8, 26, hour, minute)
+
+
+class TestItemsFromResult(unittest.TestCase):
+    def test_a_task_placed_whole_is_one_item(self):
+        result = FakeResult(tasks=[FakeSolved(FakeTask(name="Звіт"), when(9), when(10))])
+
+        items = items_from_result(result)
+
+        self.assertEqual([(i.item_type, i.task_name, i.total_sessions) for i in items], [("task", "Звіт", 1)])
+        self.assertEqual(items[0].session_index, "1")
+
+    def test_a_task_split_into_sessions_is_one_item_each(self):
+        chunks = [FakeSolved(None, when(9), when(10)), FakeSolved(None, when(14), when(15))]
+        result = FakeResult(tasks=[FakeSolved(FakeTask(name="Звіт"), when(9), when(15), chunks=chunks)])
+
+        items = items_from_result(result)
+
+        self.assertEqual([(i.session_index, i.total_sessions) for i in items], [("1", 2), ("2", 2)])
+        self.assertEqual([(i.dt_start, i.dt_end) for i in items], [(when(9), when(10)), (when(14), when(15))])
+
+    def test_a_routine_is_typed_by_how_it_is_scheduled(self):
+        routines = [
+            FakeSolved(FakeTask(name="Зарядка"), when(7), when(8), routine_type="fixed", routine_id=3),
+            FakeSolved(FakeTask(name="Читання"), when(21), when(22), routine_type="flexible", routine_id=5),
+        ]
+
+        items = items_from_result(FakeResult(routines=routines))
+
+        self.assertEqual([(i.item_type, i.item_id) for i in items], [("fixed_routine", 3), ("flexible_routine", 5)])
+
+    def test_a_time_block_keeps_its_own_id(self):
+        items = items_from_result(FakeResult(blocks=[FakeBlock("Обід", when(13), when(14), id=7)]))
+
+        self.assertEqual([(i.item_type, i.task_name, i.item_id) for i in items], [("time_block", "Обід", 7)])
+
+    def test_everything_placed_comes_back_in_one_chronological_list(self):
+        result = FakeResult(
+            tasks=[FakeSolved(FakeTask(name="Звіт"), when(9), when(10))],
+            routines=[FakeSolved(FakeTask(name="Зарядка"), when(7), when(8), routine_type="fixed", routine_id=3)],
+            blocks=[FakeBlock("Обід", when(13), when(14))],
+        )
+
+        self.assertEqual([i.task_name for i in items_from_result(result)], ["Зарядка", "Звіт", "Обід"])
+
+    def test_an_empty_solve_places_nothing(self):
+        self.assertEqual(items_from_result(FakeResult()), [])
 
 
 class TestFormatSkippedRoutines(unittest.TestCase):
