@@ -9,13 +9,14 @@ src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
 from modules.schedule_timeline import (  # noqa: E402
-    BLOCK_PREFIX,
     GAP_INDENT,
-    TASK_PREFIX,
+    ROUTINE_MARKERS,
+    TRUNK,
     Columns,
     column_widths,
     format_day_blocks,
     item_id_text,
+    routine_marker,
 )
 
 DAY = datetime.date(2026, 8, 26)
@@ -53,10 +54,6 @@ class FakeItem:
         return self.item_type in ("task", "fixed_routine", "flexible_routine")
 
     @property
-    def tag(self) -> str:
-        return {"fixed_routine": "[Fxd Rt.] ", "flexible_routine": "[Flb Rt.] "}.get(self.item_type, "")
-
-    @property
     def duration_min(self) -> int:
         return int((self.dt_end - self.dt_start).total_seconds() // 60)
 
@@ -71,12 +68,12 @@ def routine(name="Routine", start=(7, 0), end=(7, 30), kind="fixed_routine", **e
 
 def content_lines(blocks: list[str]) -> list[str]:
     """The lines that carry an item's text, as opposed to the times around it."""
-    return [line for block in blocks for line in block.split("\n") if line.startswith((TASK_PREFIX, BLOCK_PREFIX))]
+    return [line for block in blocks for line in block.split("\n") if line.startswith(TRUNK)]
 
 
 def text_of(line: str, columns: Columns) -> str:
-    """What a line says once its tree prefix and its columns are stepped over."""
-    return line[len(TASK_PREFIX) + columns.width :]
+    """What a line says once its branch and its id column are stepped over."""
+    return line[columns.width :]
 
 
 class TestItemIdText(unittest.TestCase):
@@ -96,6 +93,16 @@ class TestItemIdText(unittest.TestCase):
         self.assertEqual(item_id_text(FakeItem("gap", "", (13, 0), (14, 0), item_id=3)), "")
 
 
+class TestRoutineMarker(unittest.TestCase):
+    def test_each_kind_of_routine_has_its_own_marker(self):
+        self.assertEqual(routine_marker(routine()), ROUTINE_MARKERS["fixed_routine"])
+        self.assertEqual(routine_marker(routine(kind="flexible_routine")), ROUTINE_MARKERS["flexible_routine"])
+
+    def test_anything_else_wears_none(self):
+        self.assertEqual(routine_marker(task()), "")
+        self.assertEqual(routine_marker(FakeItem("time_block", "Lunch", (13, 0), (14, 0))), "")
+
+
 class TestColumnWidths(unittest.TestCase):
     def test_the_widest_id_sets_the_column(self):
         widths = column_widths([task(item_id=7), task(item_id=128), task(item_id=41)])
@@ -106,10 +113,10 @@ class TestColumnWidths(unittest.TestCase):
         self.assertEqual(column_widths([task(), task()]).id_field, 0)
 
     def test_a_schedule_without_routines_has_no_marker_column(self):
-        self.assertEqual(column_widths([task(item_id=1)]).tag, 0)
+        self.assertEqual(column_widths([task(item_id=1)]).marker, 0)
 
     def test_one_routine_anywhere_gives_every_line_the_column(self):
-        self.assertEqual(column_widths([task(item_id=1), routine(item_id=2)]).tag, len("[Fxd Rt.]"))
+        self.assertEqual(column_widths([task(item_id=1), routine(item_id=2)]).marker, len("[Fxd]"))
 
     def test_nothing_scheduled_measures_nothing(self):
         self.assertEqual(column_widths([]), Columns())
@@ -139,10 +146,21 @@ class TestAlignment(unittest.TestCase):
         self.assertIn("[id:  3]", lines[0])
         self.assertIn("[id:128]", lines[1])
 
-    def test_a_task_pays_the_marker_column_in_spaces(self):
+    def test_a_routine_wears_its_marker_in_the_shaft(self):
         lines = content_lines(format_day_blocks(self.items, columns=self.columns))
 
-        self.assertIn("[id:128]" + " " * (self.columns.tag + 2) + "Quarterly report", lines[1])
+        self.assertTrue(lines[0].startswith(f"{TRUNK}──[Fxd]> "), lines[0])
+        self.assertTrue(lines[3].startswith(f"{TRUNK}──[Flb]> "), lines[3])
+
+    def test_a_task_pays_the_marker_width_in_shaft(self):
+        lines = content_lines(format_day_blocks(self.items, columns=self.columns))
+
+        self.assertTrue(lines[1].startswith(f"{TRUNK}──{'─' * self.columns.marker}> "), lines[1])
+
+    def test_a_time_block_keeps_its_own_arrowhead(self):
+        lines = content_lines(format_day_blocks(self.items, columns=self.columns))
+
+        self.assertTrue(lines[2].startswith(f"{TRUNK}──{'─' * self.columns.marker}- "), lines[2])
 
     def test_a_gap_stays_out_by_the_trunk(self):
         # It says nothing about an item, so it pays no columns — and reads as a
@@ -163,7 +181,7 @@ class TestAlignment(unittest.TestCase):
         # No columns measured means no padding: the id is dropped with them.
         blocks = format_day_blocks([task("Quarterly report", item_id=128)])
 
-        self.assertIn(f"{TASK_PREFIX}Quarterly report (60m)", blocks[0])
+        self.assertIn(f"{TRUNK}──> Quarterly report (60m)", blocks[0])
 
 
 class TestBlockContents(unittest.TestCase):

@@ -16,8 +16,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modules.schedule_models import ScheduleItem
 
-TASK_PREFIX = " ├──> "
-BLOCK_PREFIX = " ├──- "
+TRUNK = " ├"
+# The arrowhead's shaft, which is where a routine's marker goes: a marker in a
+# column of its own sat level with the task names and blurred into them.
+SHAFT = "──"
+TASK_ARROW = ">"
+BLOCK_ARROW = "-"
+ROUTINE_MARKERS = {"fixed_routine": "[Fxd]", "flexible_routine": "[Flb]"}
 BRANCH = " │"
 
 # A gap says nothing about an item, so it stays out by the trunk instead of
@@ -38,7 +43,7 @@ class Columns:
     """What every line spends before its text, so all text starts in one place."""
 
     id_digits: int = 0
-    tag: int = 0
+    marker: int = 0
 
     @property
     def id_field(self) -> int:
@@ -46,13 +51,19 @@ class Columns:
         return self.id_digits + len(ID_FIELD.format(id="")) if self.id_digits else 0
 
     @property
+    def prefix(self) -> int:
+        """Width of the tree prefix, which is what carries the routine marker."""
+        return len(TRUNK) + len(SHAFT) + self.marker + len(TASK_ARROW) + 1
+
+    @property
     def width(self) -> int:
-        return sum(field + 1 for field in (self.id_field, self.tag) if field)
+        """Everything an item spends before its text: the prefix and the id field."""
+        return self.prefix + (self.id_field + 1 if self.id_field else 0)
 
     @property
     def indent(self) -> str:
         """Where a block's own lines — a gap, a solver note — line up with its text."""
-        return BRANCH + " " * (len(TASK_PREFIX) + self.width - len(BRANCH))
+        return BRANCH + " " * (self.width - len(BRANCH))
 
 
 def item_id_text(item: "ScheduleItem") -> str:
@@ -67,34 +78,48 @@ def item_id_text(item: "ScheduleItem") -> str:
     return str(item.item_id) if item.is_task else ""
 
 
+def routine_marker(item: "ScheduleItem") -> str:
+    """`[Fxd]` or `[Flb]` for a routine, "" for anything else."""
+    return ROUTINE_MARKERS.get(item.item_type, "")
+
+
 def column_widths(items: list["ScheduleItem"]) -> Columns:
     """Measure the id and routine-marker columns over every item in the schedule."""
     return Columns(
         id_digits=max((len(item_id_text(item)) for item in items), default=0),
-        tag=max((len(item.tag.strip()) for item in items), default=0),
+        marker=max((len(routine_marker(item)) for item in items), default=0),
     )
 
 
-def _columns(item: "ScheduleItem", columns: Columns) -> str:
-    """One item's id and marker fields, padded to the schedule's columns.
+def _prefix(item: "ScheduleItem", columns: Columns) -> str:
+    """The branch an item hangs off, with its marker set into the shaft.
+
+    An item that is not a routine pays the marker's width in shaft, so every
+    arrowhead — and everything after it — lands in the same place.
+    """
+    marker = routine_marker(item) if columns.marker else ""
+    arrow = TASK_ARROW if item.is_task else BLOCK_ARROW
+
+    return f"{TRUNK}{SHAFT}{marker or '─' * columns.marker}{arrow} "
+
+
+def _id_field(item: "ScheduleItem", columns: Columns) -> str:
+    """One item's id field, padded to the schedule's column.
 
     The digits are right-aligned inside the brackets so the brackets themselves
     hold still; an item without an id pays the same width in spaces.
     """
-    fields = []
+    if not columns.id_field:
+        return ""
 
-    if columns.id_field:
-        id_text = item_id_text(item)
-        fields.append(ID_FIELD.format(id=id_text.rjust(columns.id_digits)) if id_text else " " * columns.id_field)
+    id_text = item_id_text(item)
+    field = ID_FIELD.format(id=id_text.rjust(columns.id_digits)) if id_text else " " * columns.id_field
 
-    if columns.tag:
-        fields.append(item.tag.strip().ljust(columns.tag))
-
-    return "".join(f"{field} " for field in fields)
+    return f"{field} "
 
 
-def _item_text(item: "ScheduleItem", is_spill: bool) -> tuple[str, str]:
-    """An item's prefix and the text after its columns."""
+def _item_text(item: "ScheduleItem", is_spill: bool) -> str:
+    """What an item says after its columns."""
     marker = SPILL_MARKER if is_spill else ""
 
     if item.is_task:
@@ -102,12 +127,12 @@ def _item_text(item: "ScheduleItem", is_spill: bool) -> tuple[str, str]:
         if item.total_sessions > 1:
             text += f" [s. {item.session_index}/{item.total_sessions}]"
 
-        return TASK_PREFIX, text
+        return text
 
     if item.item_type == "time_block":
-        return BLOCK_PREFIX, f"{marker}{item.task_name or BREAK_TEXT} ({item.duration_min}m)"
+        return f"{marker}{item.task_name or BREAK_TEXT} ({item.duration_min}m)"
 
-    return BLOCK_PREFIX, f"{marker}{item.algo_notes or BREAK_TEXT} ({item.duration_min}m)"
+    return f"{marker}{item.algo_notes or BREAK_TEXT} ({item.duration_min}m)"
 
 
 def format_day_blocks(
@@ -139,13 +164,11 @@ def format_day_blocks(
             else:
                 lines.append(item.dt_start.strftime("%H:%M"))
 
-        prefix, text = _item_text(item, item in spillovers)
-
         # A gap's text *is* its note, so only the other two kinds print one.
         if item.algo_notes and (item.is_task or item.item_type == "time_block"):
             lines.append(f"{columns.indent}!!! {item.algo_notes}")
 
-        lines.append(f"{prefix}{_columns(item, columns)}{text}")
+        lines.append(f"{_prefix(item, columns)}{_id_field(item, columns)}{_item_text(item, item in spillovers)}")
 
         # End time at the bottom of the block
         lines.append(item.dt_end.strftime("%H:%M"))
