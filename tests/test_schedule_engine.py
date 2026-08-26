@@ -5,10 +5,13 @@ the vendored scheduler and `ortools` present.
 """
 
 import datetime
+import sqlite3
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Setup path so we can import from src
 src_root = Path(__file__).resolve().parent.parent / "src"
@@ -18,7 +21,12 @@ sys.path.insert(0, str(src_root))
 # Stubbed here rather than relying on another test module having done it first.
 sys.modules.setdefault("settings", types.ModuleType("settings"))
 
+import modules.schedule_engine as engine  # noqa: E402
+from database.migrations import MigrationRunner  # noqa: E402
+from modules import schedule_stats  # noqa: E402
 from modules.schedule_engine import format_skipped_routines, items_from_result  # noqa: E402
+from modules.schedule_models import SolvedSchedule  # noqa: E402
+from tests.test_schedule_stats import FakeDatabase  # noqa: E402
 
 
 class FakeTask:
@@ -173,6 +181,42 @@ class TestFormatSkippedRoutines(unittest.TestCase):
 
     def test_nothing_skipped_says_nothing(self):
         self.assertEqual(format_skipped_routines([]), [])
+
+
+class TestTheRecordingHook(unittest.IsolatedAsyncioTestCase):
+    """Every solve is counted, with everything but the solver itself real.
+
+    Nothing else calls `solve_schedule()` — the cog's suite replaces it — so
+    without this the hook could stop matching what the engine returns and no
+    test would notice.
+    """
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+
+        connection = sqlite3.connect(Path(directory.name) / "test.sqlite3")
+        self.addCleanup(connection.close)
+        MigrationRunner(connection).migrate()
+
+        schedule_stats.use(FakeDatabase(connection))
+        self.addCleanup(schedule_stats.use, None)
+
+    async def test_a_solve_is_recorded_under_the_user_it_was_for(self):
+        solved = SolvedSchedule(solve_time=1.25, planning_days=7, status="OPTIMAL")
+
+        with mock.patch.object(engine, "_solve_sync", return_value=solved):
+            returned = await engine.solve_schedule(4242)
+
+        self.assertEqual(returned.solve_time, 1.25)
+        self.assertEqual(schedule_stats.totals(), (1.25, 1))
+        self.assertEqual([user for user, _, _ in schedule_stats.top_users()], [4242])
+
+    async def test_a_solve_that_never_ran_leaves_no_trace(self):
+        with mock.patch.object(engine, "_solve_sync", return_value=SolvedSchedule(status="NO_DATA")):
+            await engine.solve_schedule(4242)
+
+        self.assertEqual(schedule_stats.totals(), (0.0, 0))
 
 
 if __name__ == "__main__":
