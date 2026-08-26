@@ -25,13 +25,10 @@ BLOCK_ARROW = "-"
 ROUTINE_MARKERS = {"fixed_routine": "[Fxd]", "flexible_routine": "[Flb]"}
 BRANCH = " │"
 
-# A gap says nothing about an item, so it stays out by the trunk instead of
-# paying the columns in spaces — which also keeps it scannable as "nothing here".
-GAP_INDENT = " │    "
-# The gap carries the time the day resumes, which saves the line that used to
-# print it on its own. What it does not carry is the previous item's end time:
-# that stays with its own block, which a page break may put on the page before.
-GAP_TEXT = "[ {mins}m break → {resumes} ]"
+# A gap rides on the end time it follows rather than taking a line of its own.
+# The line it does not take is the next item's start time: what a reader looks
+# for first is where the next thing begins, so that keeps a bare line to itself.
+GAP_TEXT = "[ {mins}m break ]"
 
 ID_FIELD = "[id:{id}]"
 SPILL_MARKER = "[From yesterday] "
@@ -154,15 +151,16 @@ def format_day_blocks(
 
         lines = []
 
-        # The start time at the top of the block — or, after a gap, the gap line
-        # carrying it. A shared boundary with the previous block needs neither:
-        # its end time is already there.
+        # The start time at the top of the block. A shared boundary with the
+        # previous block needs none: its end time is already there.
         if last_end is None or last_end != item.dt_start:
             if last_end and item.dt_start > last_end:
+                # Hung off the end time that opened the gap, which is the last
+                # line of the previous block — `last_end` says there is one.
                 gap_mins = int((item.dt_start - last_end).total_seconds() / 60)
-                lines.append(GAP_INDENT + GAP_TEXT.format(mins=gap_mins, resumes=item.dt_start.strftime("%H:%M")))
-            else:
-                lines.append(item.dt_start.strftime("%H:%M"))
+                blocks[-1] += f" {GAP_TEXT.format(mins=gap_mins)}"
+
+            lines.append(item.dt_start.strftime("%H:%M"))
 
         # A gap's text *is* its note, so only the other two kinds print one.
         if item.algo_notes and (item.is_task or item.item_type == "time_block"):
