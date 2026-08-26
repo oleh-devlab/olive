@@ -11,7 +11,14 @@ from core import cache
 from core.paged_message import Page, PageSource, PaginationView, ensure_controller
 from core.time_utils import tz
 from core.utils import get_phrases
-from modules.schedule_pagination import SchedulePage, paginate_days
+from modules.schedule_pagination import (
+    MESSAGE_LIMIT,
+    SchedulePage,
+    build_notes,
+    page_char_limit,
+    paginate_days,
+    trim_to_whole_lines,
+)
 from modules.schedule_provider import ScheduleProvider
 
 logger = logging.getLogger(__name__)
@@ -23,6 +30,10 @@ provider = ScheduleProvider()
 MAX_SKIP_BUTTONS = 19
 
 SKIP_PREFIX = "schedule_skip_"
+
+# The frame is priced before the pages exist, so its page counter is measured as
+# "1/1". This is the room a counter that grows to three digits needs on top.
+PAGE_COUNTER_RESERVE = 8
 
 DEFAULT_PAGE_FORMAT = (
     "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n"
@@ -63,20 +74,35 @@ class SchedulePageSource(PageSource):
             status_text,
         ) = await auto_timetable.get_schedule_by_day(user_id)
 
-        schedule_pages = paginate_days(schedule_days) or [SchedulePage(content=NO_ITEMS_TEXT)]
+        phrases = self.phrases(guild_id)
+
+        # What a page can hold is what Discord's limit leaves once the frame is
+        # paid for, and the frame is measured rather than guessed at: its format
+        # string comes from `phrases.json` and an operator can rewrite it to any
+        # length. Rendering it around an empty body is what prices it.
+        source_header = self.header(guild_id)
+        frame_cost = (
+            len(self._render(phrases, "", 1, 1, perf_time, planning_days, status_text))
+            + (len(source_header) + 2 if source_header else 0)
+            + PAGE_COUNTER_RESERVE
+        )
+
+        notes = build_notes(skipped_tasks_ids, skipped_routines, frame_cost)
+        schedule_pages = paginate_days(schedule_days, page_char_limit(frame_cost + len(notes))) or [
+            SchedulePage(content=NO_ITEMS_TEXT)
+        ]
 
         return [
             Page(
                 content=self._render(
-                    self.phrases(guild_id),
+                    phrases,
                     schedule_page.content,
                     index + 1,
                     len(schedule_pages),
                     perf_time,
                     planning_days,
                     status_text,
-                    skipped_tasks_ids,
-                    skipped_routines,
+                    notes,
                 ),
                 meta={"routine_ids": schedule_page.routine_ids, "date": schedule_page.date},
             )
@@ -92,9 +118,9 @@ class SchedulePageSource(PageSource):
         perf_time: float,
         planning_days: int,
         status_text: str,
-        skipped_tasks_ids: list[int],
-        skipped_routines: list[str],
+        notes: str = "",
     ) -> str:
+        """One page's message text. Called with an empty body to price the frame."""
         update_seconds = getattr(settings, "schedule_loop_update_seconds", None)
 
         content = phrases.get("schedule_page_format", DEFAULT_PAGE_FORMAT).format(
@@ -108,12 +134,18 @@ class SchedulePageSource(PageSource):
             update_mins=str(update_seconds // 60) if update_seconds else "N/A",
         )
 
-        if skipped_tasks_ids:
-            content += f"\n\n*Tasks that didn't fit (IDs): {', '.join(map(str, skipped_tasks_ids))}*"
+        content += notes
 
-        if skipped_routines:
-            prefix = "\n" if skipped_tasks_ids else "\n\n"
-            content += f"{prefix}*Skipped routines:*\n" + "\n".join(f"- {routine}" for routine in skipped_routines)
+        # Only an over-long frame can get here — the body was measured against
+        # it. Discord would refuse the edit outright and leave the channel on a
+        # stale schedule, so the frame loses its tail instead.
+        if len(content) > MESSAGE_LIMIT:
+            logger.warning(
+                "A schedule page is %s characters over Discord's limit; trimming it. "
+                "Check `schedule_page_format` in phrases.json.",
+                len(content) - MESSAGE_LIMIT,
+            )
+            content = trim_to_whole_lines(content)
 
         return content
 
