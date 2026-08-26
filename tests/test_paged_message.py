@@ -10,12 +10,14 @@ src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
 from core.paged_message import (  # noqa: E402
+    BLANK_LABEL,
     MAX_EMBED_CHARS_PER_MESSAGE,
     MAX_EMBEDS_PER_MESSAGE,
     Page,
     PageSource,
     PaginationView,
     PagedChannelMessage,
+    blank_buttons,
     chunk_embeds,
 )
 
@@ -112,6 +114,31 @@ class TestUnpaginatedSource(unittest.IsolatedAsyncioTestCase):
         payload = PagedChannelMessage._with_view({"content": "body"}, view)
 
         self.assertIs(payload["view"], view)
+
+
+class TestBlankButtons(unittest.IsolatedAsyncioTestCase):
+    async def test_a_blank_takes_a_slot_and_says_nothing(self):
+        blanks = blank_buttons(3, "pad_")
+
+        self.assertEqual(len(blanks), 3)
+        self.assertTrue(all(button.label == BLANK_LABEL for button in blanks))
+        self.assertTrue(all(button.disabled for button in blanks))
+
+    async def test_every_blank_has_its_own_custom_id(self):
+        ids = [button.custom_id for button in blank_buttons(4, "pad_")]
+
+        self.assertEqual(ids, ["pad_0", "pad_1", "pad_2", "pad_3"])
+        self.assertEqual(len(set(ids)), len(ids))
+
+    async def test_nothing_to_pad_adds_nothing(self):
+        self.assertEqual(blank_buttons(0, "pad_"), [])
+
+    async def test_a_full_house_of_extras_is_not_dropped(self):
+        # Five pager buttons plus twenty extras is exactly Discord's 25.
+        view = PaginationView("test", extra=blank_buttons(20, "pad_"))
+
+        self.assertEqual(len(view.children), PaginationView.MAX_COMPONENTS)
+        self.assertEqual([len(row["components"]) for row in view.to_components()], [5, 5, 5, 5, 5])
 
 
 class TestPaginationView(unittest.IsolatedAsyncioTestCase):

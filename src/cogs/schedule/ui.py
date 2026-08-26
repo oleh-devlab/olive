@@ -6,26 +6,35 @@ import disnake
 import settings
 from disnake.ext import commands
 
-import modules.schedule_formatter as auto_timetable
 from core import cache
-from core.paged_message import Page, PageSource, PaginationView, ensure_controller
+from core.paged_message import Page, PageSource, PaginationView, blank_buttons, ensure_controller
 from core.time_utils import tz
 from core.utils import get_phrases
+from modules.schedule_engine import solve_schedule
+from modules.schedule_models import SolvedSchedule
+from modules.schedule_pagination import (
+    MESSAGE_LIMIT,
+    SchedulePage,
+    build_notes,
+    frame_cost,
+    page_char_limit,
+    paginate_days,
+    trim_to_whole_lines,
+)
 from modules.schedule_provider import ScheduleProvider
+from modules.schedule_timeline import group_into_days
 
 logger = logging.getLogger(__name__)
 
 provider = ScheduleProvider()
 
-# A day's blocks are split at this many characters, leaving room for the status
-# header and the "didn't fit" notes below it.
-PAGE_CHAR_LIMIT = 1500
-
 # A view holds 25 components: five pager buttons plus the "Skip rout.:" label
-# leave room for nineteen routines.
+# leave room for nineteen routines. How many of those a build actually draws is
+# what its busiest day needs — see `build_pages()`.
 MAX_SKIP_BUTTONS = 19
 
 SKIP_PREFIX = "schedule_skip_"
+BLANK_PREFIX = "schedule_blank_"
 
 DEFAULT_PAGE_FORMAT = (
     "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n"
@@ -57,73 +66,35 @@ class SchedulePageSource(PageSource):
         return get_phrases(guild_id).get(self.phrases_section, {})
 
     async def build_pages(self, user_id: int, guild_id: int | None) -> list[Page]:
-        (
-            schedule_days,
-            perf_time,
-            planning_days,
-            skipped_tasks_ids,
-            skipped_routines,
-            status_text,
-        ) = await auto_timetable.get_schedule_by_day(user_id)
+        schedule = await solve_schedule(user_id)
+        phrases = self.phrases(guild_id)
 
-        bodies = self._split_days(schedule_days)
-        if not bodies:
-            bodies = [(NO_ITEMS_TEXT, set(), None)]
+        # What a page can hold is what Discord's limit leaves once the frame
+        # around it is paid for — priced by rendering that frame empty.
+        cost = frame_cost(self._render(phrases, "", 1, 1, schedule), self.header(guild_id))
+        notes = build_notes(schedule.skipped_task_ids, schedule.skipped_routines, cost)
+
+        days = group_into_days(schedule.items)
+        schedule_pages = paginate_days(days, page_char_limit(cost + len(notes))) or [
+            SchedulePage(content=NO_ITEMS_TEXT)
+        ]
+
+        # Every page draws the same number of skip buttons — what the busiest
+        # day of this build needs — so the block keeps its height as the reader
+        # turns the pages. A schedule holding no routines draws none at all.
+        skip_slots = min(MAX_SKIP_BUTTONS, max((len(page.routine_ids) for page in schedule_pages), default=0))
 
         return [
             Page(
-                content=self._render(
-                    self.phrases(guild_id),
-                    body,
-                    index + 1,
-                    len(bodies),
-                    perf_time,
-                    planning_days,
-                    status_text,
-                    skipped_tasks_ids,
-                    skipped_routines,
-                ),
-                meta={"routine_ids": routine_ids, "date": day_date},
+                content=self._render(phrases, schedule_page.content, index + 1, len(schedule_pages), schedule, notes),
+                meta={
+                    "routine_ids": schedule_page.routine_ids,
+                    "date": schedule_page.date,
+                    "skip_slots": skip_slots,
+                },
             )
-            for index, (body, routine_ids, day_date) in enumerate(bodies)
+            for index, schedule_page in enumerate(schedule_pages)
         ]
-
-    def _split_days(self, schedule_days: list[dict]) -> list[tuple[str, set, date_type | None]]:
-        """One entry per page: its text, the routines on it and the day it covers."""
-        pages: list[tuple[str, set, date_type | None]] = []
-
-        for day in schedule_days:
-            header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
-            day_routine_ids = day.get("routine_ids", set())
-            day_date = day.get("date_obj")
-
-            day_pages = []
-            current_blocks: list[str] = []
-            current_len = len(header)
-
-            for block in day["blocks"]:
-                separator = 1 if current_blocks else 0
-
-                if current_blocks and current_len + len(block) + separator > PAGE_CHAR_LIMIT:
-                    day_pages.append(header + "\n".join(current_blocks))
-                    current_blocks = [block]
-                    current_len = len(header) + len(block)
-                else:
-                    current_blocks.append(block)
-                    current_len += len(block) + separator
-
-            if current_blocks:
-                day_pages.append(header + "\n".join(current_blocks))
-
-            # A day that needed more than one page says so in its header.
-            if len(day_pages) > 1:
-                for part, text in enumerate(day_pages, start=1):
-                    part_header = f"=== {day['date_str']} ({day['weekday']}) (Part {part}) ===\n"
-                    pages.append((text.replace(header, part_header, 1), day_routine_ids, day_date))
-            else:
-                pages.extend((text, day_routine_ids, day_date) for text in day_pages)
-
-        return pages
 
     def _render(
         self,
@@ -131,12 +102,10 @@ class SchedulePageSource(PageSource):
         body: str,
         current_page: int,
         max_pages: int,
-        perf_time: float,
-        planning_days: int,
-        status_text: str,
-        skipped_tasks_ids: list[int],
-        skipped_routines: list[str],
+        schedule: SolvedSchedule,
+        notes: str = "",
     ) -> str:
+        """One page's message text. Called with an empty body to price the frame."""
         update_seconds = getattr(settings, "schedule_loop_update_seconds", None)
 
         content = phrases.get("schedule_page_format", DEFAULT_PAGE_FORMAT).format(
@@ -144,18 +113,24 @@ class SchedulePageSource(PageSource):
             current_page=current_page,
             max_pages=max_pages,
             page_content=body,
-            planning_days=planning_days,
-            perf_time=perf_time,
-            status_text=status_text,
+            planning_days=schedule.planning_days,
+            perf_time=schedule.solve_time,
+            status_text=schedule.status,
             update_mins=str(update_seconds // 60) if update_seconds else "N/A",
         )
 
-        if skipped_tasks_ids:
-            content += f"\n\n*Tasks that didn't fit (IDs): {', '.join(map(str, skipped_tasks_ids))}*"
+        content += notes
 
-        if skipped_routines:
-            prefix = "\n" if skipped_tasks_ids else "\n\n"
-            content += f"{prefix}*Skipped routines:*\n" + "\n".join(f"- {routine}" for routine in skipped_routines)
+        # Only an over-long frame can get here — the body was measured against
+        # it. Discord would refuse the edit outright and leave the channel on a
+        # stale schedule, so the frame loses its tail instead.
+        if len(content) > MESSAGE_LIMIT:
+            logger.warning(
+                "A schedule page is %s characters over Discord's limit; trimming it. "
+                "Check `schedule_page_format` in phrases.json.",
+                len(content) - MESSAGE_LIMIT,
+            )
+            content = trim_to_whole_lines(content)
 
         return content
 
@@ -166,14 +141,24 @@ class SchedulePageSource(PageSource):
         return Page(content=f"Error fetching schedule: {error}")
 
     def extra_components(self, page: Page, page_index: int, guild_id: int | None) -> list[disnake.ui.Item]:
-        """One button per routine on this page, to skip it for that day."""
-        routine_ids = page.meta.get("routine_ids") or set()
-        page_date = page.meta.get("date")
+        """One button per routine on this page, to skip it for that day.
 
-        if not routine_ids or page_date is None:
+        Every page spends the same number of slots — `skip_slots`, what the
+        busiest day of this build needs — blanking the ones its own routines do
+        not fill. Days hold different numbers of routines, and a block that
+        shrank would drag the pager up the message, out from under the reader's
+        cursor, as they turn the pages. No routines anywhere means no slots and
+        no label: there would be nothing to skip.
+        """
+        page_date = page.meta.get("date")
+        slots = page.meta.get("skip_slots", 0)
+
+        if page_date is None or not slots:
             return []
 
         date_str = page_date.isoformat()
+        routine_ids = sorted(page.meta.get("routine_ids") or set())[:slots]
+
         items: list[disnake.ui.Item] = [
             disnake.ui.Button(
                 label="Skip rout.:",
@@ -188,8 +173,9 @@ class SchedulePageSource(PageSource):
                 style=disnake.ButtonStyle.secondary,
                 custom_id=f"{SKIP_PREFIX}{routine_id}_{date_str}",
             )
-            for routine_id in sorted(routine_ids)[:MAX_SKIP_BUTTONS]
+            for routine_id in routine_ids
         )
+        items.extend(blank_buttons(slots - len(routine_ids), BLANK_PREFIX))
 
         return items
 
