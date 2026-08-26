@@ -98,7 +98,7 @@ class ScheduleAgentTools:
         if not tasks:
             return "No tasks found."
 
-        return schd_item_formatters.format_task_list(tasks, use_markdown=False)
+        return schd_item_formatters.format_task_list(tasks, schd_item_formatters.PLAIN)
 
     @log_tool(modifies_schedule=False)
     def get_task_info(self, task_id: int) -> str:
@@ -110,7 +110,7 @@ class ScheduleAgentTools:
         if not task:
             return f"Task {task_id} not found."
 
-        return schd_item_formatters.format_task_info(task, use_markdown=False)
+        return schd_item_formatters.format_task_info(task, schd_item_formatters.PLAIN)
 
     @log_tool(modifies_schedule=False)
     def list_completed_tasks(self) -> str:
@@ -122,7 +122,7 @@ class ScheduleAgentTools:
         if not tasks:
             return "No completed tasks found in history."
 
-        return schd_item_formatters.format_completed_task_list(tasks, use_markdown=False)
+        return schd_item_formatters.format_completed_task_list(tasks, schd_item_formatters.PLAIN)
 
     @log_tool(modifies_schedule=True)
     def clear_completed_tasks(self) -> str:
@@ -145,7 +145,7 @@ class ScheduleAgentTools:
         if not blocks:
             return "No time blocks found."
 
-        return schd_item_formatters.format_timeblock_list(blocks, use_markdown=False)
+        return schd_item_formatters.format_timeblock_list(blocks, schd_item_formatters.PLAIN)
 
     @log_tool(modifies_schedule=True)
     def add_time_block(self, start_time_str: str, end_time_str: str, daily: bool = False, name: str = "") -> str:
@@ -364,7 +364,7 @@ class ScheduleAgentTools:
         if not routines:
             return "No routines found."
 
-        return schd_item_formatters.format_routine_list(routines, use_markdown=False)
+        return schd_item_formatters.format_routine_list(routines, schd_item_formatters.PLAIN)
 
     @log_tool(modifies_schedule=False)
     def get_routine_info(self, routine_id: int) -> str:
@@ -380,7 +380,7 @@ class ScheduleAgentTools:
         if not r:
             return f"Routine {routine_id} not found."
 
-        return schd_item_formatters.format_routine_info(r, use_markdown=False)
+        return schd_item_formatters.format_routine_info(r, schd_item_formatters.PLAIN)
 
     @log_tool(modifies_schedule=True)
     def remove_routine(self, routine_id: int) -> str:

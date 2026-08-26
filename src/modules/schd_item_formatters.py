@@ -1,137 +1,189 @@
+"""Listing a user's tasks, blocks and routines for whoever is reading.
+
+The same listing goes to two readers: a person in Discord, who gets markdown,
+and the agent, which gets plain text. Which of the two is not a branch inside
+every function — it is a `Style` handed in, so each function below states the
+listing once and nothing here asks who is looking.
+"""
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class Style:
+    """How a listing is dressed for its reader.
+
+    Discord also heads a listing with what it is and pairs short fields onto one
+    line; the agent gets neither, because the tool it called already says what it
+    asked for, and vertical space costs it nothing.
+    """
+
+    bold: str = ""
+    code: str = ""
+    headed: bool = False
+    # Empty means one field per line.
+    field_separator: str = ""
+
+    def b(self, text: str) -> str:
+        return f"{self.bold}{text}{self.bold}"
+
+    def c(self, text: str) -> str:
+        return f"{self.code}{text}{self.code}"
+
+    def heading(self, text: str) -> list[str]:
+        """The line a listing opens with, or nothing at all."""
+        return [self.b(text)] if self.headed else []
+
+    def title(self, headline: str, bare: str) -> str:
+        """A detail view's first line: dressed for a reader, stated for the agent."""
+        return self.b(headline) if self.headed else bare
+
+    def fields(self, pairs: Iterable[tuple[str, str]]) -> list[str]:
+        """Short `name: value` pairs, together on one line or one per line."""
+        lines = [f"{self.b(f'{name}:')} {value}" for name, value in pairs]
+
+        return [self.field_separator.join(lines)] if self.field_separator else lines
+
+
+PLAIN = Style()
+DISCORD = Style(bold="**", code="`", headed=True, field_separator="  |  ")
+
+
 def _mins(td) -> int:
     """Хелпер для швидкої конвертації timedelta у хвилини."""
     return int(td.total_seconds() // 60) if td else 0
 
 
-def format_task_list(tasks, use_markdown: bool = False) -> str:
+def _depends_on(item) -> str:
+    depends_on = getattr(item, "depends_on", None)
+
+    return f" (Depends on: {', '.join(map(str, depends_on))})" if depends_on else ""
+
+
+def format_task_list(tasks, style: Style = PLAIN) -> str:
     if not tasks:
         return "No tasks found."
 
-    b, c = ("**", "`") if use_markdown else ("", "")
-    lines = [f"{b}Your Tasks:{b}"] if use_markdown else []
-
-    for t in tasks:
-        deps = f" (Depends on: {', '.join(map(str, t.depends_on))})" if getattr(t, "depends_on", None) else ""
-        lines.append(f"{c}[ID: {t.id}]{c} {b}{t.name}{b} - {_mins(t.duration)} min (Priority: {t.priority}){deps}")
+    lines = style.heading("Your Tasks:")
+    lines.extend(
+        f"{style.c(f'[ID: {t.id}]')} {style.b(t.name)} - {_mins(t.duration)} min "
+        f"(Priority: {t.priority}){_depends_on(t)}"
+        for t in tasks
+    )
 
     return "\n".join(lines)
 
 
-def format_completed_task_list(tasks, use_markdown: bool = False) -> str:
+def format_completed_task_list(tasks, style: Style = PLAIN) -> str:
     if not tasks:
         return "No completed tasks found in history."
 
-    b, c = ("**", "`") if use_markdown else ("", "")
-    lines = [f"{b}Completed Tasks:{b}"] if use_markdown else []
-
-    lines.extend(f"{c}[ID: {t.id}]{c} {b}{t.name}{b} (Priority: {t.priority})" for t in tasks)
+    lines = style.heading("Completed Tasks:")
+    lines.extend(f"{style.c(f'[ID: {t.id}]')} {style.b(t.name)} (Priority: {t.priority})" for t in tasks)
 
     return "\n".join(lines)
 
 
-def format_task_info(task, use_markdown: bool = False) -> str:
+def format_task_info(task, style: Style = PLAIN) -> str:
     if not task:
         return "Task not found."
 
-    b = "**" if use_markdown else ""
-    desc = task.description.strip() if getattr(task, "description", None) and task.description.strip() else "(none)"
+    description = task.description.strip() if getattr(task, "description", None) and task.description.strip() else ""
     session_mins = _mins(task.max_chunk_duration) if getattr(task, "max_chunk_duration", None) else "N/A"
-    dl_str = task.deadline.strftime("%d.%m.%Y %H:%M") if getattr(task, "deadline", None) else "none"
+    deadline = task.deadline.strftime("%d.%m.%Y %H:%M") if getattr(task, "deadline", None) else "none"
 
     lines = [
-        f"{b}Task Details (ID: {task.id}){b}" if use_markdown else f"ID: {task.id}",
-        f"{b}Name:{b} {task.name}",
-        f"{b}Description:{b} {desc}",
-        f"{b}Deadline:{b} {dl_str}",
-        f"{b}Priority:{b} {task.priority}",
-        f"{b}Total Duration:{b} {_mins(task.duration)} min",
+        style.title(f"Task Details (ID: {task.id})", f"ID: {task.id}"),
+        f"{style.b('Name:')} {task.name}",
+        f"{style.b('Description:')} {description or '(none)'}",
+        f"{style.b('Deadline:')} {deadline}",
+        f"{style.b('Priority:')} {task.priority}",
+        f"{style.b('Total Duration:')} {_mins(task.duration)} min",
     ]
-
-    if use_markdown:
-        lines.append(
-            f"{b}Session:{b} {session_mins} min  |  {b}Break:{b} {_mins(getattr(task, 'break_duration', None))} min"
+    lines.extend(
+        style.fields(
+            [("Session", f"{session_mins} min"), ("Break", f"{_mins(getattr(task, 'break_duration', None))} min")]
         )
-    else:
-        lines.append(f"Session: {session_mins} min")
-        lines.append(f"Break: {_mins(getattr(task, 'break_duration', None))} min")
+    )
 
     if getattr(task, "min_chunk_duration", None):
-        lines.append(f"{b}Min session shortening allowed:{b} {_mins(task.min_chunk_duration)} min")
+        lines.append(f"{style.b('Min session shortening allowed:')} {_mins(task.min_chunk_duration)} min")
 
     return "\n".join(lines)
 
 
-def format_timeblock_list(blocks, use_markdown: bool = False) -> str:
+def format_timeblock_list(blocks, style: Style = PLAIN) -> str:
     if not blocks:
         return "No time blocks found."
 
-    b, c = ("**", "`") if use_markdown else ("", "")
-    lines = [f"{b}Your Time Blocks:{b}"] if use_markdown else []
+    lines = style.heading("Your Time Blocks:")
 
-    for i, blk in enumerate(blocks):
+    for blk in blocks:
+        block_id = style.c(f"[ID: {getattr(blk, 'id', '?')}]")
+
         try:
-            st = blk.start.strftime("%H:%M") if hasattr(blk.start, "strftime") else "???"
-            et = blk.end.strftime("%H:%M") if hasattr(blk.end, "strftime") else "???"
-            rep = "Daily" if getattr(blk, "daily", False) else "One-time"
-            name_str = f" {b}{blk.name}{b}" if getattr(blk, "name", None) else ""
-            b_id = getattr(blk, "id", "?")
-            lines.append(f"{c}[ID: {b_id}]{c}{name_str} {st} - {et} ({rep})")
+            start = blk.start.strftime("%H:%M") if hasattr(blk.start, "strftime") else "???"
+            end = blk.end.strftime("%H:%M") if hasattr(blk.end, "strftime") else "???"
+            repeat = "Daily" if getattr(blk, "daily", False) else "One-time"
+            name = f" {style.b(blk.name)}" if getattr(blk, "name", None) else ""
+            lines.append(f"{block_id}{name} {start} - {end} ({repeat})")
         except Exception:
-            b_id = getattr(blk, "id", "?")
-            lines.append(f"{c}[ID: {b_id}]{c} Invalid Block Data")
+            lines.append(f"{block_id} Invalid Block Data")
 
     return "\n".join(lines)
 
 
-def format_routine_list(routines, use_markdown: bool = False) -> str:
+def format_routine_list(routines, style: Style = PLAIN) -> str:
     if not routines:
         return "No routines found."
 
-    b, c = ("**", "`") if use_markdown else ("", "")
-    lines = [f"{b}Your Routines:{b}"] if use_markdown else []
+    lines = style.heading("Your Routines:")
 
     for r in routines:
-        t_str = ""
+        at_time = ""
         if r.type == "fixed" and getattr(r, "time", None):
-            t_str = f" @ {r.time.strftime('%H:%M')}"
+            at_time = f" @ {r.time.strftime('%H:%M')}"
         elif r.type == "flexible" and getattr(r, "deadline_time", None):
-            t_str = f" by {r.deadline_time.strftime('%H:%M')}"
+            at_time = f" by {r.deadline_time.strftime('%H:%M')}"
 
-        rep = f"weekly on {r.weekdays}" if r.repeat == "weekly" and getattr(r, "weekdays", None) else r.repeat
-        deps = f" (Depends on: {', '.join(map(str, r.depends_on))})" if getattr(r, "depends_on", None) else ""
+        repeat = f"weekly on {r.weekdays}" if r.repeat == "weekly" and getattr(r, "weekdays", None) else r.repeat
         skip = f" [Resumes after {r.resume_after.strftime('%d.%m.%Y')}]" if getattr(r, "resume_after", None) else ""
 
-        lines.append(f"{c}[ID: {r.id}]{c} {b}{r.name}{b} ({r.type}, {rep}, {_mins(r.duration)}m){t_str}{deps}{skip}")
+        lines.append(
+            f"{style.c(f'[ID: {r.id}]')} {style.b(r.name)} "
+            f"({r.type}, {repeat}, {_mins(r.duration)}m){at_time}{_depends_on(r)}{skip}"
+        )
 
     return "\n".join(lines)
 
 
-def format_routine_info(routine, use_markdown: bool = False) -> str:
+def format_routine_info(routine, style: Style = PLAIN) -> str:
     if not routine:
         return "Routine not found."
 
-    b = "**" if use_markdown else ""
     lines = [
-        f"{b}Routine Details (ID: {routine.id}){b}" if use_markdown else f"ID: {routine.id}",
-        f"{b}Name:{b} {routine.name}",
-        f"{b}Type:{b} {routine.type}",
-        f"{b}Repeat:{b} {routine.repeat}",
+        style.title(f"Routine Details (ID: {routine.id})", f"ID: {routine.id}"),
+        f"{style.b('Name:')} {routine.name}",
+        f"{style.b('Type:')} {routine.type}",
+        f"{style.b('Repeat:')} {routine.repeat}",
     ]
 
     if routine.repeat == "weekly" and getattr(routine, "weekdays", None):
-        lines.append(f"{b}Weekdays:{b} {routine.weekdays} (0=Mon, 6=Sun)")
+        lines.append(f"{style.b('Weekdays:')} {routine.weekdays} (0=Mon, 6=Sun)")
 
     if routine.type == "fixed" and getattr(routine, "time", None):
-        lines.append(f"{b}Time:{b} {routine.time.strftime('%H:%M')}")
+        lines.append(f"{style.b('Time:')} {routine.time.strftime('%H:%M')}")
     elif routine.type == "flexible" and getattr(routine, "deadline_time", None):
-        lines.append(f"{b}Deadline:{b} {routine.deadline_time.strftime('%H:%M')}")
+        lines.append(f"{style.b('Deadline:')} {routine.deadline_time.strftime('%H:%M')}")
 
-    lines.append(f"{b}Duration:{b} {_mins(routine.duration)} min")
-    lines.append(f"{b}Break Duration:{b} {_mins(getattr(routine, 'break_duration', None))} min")
-    lines.append(f"{b}Priority:{b} {routine.priority}")
+    lines.append(f"{style.b('Duration:')} {_mins(routine.duration)} min")
+    lines.append(f"{style.b('Break Duration:')} {_mins(getattr(routine, 'break_duration', None))} min")
+    lines.append(f"{style.b('Priority:')} {routine.priority}")
+
     if getattr(routine, "depends_on", None):
-        lines.append(f"{b}Depends On:{b} {', '.join(map(str, routine.depends_on))}")
+        lines.append(f"{style.b('Depends On:')} {', '.join(map(str, routine.depends_on))}")
     if getattr(routine, "resume_after", None):
-        lines.append(f"{b}Resumes after:{b} {routine.resume_after.strftime('%d.%m.%Y')}")
+        lines.append(f"{style.b('Resumes after:')} {routine.resume_after.strftime('%d.%m.%Y')}")
 
     return "\n".join(lines)

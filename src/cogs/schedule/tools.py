@@ -109,7 +109,7 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response("No tasks found.")
             return
 
-        formatted = schd_item_formatters.format_task_list(tasks, use_markdown=True)
+        formatted = schd_item_formatters.format_task_list(tasks, schd_item_formatters.DISCORD)
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Tasks listed above.")
 
@@ -203,7 +203,7 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response(f"Task {task_id} not found.")
             return
 
-        formatted = schd_item_formatters.format_task_info(task, use_markdown=True)
+        formatted = schd_item_formatters.format_task_info(task, schd_item_formatters.DISCORD)
         await inter.edit_original_response(formatted)
 
     @task.sub_command(name="history", description=phrases_cmd.get("cmd_task_history_desc", "List completed tasks"))
@@ -214,7 +214,7 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response("No completed tasks found in history.")
             return
 
-        formatted = schd_item_formatters.format_completed_task_list(tasks, use_markdown=True)
+        formatted = schd_item_formatters.format_completed_task_list(tasks, schd_item_formatters.DISCORD)
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("History listed above.")
 
@@ -287,7 +287,7 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response("No time blocks found.")
             return
 
-        formatted = schd_item_formatters.format_timeblock_list(blocks, use_markdown=True)
+        formatted = schd_item_formatters.format_timeblock_list(blocks, schd_item_formatters.DISCORD)
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Time blocks listed above.")
 
@@ -455,7 +455,7 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response(f"Routine {routine_id} not found.")
             return
 
-        formatted = schd_item_formatters.format_routine_info(routine, use_markdown=True)
+        formatted = schd_item_formatters.format_routine_info(routine, schd_item_formatters.DISCORD)
         await inter.edit_original_response(formatted)
 
     @routine.sub_command(name="list", description=phrases_cmd.get("cmd_routine_list_desc", "List all routines"))
@@ -465,7 +465,7 @@ class AutoSchedule(commands.Cog):
         if not routines:
             return await inter.edit_original_response("No routines found.")
 
-        formatted = schd_item_formatters.format_routine_list(routines, use_markdown=True)
+        formatted = schd_item_formatters.format_routine_list(routines, schd_item_formatters.DISCORD)
         await utils.send_long_message(inter.channel, formatted)
         await inter.edit_original_response("Routines listed above.")
 
