@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 provider = ScheduleProvider()
 
 # A view holds 25 components: five pager buttons plus the "Skip rout.:" label
-# leave room for nineteen routines. Every page pays for all nineteen slots,
-# filling what it does not use with blanks — see `extra_components()`.
+# leave room for nineteen routines. How many of those a build actually draws is
+# what its busiest day needs — see `build_pages()`.
 MAX_SKIP_BUTTONS = 19
 
 SKIP_PREFIX = "schedule_skip_"
@@ -79,10 +79,19 @@ class SchedulePageSource(PageSource):
             SchedulePage(content=NO_ITEMS_TEXT)
         ]
 
+        # Every page draws the same number of skip buttons — what the busiest
+        # day of this build needs — so the block keeps its height as the reader
+        # turns the pages. A schedule holding no routines draws none at all.
+        skip_slots = min(MAX_SKIP_BUTTONS, max((len(page.routine_ids) for page in schedule_pages), default=0))
+
         return [
             Page(
                 content=self._render(phrases, schedule_page.content, index + 1, len(schedule_pages), schedule, notes),
-                meta={"routine_ids": schedule_page.routine_ids, "date": schedule_page.date},
+                meta={
+                    "routine_ids": schedule_page.routine_ids,
+                    "date": schedule_page.date,
+                    "skip_slots": skip_slots,
+                },
             )
             for index, schedule_page in enumerate(schedule_pages)
         ]
@@ -134,19 +143,21 @@ class SchedulePageSource(PageSource):
     def extra_components(self, page: Page, page_index: int, guild_id: int | None) -> list[disnake.ui.Item]:
         """One button per routine on this page, to skip it for that day.
 
-        A page always spends the same number of slots, blanking the ones its own
-        routines do not fill: days hold different numbers of routines, and a row
-        that shrank would drag the pager up the message under the reader's
-        cursor as they turn the pages. A page that is not a day at all — the
-        "nothing scheduled yet" one — has nothing to skip and no page to differ
-        from, so it keeps its buttons to itself.
+        Every page spends the same number of slots — `skip_slots`, what the
+        busiest day of this build needs — blanking the ones its own routines do
+        not fill. Days hold different numbers of routines, and a block that
+        shrank would drag the pager up the message, out from under the reader's
+        cursor, as they turn the pages. No routines anywhere means no slots and
+        no label: there would be nothing to skip.
         """
         page_date = page.meta.get("date")
-        if page_date is None:
+        slots = page.meta.get("skip_slots", 0)
+
+        if page_date is None or not slots:
             return []
 
         date_str = page_date.isoformat()
-        routine_ids = sorted(page.meta.get("routine_ids") or set())[:MAX_SKIP_BUTTONS]
+        routine_ids = sorted(page.meta.get("routine_ids") or set())[:slots]
 
         items: list[disnake.ui.Item] = [
             disnake.ui.Button(
@@ -164,7 +175,7 @@ class SchedulePageSource(PageSource):
             )
             for routine_id in routine_ids
         )
-        items.extend(blank_buttons(MAX_SKIP_BUTTONS - len(routine_ids), BLANK_PREFIX))
+        items.extend(blank_buttons(slots - len(routine_ids), BLANK_PREFIX))
 
         return items
 
