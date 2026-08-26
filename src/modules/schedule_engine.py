@@ -13,6 +13,35 @@ from modules.schedule_provider import ScheduleProvider
 _solver_lock = asyncio.Lock()
 
 
+def format_skipped_routines(skipped) -> list[str]:
+    """Name each skipped routine once, with the days it was missed on.
+
+    A routine runs at most once a day — it carries a single `time` or
+    `deadline_time` — so the day alone identifies a missed occurrence, and the
+    clock time would be the same number repeated after every date.
+    """
+    # Group skipped routines by original ID or name
+    grouped_routines = collections.defaultdict(list)
+
+    for sr in skipped:
+        t = sr.task
+        # Extract routine ID from `t.id` if it starts with 'r_', else fallback to stripping date from name
+        r_id = str(t.id).split("_")[1] if t.id and str(t.id).startswith("r_") else t.name.rsplit(" (", 1)[0]
+        day = t.deadline.strftime("%d.%m") if t.deadline else "no deadline"
+
+        # Two occurrences cannot share a day, but a day printed twice would look
+        # like a bug to the reader either way.
+        if day not in grouped_routines[r_id]:
+            grouped_routines[r_id].append(day)
+
+    threshold = getattr(settings, "schedule_skipped_routine_collapse_threshold", 3)
+
+    return [
+        f"{r_id} (missed {len(days)} times)" if len(days) > threshold else f"{r_id}: {', '.join(days)}"
+        for r_id, days in grouped_routines.items()
+    ]
+
+
 def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[int], list[str], str]:
     provider = ScheduleProvider()
     tasks = provider.list_tasks(client_ID)
@@ -55,24 +84,7 @@ def _solve_sync(client_ID: int) -> tuple[list[ScheduleItem], float, int, list[in
     skipped_routines = []
     if result.is_successful:
         skipped_ids = [st.task.id for st in getattr(result, "skipped_tasks", [])]
-        # Group skipped routines by original ID or name
-        grouped_routines = collections.defaultdict(list)
-        for sr in getattr(result, "skipped_routines", []):
-            t = sr.task
-            # Extract routine ID from `t.id` if it starts with 'r_', else fallback to stripping date from name
-            r_id = str(t.id).split("_")[1] if t.id and str(t.id).startswith("r_") else t.name.rsplit(" (", 1)[0]
-
-            if t.deadline:
-                grouped_routines[r_id].append(t.deadline.strftime("%d.%m %H:%M"))
-            else:
-                grouped_routines[r_id].append("no deadline")
-
-        threshold = getattr(settings, "schedule_skipped_routine_collapse_threshold", 3)
-        for r_id, deadlines in grouped_routines.items():
-            if len(deadlines) > threshold:
-                skipped_routines.append(f"{r_id} (missed {len(deadlines)} times)")
-            else:
-                skipped_routines.append(f"{r_id}: {', '.join(deadlines)}")
+        skipped_routines = format_skipped_routines(getattr(result, "skipped_routines", []))
 
         # We can map routines here in the future if we need them as ScheduleItems
         for st in result.scheduled_tasks:
