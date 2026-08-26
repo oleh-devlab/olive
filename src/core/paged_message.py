@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 MAX_EMBEDS_PER_MESSAGE = 10
 MAX_EMBED_CHARS_PER_MESSAGE = 6000
 
+# Discord refuses a button with an empty label, so a blank one wears a
+# zero-width space: it takes a slot and says nothing.
+BLANK_LABEL = "\u200b"
+
 
 @dataclass(slots=True)
 class Page:
@@ -120,6 +124,25 @@ class PageSource:
         them fresh on every call: an Item belongs to the view it was added to.
         """
         return []
+
+
+def blank_buttons(count: int, prefix: str) -> list[disnake.ui.Item]:
+    """Disabled placeholders, for a source whose per-page components come and go.
+
+    Discord lays components out in rows of five, so a page with fewer buttons
+    than the last one shifts everything below it — the pager included — up the
+    message. Paying for the empty slots keeps the message the same height and
+    the buttons under the reader's cursor.
+    """
+    return [
+        disnake.ui.Button(
+            label=BLANK_LABEL,
+            style=disnake.ButtonStyle.secondary,
+            custom_id=f"{prefix}{index}",
+            disabled=True,
+        )
+        for index in range(count)
+    ]
 
 
 class PagerButton(disnake.ui.Button):

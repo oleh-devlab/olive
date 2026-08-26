@@ -55,7 +55,7 @@ Most cogs are thin subclasses of one of these — prefer extending them over han
 
 - `core/embed_cog.py` `BaseEmbedCog` — everything in `cogs/embeds/`. Subclass declares `embed_key`, `phrases_section`, `settings_key` and overrides `get_data()`; the base handles the interval, phrase lookup, footer, errors, and writes the built embed into `cache.embeds_to_send`. Embed cogs never send messages. `cogs/statistic_message_loop.py` is the single publisher: every 10s it collects `cache.embeds_to_send`, filters per guild via `settings.embeds_blacklist`, and edits one eternal message per configured channel.
 - `core/channel_loop.py` `PersonalChannelLoopCog` — the schedule and inflation loops. Declares a registry plus init/update event names and dispatches them on a slow tick.
-- `core/paged_message.py` — modules supply a `PageSource`; paging, buttons and change-detection are inherited. Exists because a report can exceed Discord's 10-embeds / 6000-char limits.
+- `core/paged_message.py` — modules supply a `PageSource`; paging, buttons and change-detection are inherited. Exists because a report can exceed Discord's 10-embeds / 6000-char limits. A source whose per-page components come and go pads them with `blank_buttons()`: Discord lays components out in rows of five, so a page with fewer buttons than the last one drags the pager up the message as the reader turns pages.
 
 `ResilientTaskHandler` (`core/task_handler.py`) is wired into these loops and does exponential backoff (5s → 150s) on Discord 5xx and network errors.
 

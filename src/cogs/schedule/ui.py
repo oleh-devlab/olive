@@ -7,7 +7,7 @@ import settings
 from disnake.ext import commands
 
 from core import cache
-from core.paged_message import Page, PageSource, PaginationView, ensure_controller
+from core.paged_message import Page, PageSource, PaginationView, blank_buttons, ensure_controller
 from core.time_utils import tz
 from core.utils import get_phrases
 from modules.schedule_engine import solve_schedule
@@ -29,10 +29,12 @@ logger = logging.getLogger(__name__)
 provider = ScheduleProvider()
 
 # A view holds 25 components: five pager buttons plus the "Skip rout.:" label
-# leave room for nineteen routines.
+# leave room for nineteen routines. Every page pays for all nineteen slots,
+# filling what it does not use with blanks — see `extra_components()`.
 MAX_SKIP_BUTTONS = 19
 
 SKIP_PREFIX = "schedule_skip_"
+BLANK_PREFIX = "schedule_blank_"
 
 DEFAULT_PAGE_FORMAT = (
     "`{formatted_time} UTC+2` | `Calculated in {perf_time:.4f}s`\n"
@@ -130,14 +132,22 @@ class SchedulePageSource(PageSource):
         return Page(content=f"Error fetching schedule: {error}")
 
     def extra_components(self, page: Page, page_index: int, guild_id: int | None) -> list[disnake.ui.Item]:
-        """One button per routine on this page, to skip it for that day."""
-        routine_ids = page.meta.get("routine_ids") or set()
-        page_date = page.meta.get("date")
+        """One button per routine on this page, to skip it for that day.
 
-        if not routine_ids or page_date is None:
+        A page always spends the same number of slots, blanking the ones its own
+        routines do not fill: days hold different numbers of routines, and a row
+        that shrank would drag the pager up the message under the reader's
+        cursor as they turn the pages. A page that is not a day at all — the
+        "nothing scheduled yet" one — has nothing to skip and no page to differ
+        from, so it keeps its buttons to itself.
+        """
+        page_date = page.meta.get("date")
+        if page_date is None:
             return []
 
         date_str = page_date.isoformat()
+        routine_ids = sorted(page.meta.get("routine_ids") or set())[:MAX_SKIP_BUTTONS]
+
         items: list[disnake.ui.Item] = [
             disnake.ui.Button(
                 label="Skip rout.:",
@@ -152,8 +162,9 @@ class SchedulePageSource(PageSource):
                 style=disnake.ButtonStyle.secondary,
                 custom_id=f"{SKIP_PREFIX}{routine_id}_{date_str}",
             )
-            for routine_id in sorted(routine_ids)[:MAX_SKIP_BUTTONS]
+            for routine_id in routine_ids
         )
+        items.extend(blank_buttons(MAX_SKIP_BUTTONS - len(routine_ids), BLANK_PREFIX))
 
         return items
 
