@@ -148,4 +148,3 @@ def format_day_blocks(
         last_end = item.dt_end
 
     return blocks
-
