@@ -131,18 +131,11 @@ async def get_schedule(client_ID: int) -> str:
     return "\n".join(flat_lines)
 
 
-def invert_schedule_blocks(blocks: list[str]) -> list[str]:
-    """Inverts the chronological order of blocks and lines for a bottom-up view."""
-    return ["\n".join(reversed(block.split("\n"))) for block in reversed(blocks)]
-
-
 async def get_schedule_by_day(client_ID: int) -> tuple[list[dict], float, int, list[int], list[str], str]:
-    """Returns structured schedule data and metadata for the UI paginator (bottom-up view)."""
-    days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text = await _get_parsed_schedule_days(
-        client_ID
-    )
+    """Returns structured schedule data and metadata for the UI paginator.
 
-    for day in days:
-        day["blocks"] = invert_schedule_blocks(day["blocks"])
-
-    return days, solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text
+    Blocks stay chronological here. The paginator cuts a long day along that
+    order and only then flips each page for the bottom-up view, so the first
+    page of a day is its morning.
+    """
+    return await _get_parsed_schedule_days(client_ID)

@@ -11,15 +11,12 @@ from core import cache
 from core.paged_message import Page, PageSource, PaginationView, ensure_controller
 from core.time_utils import tz
 from core.utils import get_phrases
+from modules.schedule_pagination import SchedulePage, paginate_days
 from modules.schedule_provider import ScheduleProvider
 
 logger = logging.getLogger(__name__)
 
 provider = ScheduleProvider()
-
-# A day's blocks are split at this many characters, leaving room for the status
-# header and the "didn't fit" notes below it.
-PAGE_CHAR_LIMIT = 1500
 
 # A view holds 25 components: five pager buttons plus the "Skip rout.:" label
 # leave room for nineteen routines.
@@ -66,64 +63,25 @@ class SchedulePageSource(PageSource):
             status_text,
         ) = await auto_timetable.get_schedule_by_day(user_id)
 
-        bodies = self._split_days(schedule_days)
-        if not bodies:
-            bodies = [(NO_ITEMS_TEXT, set(), None)]
+        schedule_pages = paginate_days(schedule_days) or [SchedulePage(content=NO_ITEMS_TEXT)]
 
         return [
             Page(
                 content=self._render(
                     self.phrases(guild_id),
-                    body,
+                    schedule_page.content,
                     index + 1,
-                    len(bodies),
+                    len(schedule_pages),
                     perf_time,
                     planning_days,
                     status_text,
                     skipped_tasks_ids,
                     skipped_routines,
                 ),
-                meta={"routine_ids": routine_ids, "date": day_date},
+                meta={"routine_ids": schedule_page.routine_ids, "date": schedule_page.date},
             )
-            for index, (body, routine_ids, day_date) in enumerate(bodies)
+            for index, schedule_page in enumerate(schedule_pages)
         ]
-
-    def _split_days(self, schedule_days: list[dict]) -> list[tuple[str, set, date_type | None]]:
-        """One entry per page: its text, the routines on it and the day it covers."""
-        pages: list[tuple[str, set, date_type | None]] = []
-
-        for day in schedule_days:
-            header = f"=== {day['date_str']} ({day['weekday']}) ===\n"
-            day_routine_ids = day.get("routine_ids", set())
-            day_date = day.get("date_obj")
-
-            day_pages = []
-            current_blocks: list[str] = []
-            current_len = len(header)
-
-            for block in day["blocks"]:
-                separator = 1 if current_blocks else 0
-
-                if current_blocks and current_len + len(block) + separator > PAGE_CHAR_LIMIT:
-                    day_pages.append(header + "\n".join(current_blocks))
-                    current_blocks = [block]
-                    current_len = len(header) + len(block)
-                else:
-                    current_blocks.append(block)
-                    current_len += len(block) + separator
-
-            if current_blocks:
-                day_pages.append(header + "\n".join(current_blocks))
-
-            # A day that needed more than one page says so in its header.
-            if len(day_pages) > 1:
-                for part, text in enumerate(day_pages, start=1):
-                    part_header = f"=== {day['date_str']} ({day['weekday']}) (Part {part}) ===\n"
-                    pages.append((text.replace(header, part_header, 1), day_routine_ids, day_date))
-            else:
-                pages.extend((text, day_routine_ids, day_date) for text in day_pages)
-
-        return pages
 
     def _render(
         self,
