@@ -17,9 +17,11 @@ if TYPE_CHECKING:
     from modules.schedule_models import ScheduleItem
 
 TRUNK = " ├"
-# The arrowhead's shaft, which is where a routine's marker goes: a marker in a
-# column of its own sat level with the task names and blurred into them.
-SHAFT = "──"
+# The arrow's shaft is where a routine's marker goes: a marker in a column of its
+# own sat level with the task names and blurred into them. The marker *is* the
+# shaft rather than an insert into it, so it costs nothing but the dashes it
+# replaces — and a schedule with no routines keeps the plain arrow below.
+MIN_SHAFT = 2
 TASK_ARROW = ">"
 BLOCK_ARROW = "-"
 ROUTINE_MARKERS = {"fixed_routine": "[Fxd]", "flexible_routine": "[Flb]"}
@@ -48,9 +50,14 @@ class Columns:
         return self.id_digits + len(ID_FIELD.format(id="")) if self.id_digits else 0
 
     @property
+    def shaft(self) -> int:
+        """The arrow's length: a routine's marker, or the plain arrow when there is none."""
+        return max(MIN_SHAFT, self.marker)
+
+    @property
     def prefix(self) -> int:
         """Width of the tree prefix, which is what carries the routine marker."""
-        return len(TRUNK) + len(SHAFT) + self.marker + len(TASK_ARROW) + 1
+        return len(TRUNK) + self.shaft + len(TASK_ARROW) + 1
 
     @property
     def width(self) -> int:
@@ -89,15 +96,15 @@ def column_widths(items: list["ScheduleItem"]) -> Columns:
 
 
 def _prefix(item: "ScheduleItem", columns: Columns) -> str:
-    """The branch an item hangs off, with its marker set into the shaft.
+    """The branch an item hangs off, its marker standing in for the shaft.
 
-    An item that is not a routine pays the marker's width in shaft, so every
+    An item that is not a routine draws the same width in dashes, so every
     arrowhead — and everything after it — lands in the same place.
     """
     marker = routine_marker(item) if columns.marker else ""
     arrow = TASK_ARROW if item.is_task else BLOCK_ARROW
 
-    return f"{TRUNK}{SHAFT}{marker or '─' * columns.marker}{arrow} "
+    return f"{TRUNK}{marker.ljust(columns.shaft, '─')}{arrow} "
 
 
 def _id_field(item: "ScheduleItem", columns: Columns) -> str:

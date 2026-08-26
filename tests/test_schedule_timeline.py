@@ -9,6 +9,7 @@ src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
 from modules.schedule_timeline import (  # noqa: E402
+    MIN_SHAFT,
     ROUTINE_MARKERS,
     TRUNK,
     Columns,
@@ -102,6 +103,14 @@ class TestRoutineMarker(unittest.TestCase):
         self.assertEqual(routine_marker(FakeItem("time_block", "Lunch", (13, 0), (14, 0))), "")
 
 
+class TestShaft(unittest.TestCase):
+    def test_the_marker_stands_in_for_the_shaft(self):
+        self.assertEqual(column_widths([routine(item_id=1)]).shaft, len("[Fxd]"))
+
+    def test_a_schedule_without_routines_keeps_the_plain_arrow(self):
+        self.assertEqual(column_widths([task(item_id=1)]).shaft, MIN_SHAFT)
+
+
 class TestColumnWidths(unittest.TestCase):
     def test_the_widest_id_sets_the_column(self):
         widths = column_widths([task(item_id=7), task(item_id=128), task(item_id=41)])
@@ -148,18 +157,18 @@ class TestAlignment(unittest.TestCase):
     def test_a_routine_wears_its_marker_in_the_shaft(self):
         lines = content_lines(format_day_blocks(self.items, columns=self.columns))
 
-        self.assertTrue(lines[0].startswith(f"{TRUNK}──[Fxd]> "), lines[0])
-        self.assertTrue(lines[3].startswith(f"{TRUNK}──[Flb]> "), lines[3])
+        self.assertTrue(lines[0].startswith(f"{TRUNK}[Fxd]> "), lines[0])
+        self.assertTrue(lines[3].startswith(f"{TRUNK}[Flb]> "), lines[3])
 
-    def test_a_task_pays_the_marker_width_in_shaft(self):
+    def test_a_task_draws_the_marker_width_in_dashes(self):
         lines = content_lines(format_day_blocks(self.items, columns=self.columns))
 
-        self.assertTrue(lines[1].startswith(f"{TRUNK}──{'─' * self.columns.marker}> "), lines[1])
+        self.assertTrue(lines[1].startswith(f"{TRUNK}{'─' * self.columns.marker}> "), lines[1])
 
     def test_a_time_block_keeps_its_own_arrowhead(self):
         lines = content_lines(format_day_blocks(self.items, columns=self.columns))
 
-        self.assertTrue(lines[2].startswith(f"{TRUNK}──{'─' * self.columns.marker}- "), lines[2])
+        self.assertTrue(lines[2].startswith(f"{TRUNK}{'─' * self.columns.marker}- "), lines[2])
 
     def test_a_gap_rides_on_the_end_time_it_follows(self):
         blocks = format_day_blocks(self.items, columns=self.columns)
