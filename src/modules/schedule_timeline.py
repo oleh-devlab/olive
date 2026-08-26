@@ -23,6 +23,10 @@ BRANCH = " │"
 # A gap says nothing about an item, so it stays out by the trunk instead of
 # paying the columns in spaces — which also keeps it scannable as "nothing here".
 GAP_INDENT = " │    "
+# The gap carries the time the day resumes, which saves the line that used to
+# print it on its own. What it does not carry is the previous item's end time:
+# that stays with its own block, which a page break may put on the page before.
+GAP_TEXT = "[ {mins}m break → {resumes} ]"
 
 ID_FIELD = "[id:{id}]"
 SPILL_MARKER = "[From yesterday] "
@@ -125,13 +129,15 @@ def format_day_blocks(
 
         lines = []
 
-        # Gap indicator + start time at the top of the block. A shared boundary
-        # with the previous block needs neither: its end time is already there.
+        # The start time at the top of the block — or, after a gap, the gap line
+        # carrying it. A shared boundary with the previous block needs neither:
+        # its end time is already there.
         if last_end is None or last_end != item.dt_start:
             if last_end and item.dt_start > last_end:
                 gap_mins = int((item.dt_start - last_end).total_seconds() / 60)
-                lines.append(f"{GAP_INDENT}[ {gap_mins}m break ]")
-            lines.append(item.dt_start.strftime("%H:%M"))
+                lines.append(GAP_INDENT + GAP_TEXT.format(mins=gap_mins, resumes=item.dt_start.strftime("%H:%M")))
+            else:
+                lines.append(item.dt_start.strftime("%H:%M"))
 
         prefix, text = _item_text(item, item in spillovers)
 

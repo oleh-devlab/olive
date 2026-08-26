@@ -148,9 +148,9 @@ class TestAlignment(unittest.TestCase):
         # It says nothing about an item, so it pays no columns — and reads as a
         # divider rather than as another entry.
         blocks = format_day_blocks(self.items, columns=self.columns)
-        gap = next(line for block in blocks for line in block.split("\n") if "break ]" in line)
+        gap = next(line for block in blocks for line in block.split("\n") if "break" in line)
 
-        self.assertEqual(gap, f"{GAP_INDENT}[ 210m break ]")
+        self.assertEqual(gap, f"{GAP_INDENT}[ 210m break → 13:00 ]")
 
     def test_a_solver_note_lines_up_with_the_text(self):
         items = [task("Quarterly report", item_id=128, algo_notes="moved from 08:00")]
@@ -181,7 +181,19 @@ class TestBlockContents(unittest.TestCase):
     def test_a_gap_between_items_is_measured(self):
         blocks = format_day_blocks([task("One", (9, 0), (10, 0)), task("Two", (11, 30), (12, 0))])
 
-        self.assertIn("[ 90m break ]", blocks[1])
+        self.assertIn("[ 90m break → 11:30 ]", blocks[1])
+
+    def test_a_gap_carries_the_start_time_instead_of_a_line_of_its_own(self):
+        blocks = format_day_blocks([task("One", (9, 0), (10, 0)), task("Two", (11, 30), (12, 0))])
+
+        self.assertEqual(blocks[1].split("\n")[0], f"{GAP_INDENT}[ 90m break → 11:30 ]")
+        self.assertNotIn("11:30\n", blocks[1])
+
+    def test_an_item_keeps_its_own_end_time_across_a_gap(self):
+        # It stays in its own block, which a page break may put on the page before.
+        blocks = format_day_blocks([task("One", (9, 0), (10, 0)), task("Two", (11, 30), (12, 0))])
+
+        self.assertEqual(blocks[0].split("\n")[-1], "10:00")
 
     def test_an_unnamed_time_block_is_left_out(self):
         items = [FakeItem("time_block", "", (13, 0), (14, 0), item_id=3)]
