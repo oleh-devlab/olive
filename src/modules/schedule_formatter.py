@@ -2,74 +2,7 @@ import collections
 import datetime
 
 from modules.schedule_engine import get_raw_schedule_items
-from modules.schedule_models import ScheduleItem
-
-
-def _format_day_blocks(items: list[ScheduleItem], spillovers: list[ScheduleItem] | None = None) -> list[str]:
-    """Format items into visual timeline blocks, in chronological order (start on top, end on bottom)."""
-    blocks = []
-
-    all_items = (spillovers or []) + items
-    last_end = None
-
-    for item in all_items:
-        # Unnamed timeblocks are intentionally skipped in the visual representation.
-        # This causes them to coalesce with adjacent algorithmic gaps into a single `[ Xm break ]` indicator.
-        if item.item_type == "time_block" and not item.task_name:
-            continue
-
-        is_spill = item in (spillovers or [])
-        lines = []
-
-        # Gap indicator + start time at the top of the block
-        if last_end and last_end == item.dt_start:
-            pass  # Shared boundary with previous block, skip
-        else:
-            if last_end and item.dt_start > last_end:
-                gap_mins = int((item.dt_start - last_end).total_seconds() / 60)
-                lines.append(f" │    [ {gap_mins}m break ]")
-            lines.append(item.dt_start.strftime("%H:%M"))
-
-        # Content
-        if item.is_task:
-            prefix = " ├──> "
-            if is_spill:
-                prefix += "[From yesterday] "
-
-            id_str = f"[id:{item.item_id}] " if item.item_id is not None else ""
-            task_line = f"{prefix}{id_str}{item.tag}{item.task_name} ({item.duration_min}m)"
-
-            if item.total_sessions > 1:
-                task_line += f" [s. {item.session_index}/{item.total_sessions}]"
-
-            if item.algo_notes:
-                lines.append(f" │      !!! {item.algo_notes}")
-            lines.append(task_line)
-        elif item.item_type == "time_block":
-            prefix = " ├──- "
-            if is_spill:
-                prefix += "[From yesterday] "
-
-            note = item.task_name if item.task_name else "Break"
-            id_str = f"[id:{item.item_id}] " if item.item_id is not None and item.task_name else ""
-
-            if item.algo_notes:
-                lines.append(f" │      !!! {item.algo_notes}")
-            lines.append(f"{prefix}{id_str}{note} ({item.duration_min}m)")
-        else:
-            note = item.algo_notes if item.algo_notes else "Break"
-            prefix = " ├──- "
-            if is_spill:
-                prefix += "[From yesterday] "
-            lines.append(f"{prefix}{note} ({item.duration_min}m)")
-
-        # End time at the bottom of the block
-        lines.append(item.dt_end.strftime("%H:%M"))
-
-        blocks.append("\n".join(lines))
-        last_end = item.dt_end
-
-    return blocks
+from modules.schedule_timeline import column_widths, format_day_blocks
 
 
 async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, int, list[int], list[str], str]:
@@ -78,6 +11,10 @@ async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, 
     )
     if not items:
         return [], solve_time, planning_days, skipped_tasks_ids, skipped_routines, status_text
+
+    # Measured over the whole schedule, not one day: a column that shifted when
+    # the reader turned the page would be worse than no column at all.
+    columns = column_widths(items)
 
     items_by_day = collections.defaultdict(lambda: {"items": [], "spillovers": []})
 
@@ -96,7 +33,7 @@ async def _get_parsed_schedule_days(client_ID: int) -> tuple[list[dict], float, 
             "date_obj": date_obj,
             "date_str": date_obj.strftime("%d.%m.%Y"),
             "weekday": date_obj.strftime("%A"),
-            "blocks": _format_day_blocks(data["items"], data["spillovers"]),
+            "blocks": format_day_blocks(data["items"], data["spillovers"], columns),
             "routine_ids": {
                 item.item_id
                 for item in data["items"] + data["spillovers"]
