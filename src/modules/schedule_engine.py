@@ -9,6 +9,7 @@ from core.time_utils import tz
 from modules.automatic_timetable_py.src.scheduler import Scheduler
 from modules.schedule_models import ScheduleItem
 from modules.schedule_provider import ScheduleProvider
+from modules import schedule_stats
 
 _solver_lock = asyncio.Lock()
 
@@ -146,4 +147,11 @@ async def get_raw_schedule_items(client_ID: int) -> tuple[list[ScheduleItem], fl
     Returns: (items, solve_time_seconds, planning_days, skipped_ids, skipped_routines, status_text)
     """
     async with _solver_lock:
-        return await asyncio.to_thread(_solve_sync, client_ID)
+        result = await asyncio.to_thread(_solve_sync, client_ID)
+
+    # Every solve passes through here — the loop's, the reader's and the
+    # agent's alike — so this is the one place that has to count them.
+    _items, solve_time, *_rest = result
+    schedule_stats.record(client_ID, solve_time)
+
+    return result

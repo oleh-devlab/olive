@@ -5,6 +5,7 @@ from disnake.ext import commands
 
 from core import cache
 from core.embed_cog import BaseEmbedCog
+from modules import schedule_stats
 from modules.inflation_provider import inflation_provider
 from modules.schedule_provider import channels_registry as schedule_channels
 
@@ -22,9 +23,17 @@ class UsageStatsEmbed(BaseEmbedCog):
             "Schedule users: `{schedule_users}`\n"
             "Inflation users: `{inflation_users}`\n"
             "Inflation channels: `{inflation_channels}`\n"
-            "LLM consented: `{llm_consented}`"
+            "LLM consented: `{llm_consented}`\n\n"
+            "**Schedule solver** *(since {solve_since})*\n"
+            "Today: `{solve_today}` | 7 days: `{solve_week}` | 30 days: `{solve_month}`\n"
+            "All time: `{solve_total}` over `{solve_count}` solves\n"
+            "Heaviest: {solve_top}"
         ),
     }
+
+    # A user with no name to show is still worth counting, so the mention falls
+    # back to the raw id rather than dropping the line.
+    TOP_USERS = 3
 
     async def get_data(self):
         # Calculate schedule users
@@ -54,7 +63,35 @@ class UsageStatsEmbed(BaseEmbedCog):
             "inflation_users": inflation_users,
             "inflation_channels": inflation_channels,
             "llm_consented": llm_consented,
+            **self.solver_stats(),
         }
+
+    def solver_stats(self) -> dict:
+        """What the CP-SAT solver has cost, by window and by user."""
+        try:
+            total_seconds, total_solves = schedule_stats.totals()
+            top = schedule_stats.top_users(self.TOP_USERS)
+
+            return {
+                "solve_today": schedule_stats.format_duration(schedule_stats.totals(days=1)[0]),
+                "solve_week": schedule_stats.format_duration(schedule_stats.totals(days=7)[0]),
+                "solve_month": schedule_stats.format_duration(schedule_stats.totals(days=30)[0]),
+                "solve_total": schedule_stats.format_duration(total_seconds),
+                "solve_count": total_solves,
+                "solve_since": schedule_stats.format_day(schedule_stats.counting_since()),
+                "solve_top": self.format_top(top) or "`nobody yet`",
+            }
+        except Exception as e:
+            logger.error(f"Error reading schedule solve stats: {e}")
+
+            return dict.fromkeys(
+                ("solve_today", "solve_week", "solve_month", "solve_total", "solve_since", "solve_top"), "N/A"
+            ) | {"solve_count": 0}
+
+    @staticmethod
+    def format_top(top: list[tuple[int, float, int]]) -> str:
+        """The heaviest users, named by mention so nobody has to look an id up."""
+        return ", ".join(f"<@{user_id}> `{schedule_stats.format_duration(seconds)}`" for user_id, seconds, _ in top)
 
 
 def setup(bot: commands.Bot) -> None:

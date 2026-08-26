@@ -68,6 +68,8 @@ Two stores, split by kind of data:
 - SQLite (`core/database.py`, module-level singleton `db`) for users, LLM consent and token budgets. Schema evolves through `src/database/migrations.py` using `PRAGMA user_version`; add `N_name.sql` or `N_name.py` (exposing `upgrade(conn)`) in `src/database/`, keep `_schema.sql` in sync — a test asserts migrated schema matches it.
 - JSON files under repo-root `data/` for schedules, inflation records and channel registries, written by the providers.
 
+`modules/schedule_stats.py` is the exception to a module reaching the database directly at import: `core.database` opens the file and runs its migrations at import time, so the stats module imports it on first use instead — otherwise every test that reaches the engine would leave an `olive.sqlite3` next to the code. `use()` points it at another database, which is how its suite gets a temporary one.
+
 ### Phrases
 
 Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a `"global"` fallback; guild sections are deep-merged over global at load time. Use `get_phrases(guild_id)` when a guild is in scope and `get_phrases()` otherwise, always with an inline fallback string. `format_phrase()` / `format_embed_data()` fall back rather than raise when a hand-edited placeholder does not match. Editable live via `/edit_phrases` + `/reload_phrases` — but only the text looked up at call time. A cog that reads a `*_cmd` section into a module-level dict (`cogs/inflation/tools.py`, `cogs/schedule/tools.py`) does so at import, and those strings are the command and parameter descriptions Discord already registered, so reloading phrases cannot change them.
