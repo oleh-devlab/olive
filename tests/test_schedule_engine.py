@@ -22,8 +22,11 @@ from modules.schedule_engine import format_skipped_routines  # noqa: E402
 
 
 class FakeTask:
-    def __init__(self, id=None, deadline=None, name="Routine"):
-        self.id, self.deadline, self.name = id, deadline, name
+    """One day's copy of a routine, the way the expander hands it to the solver."""
+
+    def __init__(self, routine_id=None, deadline=None, name="Routine"):
+        self.routine_id, self.deadline, self.name = routine_id, deadline, name
+        self.id = f"r_{routine_id}_2026-08-26" if routine_id else None
 
 
 class FakeSkipped:
@@ -39,38 +42,62 @@ def deadline(day: int, hour: int = 23, minute: int = 59) -> datetime.datetime:
 
 class TestFormatSkippedRoutines(unittest.TestCase):
     def test_a_routine_is_named_once_with_the_days_it_missed(self):
-        skipped = [FakeSkipped(FakeTask(f"r_23_{day}", deadline(day))) for day in (26, 27, 28)]
+        skipped = [FakeSkipped(FakeTask(23, deadline(day), "Вчити англійську")) for day in (26, 27, 28)]
 
-        self.assertEqual(format_skipped_routines(skipped), ["23: 26.08, 27.08, 28.08"])
+        self.assertEqual(format_skipped_routines(skipped), ["Вчити англійську: 26.08, 27.08, 28.08"])
+
+    def test_a_routine_is_named_rather_than_numbered(self):
+        # The id groups the days; what the reader is shown is the name.
+        skipped = [FakeSkipped(FakeTask(23, deadline(26), "Ранкова зарядка"))]
+
+        self.assertEqual(format_skipped_routines(skipped), ["Ранкова зарядка: 26.08"])
+
+    def test_a_name_that_holds_a_parenthetical_keeps_it(self):
+        skipped = [FakeSkipped(FakeTask(23, deadline(26), "Англійська (з репетитором)"))]
+
+        self.assertEqual(format_skipped_routines(skipped), ["Англійська (з репетитором): 26.08"])
 
     def test_the_day_is_named_without_the_clock_time(self):
         # A routine runs at most once a day, so the time said nothing.
-        skipped = [FakeSkipped(FakeTask("r_5_1", deadline(26, 9, 15)))]
+        skipped = [FakeSkipped(FakeTask(5, deadline(26, 9, 15), "Зарядка"))]
 
-        self.assertEqual(format_skipped_routines(skipped), ["5: 26.08"])
+        self.assertEqual(format_skipped_routines(skipped), ["Зарядка: 26.08"])
 
     def test_a_day_is_not_listed_twice(self):
-        skipped = [FakeSkipped(FakeTask("r_5_1", deadline(26))), FakeSkipped(FakeTask("r_5_2", deadline(26)))]
+        skipped = [FakeSkipped(FakeTask(5, deadline(26), "Зарядка")), FakeSkipped(FakeTask(5, deadline(26), "Зарядка"))]
 
-        self.assertEqual(format_skipped_routines(skipped), ["5: 26.08"])
+        self.assertEqual(format_skipped_routines(skipped), ["Зарядка: 26.08"])
 
     def test_past_the_threshold_the_days_collapse_into_a_count(self):
-        skipped = [FakeSkipped(FakeTask(f"r_23_{day}", deadline(day))) for day in range(20, 25)]
+        skipped = [FakeSkipped(FakeTask(23, deadline(day), "Зарядка")) for day in range(20, 25)]
 
-        self.assertEqual(format_skipped_routines(skipped), ["23 (missed 5 times)"])
+        self.assertEqual(format_skipped_routines(skipped), ["Зарядка (missed 5 times)"])
 
     def test_each_routine_gets_its_own_entry(self):
-        skipped = [FakeSkipped(FakeTask("r_23_1", deadline(26))), FakeSkipped(FakeTask("r_7_1", deadline(27)))]
+        skipped = [
+            FakeSkipped(FakeTask(23, deadline(26), "Зарядка")),
+            FakeSkipped(FakeTask(7, deadline(27), "Читання")),
+        ]
 
-        self.assertEqual(format_skipped_routines(skipped), ["23: 26.08", "7: 27.08"])
+        self.assertEqual(format_skipped_routines(skipped), ["Зарядка: 26.08", "Читання: 27.08"])
+
+    def test_two_routines_sharing_a_name_stay_apart(self):
+        skipped = [
+            FakeSkipped(FakeTask(23, deadline(26), "Зарядка")),
+            FakeSkipped(FakeTask(7, deadline(27), "Зарядка")),
+        ]
+
+        self.assertEqual(format_skipped_routines(skipped), ["Зарядка: 26.08", "Зарядка: 27.08"])
 
     def test_a_routine_without_a_deadline_says_so(self):
-        self.assertEqual(format_skipped_routines([FakeSkipped(FakeTask("r_9_1", None))]), ["9: no deadline"])
+        skipped = [FakeSkipped(FakeTask(9, None, "Зарядка"))]
 
-    def test_a_routine_the_expander_gave_no_id_falls_back_to_its_name(self):
-        skipped = [FakeSkipped(FakeTask(None, deadline(26), name="Вчити англійську"))]
+        self.assertEqual(format_skipped_routines(skipped), ["Зарядка: no deadline"])
 
-        self.assertEqual(format_skipped_routines(skipped), ["Вчити англійську: 26.08"])
+    def test_a_routine_with_no_id_of_its_own_groups_by_name(self):
+        skipped = [FakeSkipped(FakeTask(None, deadline(day), "Вчити англійську")) for day in (26, 27)]
+
+        self.assertEqual(format_skipped_routines(skipped), ["Вчити англійську: 26.08, 27.08"])
 
     def test_nothing_skipped_says_nothing(self):
         self.assertEqual(format_skipped_routines([]), [])

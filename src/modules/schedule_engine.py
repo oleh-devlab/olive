@@ -20,25 +20,29 @@ def format_skipped_routines(skipped) -> list[str]:
     `deadline_time` — so the day alone identifies a missed occurrence, and the
     clock time would be the same number repeated after every date.
     """
-    # Group skipped routines by original ID or name
-    grouped_routines = collections.defaultdict(list)
+    days_by_routine = collections.defaultdict(list)
+    names = {}
 
     for sr in skipped:
         t = sr.task
-        # Extract routine ID from `t.id` if it starts with 'r_', else fallback to stripping date from name
-        r_id = str(t.id).split("_")[1] if t.id and str(t.id).startswith("r_") else t.name.rsplit(" (", 1)[0]
+        # The expander tags every day's copy with the routine it came from, so
+        # the days group without taking the `r_{id}_{date}` task id apart. A
+        # routine with no id of its own is its own key, by name.
+        key = getattr(t, "routine_id", None) or t.name
+        names.setdefault(key, t.name)
+
         day = t.deadline.strftime("%d.%m") if t.deadline else "no deadline"
 
         # Two occurrences cannot share a day, but a day printed twice would look
         # like a bug to the reader either way.
-        if day not in grouped_routines[r_id]:
-            grouped_routines[r_id].append(day)
+        if day not in days_by_routine[key]:
+            days_by_routine[key].append(day)
 
     threshold = getattr(settings, "schedule_skipped_routine_collapse_threshold", 3)
 
     return [
-        f"{r_id} (missed {len(days)} times)" if len(days) > threshold else f"{r_id}: {', '.join(days)}"
-        for r_id, days in grouped_routines.items()
+        f"{names[key]} (missed {len(days)} times)" if len(days) > threshold else f"{names[key]}: {', '.join(days)}"
+        for key, days in days_by_routine.items()
     ]
 
 
