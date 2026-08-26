@@ -22,8 +22,15 @@ MESSAGE_LIMIT = 2000
 # it gets trimmed instead of the schedule.
 MIN_PAGE_CHARS = 300
 
-TASKS_NOTE = "\n\n*Tasks that didn't fit (IDs): {ids}*"
-ROUTINES_NOTE_HEADING = "\n*Skipped routines:*\n"
+# The "didn't fit" note is one line under the schedule, and every character it
+# takes is one the schedule does not get. Hence the short labels, the ranges over
+# id lists and `+N` over spelling out how many entries were cut.
+NOTE_FRAME = "\n*Didn't fit — {body}*"
+NOTE_SEPARATOR = " · "
+TASKS_LABEL = "tasks: "
+# Routine names are free text and can hold a comma, so they are not joined by one.
+ROUTINES_LABEL = "routines: "
+ROUTINES_SEPARATOR = "; "
 
 
 @dataclass(slots=True)
@@ -172,38 +179,60 @@ def paginate_days(days: list[dict], char_limit: int) -> list[SchedulePage]:
     return pages
 
 
+def _more(left: int) -> str:
+    """How a trimmed list says what it left out."""
+    return f"+{left}"
+
+
+def compress_id_runs(ids: list[int]) -> list[str]:
+    """Sorted ids with consecutive runs collapsed: 12, 13, 14, 20 becomes `12-14`, `20`.
+
+    Ids the solver skipped come in runs more often than not — a whole horizon of
+    a repeating task — and a run costs the same three or four characters however
+    long it is.
+    """
+    runs: list[list[int]] = []
+
+    for task_id in sorted(set(ids)):
+        if runs and task_id == runs[-1][-1] + 1:
+            runs[-1].append(task_id)
+        else:
+            runs.append([task_id])
+
+    return [str(run[0]) if len(run) == 1 else f"{run[0]}-{run[-1]}" for run in runs]
+
+
 def build_notes(skipped_task_ids: list[int], skipped_routines: list[str], frame_cost: int) -> str:
-    """The "didn't fit" lines that go below the schedule, in what room is left for them.
+    """The one-line "didn't fit" note under the schedule, in what room is left for it.
 
     Both lists grow with the user's data, so both are measured against what the
     frame leaves once a page keeps its minimum. Discord refuses an over-long
     message instead of truncating it, and a reader would lose the schedule
     itself over the list of what it left out.
     """
-    budget = MESSAGE_LIMIT - frame_cost - MIN_PAGE_CHARS
-    notes = ""
+    room = MESSAGE_LIMIT - frame_cost - MIN_PAGE_CHARS - len(NOTE_FRAME.format(body=""))
+    if room <= 0:
+        return ""
 
-    if skipped_task_ids and budget > 0:
+    parts: list[str] = []
+
+    if skipped_task_ids:
         # A runaway list of ids must not crowd the routines out entirely: they
         # are named, and a name says more than a hundredth id does.
-        ids_budget = budget // 2 if skipped_routines else budget
-        ids = fit_items(
-            [str(task_id) for task_id in skipped_task_ids],
-            ids_budget - len(TASKS_NOTE.format(ids="")),
-            ", ",
-            lambda left: f"+{left}",
-        )
+        ids_room = room // 2 if skipped_routines else room
+        ids = fit_items(compress_id_runs(skipped_task_ids), ids_room - len(TASKS_LABEL), ", ", _more)
         if ids:
-            notes = TASKS_NOTE.format(ids=ids)
+            parts.append(TASKS_LABEL + ids)
 
-    if skipped_routines and budget - len(notes) > 0:
-        heading = ROUTINES_NOTE_HEADING if notes else f"\n{ROUTINES_NOTE_HEADING}"
+    if skipped_routines:
+        used = len(parts[0]) + len(NOTE_SEPARATOR) if parts else 0
         routines = fit_items(
-            [f"- {routine}" for routine in skipped_routines],
-            budget - len(notes) - len(heading),
-            overflow=lambda left: f"- ...and {left} more",
+            skipped_routines,
+            room - used - len(ROUTINES_LABEL),
+            ROUTINES_SEPARATOR,
+            _more,
         )
         if routines:
-            notes += heading + routines
+            parts.append(ROUTINES_LABEL + routines)
 
-    return notes
+    return NOTE_FRAME.format(body=NOTE_SEPARATOR.join(parts)) if parts else ""

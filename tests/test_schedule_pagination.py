@@ -12,6 +12,7 @@ from modules.schedule_pagination import (  # noqa: E402
     MIN_PAGE_CHARS,
     SchedulePage,
     build_notes,
+    compress_id_runs,
     fit_items,
     invert_schedule_blocks,
     page_char_limit,
@@ -180,11 +181,19 @@ class TestBuildNotes(unittest.TestCase):
     def test_nothing_skipped_says_nothing(self):
         self.assertEqual(build_notes([], [], 400), "")
 
-    def test_both_lists_are_named(self):
+    def test_both_lists_fit_on_one_line(self):
         notes = build_notes([7, 9], ["Morning run"], 400)
 
-        self.assertIn("7, 9", notes)
-        self.assertIn("- Morning run", notes)
+        self.assertEqual(notes, "\n*Didn't fit — tasks: 7, 9 · routines: Morning run*")
+
+    def test_either_list_alone_drops_the_other_label(self):
+        self.assertEqual(build_notes([7], [], 400), "\n*Didn't fit — tasks: 7*")
+        self.assertEqual(build_notes([], ["Morning run"], 400), "\n*Didn't fit — routines: Morning run*")
+
+    def test_a_run_of_skipped_ids_is_written_as_a_range(self):
+        notes = build_notes([4, 5, 6, 7, 20], [], 400)
+
+        self.assertEqual(notes, "\n*Didn't fit — tasks: 4-7, 20*")
 
     def test_the_notes_stay_inside_what_the_frame_leaves(self):
         frame_cost = 400
@@ -196,11 +205,28 @@ class TestBuildNotes(unittest.TestCase):
     def test_a_runaway_id_list_still_leaves_room_for_the_routines(self):
         notes = build_notes(list(range(400)), ["Morning run", "Reading"], 400)
 
-        self.assertIn("- Morning run", notes)
-        self.assertIn("- Reading", notes)
+        self.assertIn("Morning run", notes)
+        self.assertIn("Reading", notes)
 
     def test_a_frame_that_leaves_no_room_drops_the_notes(self):
         self.assertEqual(build_notes([1, 2], ["Morning run"], MESSAGE_LIMIT), "")
+
+
+class TestCompressIdRuns(unittest.TestCase):
+    def test_a_run_collapses_into_a_range(self):
+        self.assertEqual(compress_id_runs([1, 2, 3, 4]), ["1-4"])
+
+    def test_gaps_break_a_run(self):
+        self.assertEqual(compress_id_runs([1, 2, 4, 7, 8]), ["1-2", "4", "7-8"])
+
+    def test_ids_are_sorted_and_deduplicated_first(self):
+        self.assertEqual(compress_id_runs([9, 3, 1, 2, 3]), ["1-3", "9"])
+
+    def test_lone_ids_stay_lone(self):
+        self.assertEqual(compress_id_runs([5]), ["5"])
+
+    def test_nothing_skipped_compresses_to_nothing(self):
+        self.assertEqual(compress_id_runs([]), [])
 
 
 class TestTrimToWholeLines(unittest.TestCase):
