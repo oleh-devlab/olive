@@ -30,7 +30,11 @@ class AIAssistantCog(commands.Cog):
 
         self.budget_name = "default"
         self.context_manager = LLMContextManager(
-            token_budget=BudgetRepository.get_by_name(self.budget_name), budget_name=self.budget_name
+            token_budget=BudgetRepository.get_by_name(self.budget_name),
+            budget_name=self.budget_name,
+            # Unbounded by default: this history is to be compressed rather than
+            # dropped, and until that exists, dropping it would lose it.
+            database_token_limit=getattr(settings, "llm_stored_context_token_limit", None),
         )
 
         self.response_debouncer = TaskDebouncer(self.bot.loop)

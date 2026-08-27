@@ -3,6 +3,7 @@ import inspect
 import logging
 
 import disnake
+import settings
 from google.genai import types
 
 from core import cache
@@ -20,7 +21,7 @@ schedule_context_manager = LLMContextManager(
     token_budget=token_budget,
     context_file_name="schedule_agent_context.json",
     budget_name=budget_name,
-    database_token_limit=1_000_000,  # cap the on-disk agent history per context
+    database_token_limit=getattr(settings, "schedule_agent_stored_context_token_limit", 1_000_000),
 )
 
 UNDO_TIMEOUT_MINUTES = 15
