@@ -272,6 +272,17 @@ class TestRecording(unittest.TestCase):
         m.record_tokens(T0, 100)
         self.assertEqual(m.to_dict()["minute_requests"], 0)
 
+    def test_the_day_and_week_token_counters_are_kept_apart(self):
+        # They only ever differ once the day has rolled under a still-open week,
+        # which is the one arrangement that tells the two counters apart at all.
+        m = model(tpm=None)
+        m.record_tokens(T0, 100)
+        m.record_tokens(T0 + DAY, 5)
+        state = m.to_dict()
+        self.assertEqual(state["minute_tokens"], 5)
+        self.assertEqual(state["day_tokens"], 5)
+        self.assertEqual(state["week_tokens"], 105)
+
     def test_record_zero_tokens_is_harmless(self):
         m = model()
         m.record_tokens(T0, 0)
@@ -505,16 +516,26 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual(state["day_window_start"], T0)
 
     def test_state_survives_a_round_trip_through_json(self):
-        m = model()
+        # Deliberately asymmetric: the day window sits under a still-open week, so
+        # no day counter shares a value with its week twin. A state where the two
+        # match round-trips cleanly even if the pair is swapped on the way through.
+        m = model(rpm=10_000, rpd=10_000, rpw=10_000)
         m.record_request(T0)
-        m.record_tokens(T0, 700)
+        m.record_tokens(T0, 100)
+        m.record_request(T0 + DAY)
+        m.record_tokens(T0 + DAY, 5)
         m.handle_429()
 
-        restored = model()
-        restored.load_from_dict(json.loads(json.dumps(m.to_dict())))
+        state = m.to_dict()
+        self.assertNotEqual(state["day_requests"], state["week_requests"])
+        self.assertNotEqual(state["day_tokens"], state["week_tokens"])
+        self.assertNotEqual(state["day_window_start"], state["week_window_start"])
 
-        self.assertEqual(restored.to_dict(), m.to_dict())
-        self.assertEqual(restored.get_status(T0), m.get_status(T0))
+        restored = model(rpm=10_000, rpd=10_000, rpw=10_000)
+        restored.load_from_dict(json.loads(json.dumps(state)))
+
+        self.assertEqual(restored.to_dict(), state)
+        self.assertEqual(restored.get_status(T0 + DAY), m.get_status(T0 + DAY))
 
     def test_a_restored_model_keeps_its_remaining_window(self):
         m = model(rpm=2)
@@ -615,6 +636,14 @@ class TestGetStatus(unittest.TestCase):
         self.assertEqual(status["minute_tokens"], "0/1000")
         self.assertEqual(status["day_req"], "1/10")
         self.assertEqual(status["day_tokens"], 250)
+
+    def test_the_snapshot_keeps_day_and_week_tokens_apart(self):
+        m = model(tpm=None)
+        m.record_tokens(T0, 100)
+        m.record_tokens(T0 + DAY, 5)
+        status = m.get_status(T0 + DAY)
+        self.assertEqual(status["day_tokens"], 5)
+        self.assertEqual(status["week_tokens"], 105)
 
     def test_a_penalised_model_reads_as_full(self):
         m = model(rpm=3)
