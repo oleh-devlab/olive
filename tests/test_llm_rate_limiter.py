@@ -1,0 +1,692 @@
+import json
+import sys
+import unittest
+from pathlib import Path
+from typing import ClassVar
+
+# Setup path so we can import from src
+src_root = Path(__file__).resolve().parent.parent / "src"
+sys.path.insert(0, str(src_root))
+
+from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded  # noqa: E402
+
+MINUTE = 60.0
+DAY = 86400.0
+WEEK = 604800.0
+
+# An arbitrary non-zero epoch: nothing in the module aligns windows to wall-clock
+# boundaries, so every window is measured from whatever "now" first touched it.
+T0 = 1_000_000.0
+
+
+def model(**kwargs) -> ModelConfig:
+    """A model with small, easy-to-exhaust limits unless a test says otherwise."""
+    defaults = {"name": "gemini-test", "rpm": 3, "rpd": 10, "rpw": 20, "tpm": 1000}
+    return ModelConfig(**{**defaults, **kwargs})
+
+
+def climb_the_429_ladder(m: ModelConfig, rungs: int) -> ModelConfig:
+    """Walk a model up `rungs` steps of the 429 ladder.
+
+    Each rung needs the previous penalty's window to roll first, otherwise the
+    concurrency guard swallows the next 429 as a duplicate. Windows are anchored
+    wherever they were last reopened, so the offsets accumulate rather than being
+    measured from T0.
+    """
+    m.is_available(T0)
+    now = T0
+    for rung in range(rungs):
+        if rung:
+            now += MINUTE if rung == 1 else DAY
+            m.is_available(now)
+        m.handle_429()
+    return m
+
+
+class TestDefaults(unittest.TestCase):
+    """The dataclass surface itself: what an operator gets when phrases.json omits a key."""
+
+    def test_only_name_is_required(self):
+        m = ModelConfig(name="gemini-2.5-flash")
+        self.assertEqual(m.name, "gemini-2.5-flash")
+        self.assertEqual(m.rpm, 15)
+        self.assertEqual(m.rpd, 1500)
+        self.assertIsNone(m.rpw)
+        self.assertIsNone(m.tpm)
+        self.assertEqual(m.max_context_tokens, 128000)
+        self.assertIsNone(m.thinking_level)
+        self.assertIsNone(m.thinking_budget)
+
+    def test_counters_start_empty_and_windows_unopened(self):
+        m = ModelConfig(name="m")
+        self.assertEqual(m.to_dict()["minute_requests"], 0)
+        self.assertIsNone(m.to_dict()["minute_window_start"])
+        self.assertIsNone(m.to_dict()["day_window_start"])
+        self.assertIsNone(m.to_dict()["week_window_start"])
+
+    def test_repr_hides_internal_state(self):
+        # Every counter is field(repr=False): the logs print configuration, not bookkeeping.
+        m = model()
+        m.record_request(T0)
+        text = repr(m)
+        self.assertIn("gemini-test", text)
+        self.assertIn("rpm=3", text)
+        for hidden in ("_minute_requests", "_day_requests", "_consecutive_429s", "_minute_window_start"):
+            self.assertNotIn(hidden, text)
+
+
+class TestWindowResets(unittest.TestCase):
+    """`_reset_windows_if_needed` runs before every read and write; these pin its edges."""
+
+    def test_first_touch_opens_every_window_at_now(self):
+        m = model()
+        m.record_request(T0)
+        state = m.to_dict()
+        self.assertEqual(state["minute_window_start"], T0)
+        self.assertEqual(state["day_window_start"], T0)
+        self.assertEqual(state["week_window_start"], T0)
+
+    def test_minute_window_holds_until_exactly_sixty_seconds(self):
+        m = model()
+        m.record_request(T0)
+        m.record_request(T0 + 59.999)
+        self.assertEqual(m.to_dict()["minute_requests"], 2)
+
+        # 60.0 is the first instant that counts as expired (the check is `>=`).
+        m.record_request(T0 + MINUTE)
+        self.assertEqual(m.to_dict()["minute_requests"], 1)
+
+    def test_day_window_holds_until_exactly_twenty_four_hours(self):
+        m = model(rpm=10_000, rpd=10_000, rpw=10_000)
+        m.record_request(T0)
+        m.record_request(T0 + DAY - 0.001)
+        self.assertEqual(m.to_dict()["day_requests"], 2)
+        m.record_request(T0 + DAY)
+        self.assertEqual(m.to_dict()["day_requests"], 1)
+
+    def test_week_window_holds_until_exactly_seven_days(self):
+        m = model(rpm=10_000, rpd=10_000, rpw=10_000)
+        m.record_request(T0)
+        m.record_request(T0 + WEEK - 0.001)
+        self.assertEqual(m.to_dict()["week_requests"], 2)
+        m.record_request(T0 + WEEK)
+        self.assertEqual(m.to_dict()["week_requests"], 1)
+
+    def test_expiring_minute_leaves_day_and_week_alone(self):
+        m = model(rpm=10_000, rpd=10_000, rpw=10_000)
+        for i in range(3):
+            m.record_request(T0 + i * MINUTE)
+        state = m.to_dict()
+        self.assertEqual(state["minute_requests"], 1)
+        self.assertEqual(state["day_requests"], 3)
+        self.assertEqual(state["week_requests"], 3)
+
+    def test_expiring_day_leaves_the_week_alone(self):
+        m = model(rpm=10_000, rpd=10_000, rpw=10_000)
+        m.record_request(T0)
+        m.record_request(T0 + DAY)
+        state = m.to_dict()
+        self.assertEqual(state["day_requests"], 1)
+        self.assertEqual(state["week_requests"], 2)
+
+    def test_windows_restart_from_now_not_from_a_grid(self):
+        # A window that expired long ago does not "catch up" in 60s steps: it is
+        # simply reopened at the current instant.
+        m = model()
+        m.record_request(T0)
+        m.record_request(T0 + 10 * MINUTE + 7.5)
+        self.assertEqual(m.to_dict()["minute_window_start"], T0 + 10 * MINUTE + 7.5)
+
+    def test_tokens_are_cleared_with_their_window(self):
+        m = model(tpm=None)
+        m.record_tokens(T0, 500)
+        m.record_tokens(T0 + MINUTE, 1)
+        state = m.to_dict()
+        self.assertEqual(state["minute_tokens"], 1)
+        self.assertEqual(state["day_tokens"], 501)
+        self.assertEqual(state["week_tokens"], 501)
+
+    def test_clock_jumping_backwards_reopens_every_window(self):
+        # An NTP correction (or a container clock skew) must not freeze a model out
+        # for the rest of the window: `now < window_start` counts as expired.
+        m = model()
+        m.record_request(T0)
+        m.record_request(T0)
+        m.record_request(T0)
+        self.assertFalse(m.is_available(T0))
+
+        self.assertTrue(m.is_available(T0 - 5))
+        state = m.to_dict()
+        self.assertEqual(state["minute_requests"], 0)
+        self.assertEqual(state["day_requests"], 0)
+        self.assertEqual(state["week_requests"], 0)
+        self.assertEqual(state["minute_window_start"], T0 - 5)
+
+
+class TestIsAvailable(unittest.TestCase):
+    def test_a_fresh_model_is_available(self):
+        self.assertTrue(model().is_available(T0))
+
+    def test_the_minute_request_limit_blocks(self):
+        m = model(rpm=2)
+        m.record_request(T0)
+        self.assertTrue(m.is_available(T0))
+        m.record_request(T0)
+        self.assertFalse(m.is_available(T0))
+
+    def test_the_day_request_limit_blocks(self):
+        m = model(rpm=1000, rpd=2)
+        m.record_request(T0)
+        m.record_request(T0)
+        self.assertFalse(m.is_available(T0))
+
+    def test_the_week_request_limit_blocks(self):
+        m = model(rpm=1000, rpd=1000, rpw=2)
+        m.record_request(T0)
+        m.record_request(T0)
+        self.assertFalse(m.is_available(T0))
+
+    def test_no_weekly_limit_means_the_week_never_blocks(self):
+        m = model(rpm=1000, rpd=1000, rpw=None)
+        for _ in range(50):
+            m.record_request(T0)
+        self.assertTrue(m.is_available(T0))
+
+    def test_anticipated_tokens_are_counted_against_tpm(self):
+        m = model(tpm=1000)
+        m.record_tokens(T0, 900)
+        self.assertTrue(m.is_available(T0, anticipated_tokens=99))
+        # Reaching the ceiling exactly already blocks (the check is `>=`).
+        self.assertFalse(m.is_available(T0, anticipated_tokens=100))
+        self.assertFalse(m.is_available(T0, anticipated_tokens=500))
+
+    def test_anticipated_tokens_alone_can_block_an_idle_model(self):
+        # A prompt bigger than the whole minute budget never gets sent to this model.
+        self.assertFalse(model(tpm=1000).is_available(T0, anticipated_tokens=1000))
+
+    def test_no_tpm_means_tokens_never_block(self):
+        m = model(tpm=None)
+        m.record_tokens(T0, 10_000_000)
+        self.assertTrue(m.is_available(T0, anticipated_tokens=10_000_000))
+
+    def test_only_the_minute_token_budget_gates_requests(self):
+        # There is no daily/weekly token ceiling in the config; day_tokens is diagnostics only.
+        m = model(tpm=1000)
+        m.record_tokens(T0, 999)
+        m.record_tokens(T0 + MINUTE, 999)  # minute rolls over, day/week keep ~2000
+        self.assertGreater(m.to_dict()["day_tokens"], 1000)
+        self.assertTrue(m.is_available(T0 + MINUTE))
+
+    def test_a_blocked_model_frees_itself_when_the_window_rolls(self):
+        m = model(rpm=2)
+        m.record_request(T0)
+        m.record_request(T0)
+        self.assertFalse(m.is_available(T0 + 59))
+        self.assertTrue(m.is_available(T0 + MINUTE))
+
+    def test_a_day_limit_outlives_the_minute_window(self):
+        m = model(rpm=2, rpd=2)
+        m.record_request(T0)
+        m.record_request(T0)
+        self.assertFalse(m.is_available(T0 + MINUTE))
+        self.assertTrue(m.is_available(T0 + DAY))
+
+
+class TestRecording(unittest.TestCase):
+    def test_record_request_increments_all_three_counters(self):
+        m = model()
+        m.record_request(T0)
+        state = m.to_dict()
+        self.assertEqual((state["minute_requests"], state["day_requests"], state["week_requests"]), (1, 1, 1))
+
+    def test_record_request_resets_before_it_increments(self):
+        # The reservation lands in the *new* window, not on top of the expired one.
+        m = model()
+        m.record_request(T0)
+        m.record_request(T0 + MINUTE)
+        self.assertEqual(m.to_dict()["minute_requests"], 1)
+
+    def test_record_request_can_overshoot_its_own_limit(self):
+        # Nothing here enforces the ceiling; `is_available` is the gate, and the
+        # caller is expected to ask first.
+        m = model(rpm=1)
+        m.record_request(T0)
+        m.record_request(T0)
+        self.assertEqual(m.to_dict()["minute_requests"], 2)
+        self.assertFalse(m.is_available(T0))
+
+    def test_record_tokens_increments_all_three_counters(self):
+        m = model()
+        m.record_tokens(T0, 250)
+        state = m.to_dict()
+        self.assertEqual((state["minute_tokens"], state["day_tokens"], state["week_tokens"]), (250, 250, 250))
+
+    def test_record_tokens_accumulates(self):
+        m = model()
+        m.record_tokens(T0, 100)
+        m.record_tokens(T0 + 1, 50)
+        self.assertEqual(m.to_dict()["minute_tokens"], 150)
+
+    def test_record_tokens_does_not_touch_request_counters(self):
+        m = model()
+        m.record_tokens(T0, 100)
+        self.assertEqual(m.to_dict()["minute_requests"], 0)
+
+    def test_record_zero_tokens_is_harmless(self):
+        m = model()
+        m.record_tokens(T0, 0)
+        self.assertEqual(m.to_dict()["minute_tokens"], 0)
+
+
+class TestRefund(unittest.TestCase):
+    def test_refund_undoes_a_reservation(self):
+        m = model()
+        m.record_request(T0)
+        m.refund_request()
+        state = m.to_dict()
+        self.assertEqual((state["minute_requests"], state["day_requests"], state["week_requests"]), (0, 0, 0))
+
+    def test_refund_never_goes_negative(self):
+        m = model()
+        m.refund_request()
+        m.refund_request()
+        state = m.to_dict()
+        self.assertEqual((state["minute_requests"], state["day_requests"], state["week_requests"]), (0, 0, 0))
+
+    def test_each_counter_clamps_on_its_own(self):
+        # After a minute rollover the reservation being refunded belongs to an older
+        # window: the day and week still owe it, the minute does not.
+        m = model(rpm=1000, rpd=1000, rpw=1000)
+        m.record_request(T0)
+        m.record_request(T0 + MINUTE)  # minute := 1, day/week := 2
+        m.refund_request()
+        m.refund_request()
+        state = m.to_dict()
+        self.assertEqual(state["minute_requests"], 0)
+        self.assertEqual(state["day_requests"], 0)
+        self.assertEqual(state["week_requests"], 0)
+
+    def test_refund_does_not_roll_windows(self):
+        # It takes no `now` at all, so a refund can never expire a window as a side effect.
+        m = model()
+        m.record_request(T0)
+        before = m.to_dict()["minute_window_start"]
+        m.refund_request()
+        self.assertEqual(m.to_dict()["minute_window_start"], before)
+
+    def test_refund_leaves_tokens_and_penalties_alone(self):
+        m = model()
+        m.record_request(T0)
+        m.record_tokens(T0, 300)
+        m.handle_429()
+        m.refund_request()
+        state = m.to_dict()
+        self.assertEqual(state["minute_tokens"], 300)
+        self.assertEqual(state["consecutive_429s"], 1)
+
+
+class TestHandle429(unittest.TestCase):
+    """The escalation ladder: a 429 costs the minute first, then the day, then the week.
+
+    `handle_429` takes no timestamp, so it can neither open nor roll a window. Every
+    test here opens the windows first with an `is_available` call, which is what the
+    client does anyway before it ever reaches a 429.
+    """
+
+    def test_the_first_429_burns_the_minute(self):
+        m = model(rpm=3)
+        m.is_available(T0)
+        m.handle_429()
+        state = m.to_dict()
+        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["minute_requests"], 3)
+        self.assertEqual(state["day_requests"], 0)
+        self.assertFalse(m.is_available(T0))
+
+    def test_a_concurrent_429_in_the_same_minute_is_ignored(self):
+        # Several in-flight calls can fail at once; only the first one escalates.
+        m = model()
+        m.is_available(T0)
+        m.handle_429()
+        m.handle_429()
+        m.handle_429()
+        state = m.to_dict()
+        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["day_requests"], 0)
+
+    def test_the_second_429_after_the_minute_rolls_burns_the_day(self):
+        m = model(rpm=3, rpd=10)
+        m.is_available(T0)
+        m.handle_429()
+        m.is_available(T0 + MINUTE)  # the roll that clears the minute penalty
+        m.handle_429()
+        state = m.to_dict()
+        self.assertEqual(state["consecutive_429s"], 2)
+        self.assertEqual(state["day_requests"], 10)
+        self.assertFalse(m.is_available(T0 + MINUTE))
+
+    def test_a_repeat_429_while_the_day_is_burnt_is_ignored(self):
+        m = model()
+        m.is_available(T0)
+        m.handle_429()
+        m.is_available(T0 + MINUTE)
+        m.handle_429()
+        m.handle_429()
+        self.assertEqual(m.to_dict()["consecutive_429s"], 2)
+
+    def test_the_third_429_burns_the_week(self):
+        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=20), rungs=3)
+        state = m.to_dict()
+        self.assertEqual(state["consecutive_429s"], 3)
+        self.assertEqual(state["week_requests"], 20)
+        # The day rolled on the way up, so only the weekly penalty is still holding.
+        self.assertFalse(m.is_available(T0 + DAY))
+
+    def test_the_ladder_stops_at_the_day_when_there_is_no_weekly_limit(self):
+        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=None), rungs=3)
+        state = m.to_dict()
+        self.assertEqual(state["consecutive_429s"], 3)
+        self.assertEqual(state["week_requests"], 0)
+        # Nothing is left to penalise, so an uncapped model comes straight back.
+        self.assertTrue(m.is_available(T0 + DAY))
+
+    def test_further_429s_stay_capped_without_a_weekly_limit(self):
+        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=None), rungs=3)
+        for _ in range(5):
+            m.handle_429()
+        self.assertEqual(m.to_dict()["consecutive_429s"], 3)
+
+    def test_further_429s_stay_capped_once_the_week_is_burnt(self):
+        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=20), rungs=3)
+        for _ in range(5):
+            m.handle_429()
+        state = m.to_dict()
+        self.assertEqual(state["consecutive_429s"], 3)
+        self.assertEqual(state["week_requests"], 20)
+
+    def test_handle_429_does_not_open_or_roll_a_window(self):
+        # It takes no `now`, so the penalty it wrote can only be cleared by some
+        # later call that does pass a timestamp.
+        m = model()
+        m.is_available(T0)
+        m.handle_429()
+        self.assertEqual(m.to_dict()["minute_window_start"], T0)
+
+    def test_a_penalty_on_an_untouched_model_is_dropped_at_the_next_check(self):
+        # With no window ever opened, the first timestamped call treats the whole
+        # state as expired and clears the penalty with it. The client never gets
+        # here — it checks availability before it can see a 429 — but the order
+        # matters to anyone calling this by hand.
+        m = model(rpm=3)
+        m.handle_429()
+        self.assertEqual(m.to_dict()["minute_requests"], 3)
+        self.assertTrue(m.is_available(T0))
+        self.assertEqual(m.to_dict()["minute_requests"], 0)
+
+    def test_the_penalty_pins_the_counter_to_the_ceiling_exactly(self):
+        # Restored state can hold more requests than the current config allows;
+        # the penalty writes the ceiling rather than adding to what is there.
+        m = model(rpm=3)
+        m.load_from_dict({"minute_requests": 99})
+        m.handle_429()
+        self.assertEqual(m.to_dict()["minute_requests"], 3)
+
+    def test_a_penalised_model_recovers_when_its_window_rolls(self):
+        m = model()
+        m.is_available(T0)
+        m.handle_429()
+        self.assertFalse(m.is_available(T0))
+        self.assertTrue(m.is_available(T0 + MINUTE))
+
+
+class TestRecordSuccess(unittest.TestCase):
+    def test_success_clears_the_streak(self):
+        m = model()
+        m.handle_429()
+        m.record_success()
+        self.assertEqual(m.to_dict()["consecutive_429s"], 0)
+
+    def test_success_does_not_unblock_a_penalised_model(self):
+        # Only the clock returns capacity; a success merely forgets the escalation.
+        m = model(rpm=3)
+        m.is_available(T0)
+        m.handle_429()
+        m.record_success()
+        self.assertEqual(m.to_dict()["minute_requests"], 3)
+        self.assertFalse(m.is_available(T0))
+
+    def test_the_ladder_restarts_from_the_minute_after_a_success(self):
+        m = model(rpm=3, rpd=10)
+        m.is_available(T0)
+        m.handle_429()
+        m.is_available(T0 + MINUTE)
+        m.record_success()
+        m.handle_429()
+        state = m.to_dict()
+        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["minute_requests"], 3)
+        self.assertEqual(state["day_requests"], 0)
+
+    def test_success_on_a_clean_model_is_a_no_op(self):
+        m = model()
+        m.record_request(T0)
+        m.record_success()
+        self.assertEqual(m.to_dict()["minute_requests"], 1)
+
+
+class TestPersistence(unittest.TestCase):
+    """`llm_limits_state{role}.json` is written and re-read through these two methods."""
+
+    EXPECTED_KEYS: ClassVar[set[str]] = {
+        "minute_requests",
+        "day_requests",
+        "week_requests",
+        "minute_tokens",
+        "day_tokens",
+        "week_tokens",
+        "minute_window_start",
+        "day_window_start",
+        "week_window_start",
+        "consecutive_429s",
+    }
+
+    def test_to_dict_has_exactly_the_persisted_keys(self):
+        self.assertEqual(set(model().to_dict()), self.EXPECTED_KEYS)
+
+    def test_to_dict_reports_live_state(self):
+        m = model()
+        m.record_request(T0)
+        m.record_tokens(T0, 42)
+        m.handle_429()
+        state = m.to_dict()
+        self.assertEqual(state["day_requests"], 1)
+        self.assertEqual(state["week_tokens"], 42)
+        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["day_window_start"], T0)
+
+    def test_state_survives_a_round_trip_through_json(self):
+        m = model()
+        m.record_request(T0)
+        m.record_tokens(T0, 700)
+        m.handle_429()
+
+        restored = model()
+        restored.load_from_dict(json.loads(json.dumps(m.to_dict())))
+
+        self.assertEqual(restored.to_dict(), m.to_dict())
+        self.assertEqual(restored.get_status(T0), m.get_status(T0))
+
+    def test_a_restored_model_keeps_its_remaining_window(self):
+        m = model(rpm=2)
+        m.record_request(T0)
+        m.record_request(T0)
+
+        restored = model(rpm=2)
+        restored.load_from_dict(m.to_dict())
+        self.assertFalse(restored.is_available(T0 + 30))
+        self.assertTrue(restored.is_available(T0 + MINUTE))
+
+    def test_missing_keys_fall_back_to_a_clean_slate(self):
+        # A state file written by an older build simply loses the fields it lacks.
+        m = model()
+        m.record_request(T0)
+        m.handle_429()
+        m.load_from_dict({})
+        self.assertEqual(m.to_dict(), ModelConfig(name="x").to_dict())
+
+    def test_a_partial_payload_only_overwrites_what_it_carries(self):
+        m = model()
+        m.load_from_dict({"day_requests": 7, "consecutive_429s": 2})
+        state = m.to_dict()
+        self.assertEqual(state["day_requests"], 7)
+        self.assertEqual(state["consecutive_429s"], 2)
+        self.assertEqual(state["minute_requests"], 0)
+        self.assertIsNone(state["day_window_start"])
+
+    def test_unknown_keys_are_ignored(self):
+        m = model()
+        m.load_from_dict({"minute_requests": 1, "requests_per_fortnight": 99})
+        self.assertEqual(m.to_dict()["minute_requests"], 1)
+
+    def test_loading_does_not_carry_configuration(self):
+        # Only counters are persisted: limits always come from phrases.json.
+        m = model(rpm=3)
+        m.load_from_dict(model(rpm=999).to_dict())
+        self.assertEqual(m.rpm, 3)
+
+    def test_a_state_file_older_than_its_windows_is_discarded_on_use(self):
+        m = model(rpm=2)
+        m.record_request(T0)
+        m.record_request(T0)
+
+        restored = model(rpm=2)
+        restored.load_from_dict(m.to_dict())
+        self.assertTrue(restored.is_available(T0 + WEEK + 1))
+        state = restored.to_dict()
+        self.assertEqual(state["minute_requests"], 0)
+        self.assertEqual(state["day_requests"], 0)
+        self.assertEqual(state["week_requests"], 0)
+
+
+class TestGetStatus(unittest.TestCase):
+    """What `/llm_limits` and the diagnostics log render."""
+
+    def test_the_snapshot_shape(self):
+        m = model(rpm=3, rpd=10, rpw=20, tpm=1000)
+        m.record_request(T0)
+        m.record_tokens(T0, 250)
+        self.assertEqual(
+            m.get_status(T0),
+            {
+                "model": "gemini-test",
+                "minute_req": "1/3",
+                "day_req": "1/10",
+                "week_req": "1/20",
+                "minute_tokens": "250/1000",
+                "day_tokens": 250,
+                "week_tokens": 250,
+                "available": True,
+            },
+        )
+
+    def test_absent_limits_render_as_infinity(self):
+        status = ModelConfig(name="m", rpw=None, tpm=None).get_status(T0)
+        self.assertEqual(status["week_req"], "0/∞")
+        self.assertEqual(status["minute_tokens"], "0/∞")
+
+    def test_availability_tracks_the_counters(self):
+        m = model(rpm=1)
+        self.assertTrue(m.get_status(T0)["available"])
+        m.record_request(T0)
+        self.assertFalse(m.get_status(T0)["available"])
+
+    def test_availability_ignores_anticipated_tokens(self):
+        # The snapshot answers "is it usable at all", not "will this prompt fit".
+        m = model(tpm=1000)
+        m.record_tokens(T0, 999)
+        self.assertTrue(m.get_status(T0)["available"])
+
+    def test_reading_the_status_rolls_stale_windows(self):
+        m = model(rpm=3)
+        m.record_request(T0)
+        m.record_tokens(T0, 250)
+        status = m.get_status(T0 + MINUTE)
+        self.assertEqual(status["minute_req"], "0/3")
+        self.assertEqual(status["minute_tokens"], "0/1000")
+        self.assertEqual(status["day_req"], "1/10")
+        self.assertEqual(status["day_tokens"], 250)
+
+    def test_a_penalised_model_reads_as_full(self):
+        m = model(rpm=3)
+        m.is_available(T0)
+        m.handle_429()
+        status = m.get_status(T0)
+        self.assertEqual(status["minute_req"], "3/3")
+        self.assertFalse(status["available"])
+
+
+class TestRateLimitExceeded(unittest.TestCase):
+    def test_it_is_a_plain_exception_carrying_its_message(self):
+        self.assertTrue(issubclass(RateLimitExceeded, Exception))
+        with self.assertRaises(RateLimitExceeded) as ctx:
+            raise RateLimitExceeded("All configured models have exceeded their rate limits")
+        self.assertEqual(str(ctx.exception), "All configured models have exceeded their rate limits")
+
+
+class TestClientFlows(unittest.TestCase):
+    """The call sequences `llm_client.get_interaction` actually performs."""
+
+    def test_a_successful_call_reserves_then_bills_then_clears(self):
+        m = model(rpm=3, tpm=1000)
+        self.assertTrue(m.is_available(T0, anticipated_tokens=200))
+        m.record_request(T0)
+        m.record_tokens(T0, 220)
+        m.record_success()
+        state = m.to_dict()
+        self.assertEqual(state["minute_requests"], 1)
+        self.assertEqual(state["minute_tokens"], 220)
+        self.assertEqual(state["consecutive_429s"], 0)
+
+    def test_a_failed_call_gives_the_reservation_back(self):
+        m = model(rpm=3)
+        m.record_request(T0)
+        m.refund_request()  # any exception path in the client
+        self.assertEqual(m.to_dict()["minute_requests"], 0)
+        self.assertTrue(m.is_available(T0))
+
+    def test_a_429_refunds_and_then_blocks_the_model(self):
+        m = model(rpm=3)
+        m.record_request(T0)
+        m.refund_request()
+        m.handle_429()
+        self.assertFalse(m.is_available(T0))
+
+    def test_the_next_model_takes_over_when_the_first_is_out(self):
+        best = model(name="best", rpm=1)
+        cheap = model(name="cheap", rpm=1)
+        chain = [best, cheap]
+
+        chosen = next(mc for mc in chain if mc.is_available(T0))
+        chosen.record_request(T0)
+        chosen.handle_429()
+
+        remaining = [mc for mc in chain if mc.is_available(T0)]
+        self.assertEqual([mc.name for mc in remaining], ["cheap"])
+
+    def test_every_model_blocked_is_what_the_client_reports_as_exhausted(self):
+        chain = [model(name="best", rpm=1), model(name="cheap", rpm=1)]
+        for mc in chain:
+            mc.is_available(T0)
+            mc.handle_429()
+        self.assertFalse(any(mc.is_available(T0) for mc in chain))
+        self.assertTrue(all(mc.is_available(T0 + MINUTE) for mc in chain))
+
+    def test_exhaustion_is_per_model_not_shared(self):
+        best, cheap = model(name="best", rpm=1), model(name="cheap", rpm=1)
+        best.record_request(T0)
+        self.assertFalse(best.is_available(T0))
+        self.assertTrue(cheap.is_available(T0))
+
+
+if __name__ == "__main__":
+    unittest.main()
