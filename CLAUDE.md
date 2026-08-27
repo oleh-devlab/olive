@@ -78,12 +78,11 @@ Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a 
 
 ### LLM subsystem
 
-`modules/llm_client.py` wraps Google GenAI with a client pool keyed by role (`default`, `private` — separate API keys from `tokens.json`) and a rate limiter whose model list comes from `phrases.json` → `olive` → `models`, ordered best-to-cheapest. Persistent state lives in `llm_limits_state{role}.json` (CWD-relative, one file per role) and in the `llm_token_budgets` table — rows `default` and `private`, seeded by migration 2 and edited live with `/token_budget set`. The README still tells operators to copy `llm_token_budget.json.example`, but nothing reads that file any more; it is a leftover from before the budget moved into the database. `modules/schedule_agent.py` is an agentic loop over `ScheduleAgentTools` (capped at `MAX_ITERATIONS`, changes revertible for 15 minutes) using the `private` role.
+`modules/llm_client.py` wraps Google GenAI with a client pool keyed by role (`default`, `private` — separate API keys from `tokens.json`) and a rate limiter whose model list comes from `phrases.json` → `olive` → `models`, ordered best-to-cheapest. Persistent state lives in `llm_limits_state{role}.json` (CWD-relative, one file per role) and in the `llm_token_budgets` table — rows `default` and `private`, seeded by migration 2 and edited live with `/token_budget set`. `modules/schedule_agent.py` is an agentic loop over `ScheduleAgentTools` (capped at `MAX_ITERATIONS`, changes revertible for 15 minutes) using the `private` role.
 
 ## Conventions
 
 - Read tunables with `getattr(settings, "name", default)` — operators' `settings.py` files predate newly added keys.
-- Reloading a cog via `/reload_cogs` does **not** pick up changes in `core/` or `modules/`; those need a full restart (`docs/EN/cog_hot_reloading.md`).
 - Only the eternal message in a personal channel has a pager. A slash-command reply is a single message, and Discord refuses one over 2000 characters instead of truncating it — so anything whose length grows with the user's data has to be measured and trimmed, not hoped about (`inflation_replies.fit_into_message`).
 - `PERF203` (try/except inside a loop) is ignored in ruff config on purpose: per-item error isolation is intended.
 - Docs are bilingual, `docs/EN/` and `docs/UK/`; `docs/UK/architecture.md` is the fuller architecture write-up but predates the schedule/inflation subsystems.
