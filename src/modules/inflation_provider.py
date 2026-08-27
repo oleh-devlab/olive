@@ -30,6 +30,9 @@ from modules.inflation_calculator.modules.deposit import (
     DepositResult,
     DepositTerms,
 )
+from modules.inflation_calculator.modules.exceptions import (
+    InflationCalculatorError as InflationCalculatorError,  # re-exported for cogs
+)
 from modules.inflation_calculator.modules.exceptions import ValidationError
 from modules.inflation_calculator.modules.storage import (
     load_inflation_rates_from_file,
