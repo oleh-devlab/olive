@@ -106,5 +106,4 @@ This project relies on the following Git submodules to extend its core functiona
 
 ## Notes
 
-- **LLM token budgets** are not a config file. They live in the bot's database, are seeded with defaults by the migrations, and are edited live with `/token_budget set`. (Older versions used an `llm_token_budget.json`; if you still have one in `src/`, it is no longer read and can be deleted.)
 - **Reloading cogs.** `/reload_cogs` restarts a cog, but it does **not** pick up changes made in `src/core/` or `src/modules/` — those need a full bot restart. See [cog hot reloading](/docs/EN/cog_hot_reloading.md) | [Ukrainian](/docs/UK/cog_hot_reloading.md).
