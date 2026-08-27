@@ -19,9 +19,11 @@ The top-level key is a server ID (string) or `"global"` for phrases without a se
 }
 ```
 
+At load time, each guild section is **deep-merged over global** — a guild entry inherits every global key it does not override.
+
 ## Usage
 
-Phrases are accessed via the `get_phrases()` function from `core/utils.py`:
+Phrases are accessed via `get_phrases()` from `core/utils.py`, always with an inline fallback string:
 
 ```python
 from core.utils import get_phrases
@@ -36,9 +38,22 @@ text = get_phrases().get("main", {}).get("token_file_not_found", "Fallback text"
 | Call | Result |
 |---|---|
 | `get_phrases()` | Phrases from the `"global"` key |
-| `get_phrases(guild_id)` | Phrases for server `str(guild_id)` |
+| `get_phrases(guild_id)` | Merged phrases for `str(guild_id)`, falling back to global if the guild key doesn't exist |
 
-If the key is not found, an empty `{}` is returned. All `.get()` calls with fallback values continue to work as before.
+When a guild key is not found, `get_phrases(guild_id)` returns the global phrases.
+
+### `format_phrase()` for safe rendering
+
+`phrases.json` is hand-edited, so a renamed or misspelled placeholder must not crash the bot. Use `format_phrase()` when a phrase contains `{placeholder}` templates:
+
+```python
+from core.utils import format_phrase, get_phrases
+
+section = get_phrases(guild_id).get("errors", {})
+text = format_phrase(section, "cooldown_message", "Default: {seconds}s left", seconds=42)
+```
+
+If the template's placeholders don't match the keyword arguments, `format_phrase()` logs a warning and falls back to the default string. `format_embed_data()` follows the same forgiving pattern for embed dictionaries.
 
 ## Choosing the Right Context
 

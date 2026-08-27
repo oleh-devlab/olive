@@ -19,9 +19,11 @@
 }
 ```
 
+При завантаженні кожна серверна секція **deep-merge-иться поверх global** — серверний запис успадковує кожен глобальний ключ, який він не перевизначає.
+
 ## Використання
 
-Доступ до фраз здійснюється через функцію `get_phrases()` з `core/utils.py`:
+Доступ до фраз здійснюється через `get_phrases()` з `core/utils.py`, завжди з inline fallback-рядком:
 
 ```python
 from core.utils import get_phrases
@@ -36,9 +38,22 @@ text = get_phrases().get("main", {}).get("token_file_not_found", "Fallback text"
 | Виклик | Результат |
 |---|---|
 | `get_phrases()` | Фрази з ключа `"global"` |
-| `get_phrases(guild_id)` | Фрази для сервера `str(guild_id)` |
+| `get_phrases(guild_id)` | Об'єднані фрази для `str(guild_id)`, з fallback на global, якщо ключ серверу не знайдено |
 
-Якщо ключ не знайдено, повертається порожній `{}`. Усі виклики `.get()` з fallback-значеннями продовжують працювати як і раніше.
+Коли ключ серверу не знайдено, `get_phrases(guild_id)` повертає глобальні фрази.
+
+### `format_phrase()` для безпечного рендерингу
+
+`phrases.json` редагується вручну, тому неправильний placeholder не повинен крашити бота. Використовуйте `format_phrase()`, коли фраза містить `{placeholder}` шаблони:
+
+```python
+from core.utils import format_phrase, get_phrases
+
+section = get_phrases(guild_id).get("errors", {})
+text = format_phrase(section, "cooldown_message", "Default: {seconds}s left", seconds=42)
+```
+
+Якщо placeholder-и шаблону не збігаються з keyword-аргументами, `format_phrase()` логує попередження і повертає default-рядок. `format_embed_data()` працює за тим самим принципом для embed-словників.
 
 ## Вибір правильного контексту
 
