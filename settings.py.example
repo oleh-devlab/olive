@@ -39,6 +39,14 @@ cogs_blacklist = ["olive", "embeds.battery"] # If you disable the models that us
 uptime_update_seconds = 30
 llm_limits_update_seconds = 15
 llm_context_update_seconds = 30
+
+# How many tokens of history each conversation keeps on disk, counted per
+# conversation rather than per file: a file holds this many tokens times the
+# number of conversations in it. `None` means it is never trimmed.
+# The group chat is left unbounded on purpose — its history is to be compressed
+# rather than dropped, and until that exists, dropping it would lose it.
+llm_stored_context_token_limit = None
+schedule_agent_stored_context_token_limit = 1_000_000
 hosting_update_seconds = 10
 currency_update_seconds = 10
 active_cogs_update_seconds = 45
