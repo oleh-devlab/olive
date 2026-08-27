@@ -10,6 +10,7 @@ from core.time_utils import tz
 from modules.automatic_timetable_py.src.scheduler import Scheduler
 from modules.schedule_models import ScheduleItem, SolvedSchedule
 from modules.schedule_provider import ScheduleProvider
+from modules import schedule_stats
 
 _solver_lock = asyncio.Lock()
 
@@ -171,4 +172,10 @@ async def solve_schedule(client_ID: int) -> SolvedSchedule:
     Runs the CPU-intensive solve operation in a background thread.
     """
     async with _solver_lock:
-        return await asyncio.to_thread(_solve_sync, client_ID)
+        schedule = await asyncio.to_thread(_solve_sync, client_ID)
+
+    # Every solve passes through here — the loop's, the reader's and the
+    # agent's alike — so this is the one place that has to count them.
+    schedule_stats.record(client_ID, schedule.solve_time)
+
+    return schedule
