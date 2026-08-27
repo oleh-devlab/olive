@@ -67,7 +67,7 @@ Most cogs are thin subclasses of one of these — prefer extending them over han
 
 Two stores, split by kind of data:
 
-- SQLite (`core/database.py`, module-level singleton `db`) for users, LLM consent and token budgets. Schema evolves through `src/database/migrations.py` using `PRAGMA user_version`; add `N_name.sql` or `N_name.py` (exposing `upgrade(conn)`) in `src/database/`, keep `_schema.sql` in sync — a test asserts migrated schema matches it.
+- SQLite (`core/database.py`, module-level singleton `db`) for users, LLM consent and token budgets. `db`'s connection is lazy: importing the module (or anything that holds a reference to `db`, like `llm_consent_manager` or `llm_token_budget`) does not touch the file or run migrations — that happens on the first `db.execute()`/`db.executemany()`/`db.conn` access. Set `OLIVE_DB_PATH` (e.g. to `:memory:`) to point a `DatabaseManager` at something other than `olive.sqlite3`, which is what a test needing a working `db` without touching disk should do rather than relying on the file the global singleton defaults to. Schema evolves through `src/database/migrations.py` using `PRAGMA user_version`; add `N_name.sql` or `N_name.py` (exposing `upgrade(conn)`) in `src/database/`, keep `_schema.sql` in sync — a test asserts migrated schema matches it.
 - JSON files under repo-root `data/` for schedules, inflation records and channel registries, written by the providers.
 
 ### Phrases
