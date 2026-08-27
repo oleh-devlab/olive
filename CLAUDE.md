@@ -8,7 +8,7 @@ O.L.I.V.E. is a Discord bot (disnake) that acts as a hub for several subsystems:
 
 ## Setup, running, checks
 
-The bot runs from inside `src/` — relative paths (`config.ini`, `phrases.json`, `llm_limits_state.json`, `olive.sqlite3`, the `cogs` extension path) are all resolved against the process CWD:
+The bot runs from inside `src/`; the checks run from the repo root. Which directory you are in decides what the code finds:
 
 ```bash
 git submodule update --init --recursive   # tests for inflation need these present
@@ -17,7 +17,15 @@ cp settings.py.example src/settings.py    # plus tokens.json
 cd src && python main.py
 ```
 
-Two paths are exceptions to that rule and are resolved relative to the source tree instead: `core/token_manager.py` resolves `src/tokens.json` from its own `__file__`, and the providers write JSON under a repo-root `data/`.
+| What | Resolved against | So it lands in |
+| --- | --- | --- |
+| `config.ini`, `phrases.json`, `llm_limits_state{role}.json`, `olive.sqlite3` | process CWD | `src/`, because that is where the bot is started |
+| the `cogs` extension path | process CWD | `src/cogs/` |
+| `tokens.json` | `core/token_manager.py`'s own `__file__` | always `src/tokens.json` |
+| the providers' JSON (`data/…`) | `modules/*_provider.py`'s own `__file__` | always repo-root `data/` |
+| `python -m unittest discover`, `ruff`, `black` | process CWD | repo root — running them from `src/` finds nothing |
+
+The last three rows are the ones worth remembering: the bottom two exceptions do not move when you `cd`, and the checks do.
 
 `src/settings.py`, `src/tokens.json`, `src/phrases.json`, `config.ini`, `data/` and `*.sqlite3` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) but `settings.py` is imported directly and its absence is fatal.
 
@@ -33,7 +41,28 @@ Both submodule directories are excluded from ruff and black — never reformat o
 
 The three workflows do not cover the same branches: `unittest.yml` runs on every branch and PR (Python 3.14, `pip install -r requirements.txt`, submodules checked out), while `code_check.yml` (ruff, 3.12) and `black-formatter.yml` (opens an auto-format PR) only fire on `main` and `mk*`. So a feature branch gets tests but no lint feedback until it targets one of those — run `ruff check .` locally.
 
-Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. `test_migrations`, `test_phrases`, `test_inflation_formatter`, `test_schd_item_formatters`, `test_schedule_pagination` and `test_schedule_timeline` are pure-Python. `test_schedule_stats` needs only the standard library, and builds its temporary database with the real migrations. `test_schedule_engine` imports the engine and so needs the submodules and `ortools`, but not `disnake`; `test_schedule_ui` drives the cog and needs all three. `test_personal_channels` and `test_paged_message` import `disnake` and fail to load without it, and so does every inflation module except the formatter — anything reaching `inflation_provider` pulls in `core.personal_channels` for `disnake` and the vendored calculator for the submodules, so those four need both. `tests/inflation_fixtures.py` holds the shared report/record/deposit builders and the fake provider; it is deliberately free of `settings` so the formatter suite stays dependency-free.
+Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. What they do need is uneven — a module either imports cleanly on a bare checkout or fails at import time, so half the suite is unrunnable until the submodules are initialized:
+
+| Test module | submodules | `ortools` | `disnake` |
+| --- | :-: | :-: | :-: |
+| `test_inflation_formatter` | – | – | – |
+| `test_migrations` | – | – | – |
+| `test_phrases` | – | – | – |
+| `test_schd_item_formatters` | – | – | – |
+| `test_schedule_pagination` | – | – | – |
+| `test_schedule_stats` | – | – | – |
+| `test_schedule_timeline` | – | – | – |
+| `test_llm_context_manager` | – | – | ✓ |
+| `test_paged_message` | – | – | ✓ |
+| `test_personal_channels` | – | – | ✓ |
+| `test_inflation_phrases` | ✓ | – | ✓ |
+| `test_inflation_provider` | ✓ | – | ✓ |
+| `test_inflation_replies` | ✓ | – | ✓ |
+| `test_inflation_report` | ✓ | – | ✓ |
+| `test_schedule_engine` | ✓ | ✓ | ✓ |
+| `test_schedule_ui` | ✓ | ✓ | ✓ |
+
+The dependencies are transitive, not written in the tests: anything reaching `inflation_provider` pulls in the vendored calculator and, through `core.personal_channels`, `disnake`; `schedule_engine` reaches `disnake` the same way, through `schedule_provider` → `core.personal_channels`. Keeping a suite in the top block therefore means keeping the module under test away from those, which is why `test_schedule_stats` builds its temporary database with the real migrations rather than through a provider, and why `tests/inflation_fixtures.py` — the shared report/record/deposit builders and the fake provider — is deliberately free of `settings`.
 
 When writing one: `tests/` is a real package, so a test module importing a sibling writes `from tests.inflation_fixtures import ...`, and the suite is run from the repo root. Stub `settings` in the module itself rather than relying on another one having done it — discovery order is not a contract, and every module has to run alone. Anything exercising a provider for real must first point `inflation_provider.get_base_data_dir` at a temporary directory: it is the single root the record files, the rates file and both channel registries hang off, and `settings.inflation_data_dir` redirects only the first two — a test that patches nothing writes into the repository's own gitignored `data/`.
 
