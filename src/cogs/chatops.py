@@ -83,7 +83,11 @@ class ChatOps(commands.Cog):
                     self.bot.reload_extension(extension_name)
                 else:
                     self.bot.load_extension(extension_name)
-                await inter.send(f"Cog '{cog_name}' has been restarted.", ephemeral=True)
+                await inter.send(
+                    f"Cog '{cog_name}' has been restarted. "
+                    "Changes in `core` or `modules` are not picked up — restart the bot for those.",
+                    ephemeral=True,
+                )
             else:
                 cog_list = "\n".join(available_cogs)
                 await inter.send(f"No such file '{cog_name}'. Available cogs:\n```py\n{cog_list}\n```", ephemeral=True)
@@ -93,7 +97,11 @@ class ChatOps(commands.Cog):
                 if extension_name.startswith(f"{cogs_directory}."):
                     self.bot.reload_extension(extension_name)
 
-            await inter.send("All loaded cogs have been restarted.", ephemeral=True)
+            await inter.send(
+                "All loaded cogs have been restarted. "
+                "Changes in `core` or `modules` are not picked up — restart the bot for those.",
+                ephemeral=True,
+            )
 
     @commands.slash_command(test_guilds=settings.guilds)
     @commands.is_owner()

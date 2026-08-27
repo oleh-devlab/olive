@@ -18,7 +18,6 @@
     ```bash
     cp settings.py.example src/settings.py
     cp tokens.json.example src/tokens.json
-    cp llm_token_budget.json.example src/llm_token_budget.json
     ```
 4. Заповнити необхідні поля та налаштування в `settings.py` (див. коментарі в файлі).
 5. У файл `tokens.json` вставте токени для Discord бота та решти модулів.

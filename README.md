@@ -37,7 +37,6 @@ This project relies on the following Git submodules to extend its core functiona
 │   ├── main.py                     # The main entry point of the bot
 │   ├── settings.py                 # Local configuration (created by the user. Ignored by Git)
 │   ├── tokens.json                 # Bot and module tokens (created by the user. Ignored by Git)
-│   ├── llm_token_budget.json       # LLM budget settings (created by the user. Ignored by Git)
 │   ├── phrases.json                # Local phrases configuration (ignored by Git)
 │   ├── cogs/                       # Discord bot cogs (commands and events)
 │   ├── core/                       # Core bot logic and utilities
@@ -52,8 +51,7 @@ This project relies on the following Git submodules to extend its core functiona
 ├── pyproject.toml                  # Python project configuration
 ├── requirements.txt                # Tracked by Git
 ├── settings.py.example             # Tracked by Git
-├── tokens.json.example             # Tracked by Git
-└── llm_token_budget.json.example   # Tracked by Git
+└── tokens.json.example             # Tracked by Git
 ```
 
 ---
@@ -84,7 +82,6 @@ This project relies on the following Git submodules to extend its core functiona
     ```bash
     cp settings.py.example src/settings.py
     cp tokens.json.example src/tokens.json
-    cp llm_token_budget.json.example src/llm_token_budget.json
     ```
 4. Fill in the required fields and settings in `settings.py` (see the comments inside the file).
 5. Insert tokens for the Discord bot and other modules into the `tokens.json` file.
@@ -104,3 +101,9 @@ This project relies on the following Git submodules to extend its core functiona
     cd src
     python main.py
     ```
+
+---
+
+## Notes
+
+- **Reloading cogs.** `/reload_cogs` restarts a cog, but it does **not** pick up changes made in `src/core/` or `src/modules/` — those need a full bot restart. See [cog hot reloading](/docs/EN/cog_hot_reloading.md) | [Ukrainian](/docs/UK/cog_hot_reloading.md).

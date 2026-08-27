@@ -10,7 +10,6 @@ from disnake.ext import commands
 from core import cache, utils
 from core.utils import format_phrase
 from core.personal_channels import ChannelSetupError, create_channel_pair, create_public_channel
-from modules.inflation_calculator.modules.exceptions import InflationCalculatorError, ValidationError
 from modules.inflation_provider import (
     CAPITALIZATION_MODES,
     DEFAULT_CAPITALIZATION,
@@ -18,6 +17,8 @@ from modules.inflation_provider import (
     SERVER_SCOPE,
     USER_SCOPE,
     VIEW_MODES,
+    InflationCalculatorError,
+    ValidationError,
     inflation_provider,
 )
 from modules.inflation_formatter import (

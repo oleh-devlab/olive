@@ -27,7 +27,6 @@ llm_limits_state.json
 schedule_agent_context.json
 *.sqlite3
 webhooks_config.json
-llm_token_budget.json
 *_api
 
 probes/
