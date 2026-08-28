@@ -59,6 +59,7 @@ class LLMClient:
                     name=m["name"],
                     rpm=m.get("rpm", 15),
                     rpd=m.get("rpd", 1500),
+                    rpw=m.get("rpw", None),
                     tpm=m.get("tpm", None),
                     max_context_tokens=m.get("max_context_tokens", 128000),
                     thinking_level=m.get("thinking_level", None),
@@ -114,7 +115,6 @@ class LLMClient:
         *,
         anticipated_tokens: int,
     ):
-        now = time.time()
         attempted_errors = []
 
         models_to_use = []
@@ -125,6 +125,9 @@ class LLMClient:
             models_to_use = list(reversed(self.models)) if cheap_first else self.models
 
         for model in models_to_use:
+            # Per attempt, not once per call: an earlier model's request can outlast a
+            # window, and the limiter cannot tell a stale timestamp from a clock going back.
+            now = time.time()
             if not model.is_available(now, anticipated_tokens=anticipated_tokens):
                 continue
 
@@ -208,7 +211,7 @@ class LLMClient:
                 return response
 
             except Exception as e:
-                model.refund_request()
+                model.refund_request(now)
                 code = getattr(e, "code", None)
 
                 # Sometimes the code is only in the string representation
@@ -218,10 +221,10 @@ class LLMClient:
                 if code == 429:
                     message = getattr(e, "message", str(e))
                     logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
-                    model.handle_429()
+                    model.handle_429(time.time())
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning(
-                        "Attempting fallback to next model due to 429 (Consecutive: %d)", model._consecutive_429s
+                        "Attempting fallback to next model due to 429 (penalty on: %s)", model.penalised_limit
                     )
                     continue
                 elif isinstance(code, int) and code >= 500:
