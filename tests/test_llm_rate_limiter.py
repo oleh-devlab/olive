@@ -459,6 +459,25 @@ class TestHandle429(unittest.TestCase):
         m.handle_429(T0 + MINUTE)  # the window rolled
         self.assertEqual(m.to_dict()["penalty_rung"], 2)
 
+    def test_a_penalty_holds_for_its_own_window_not_the_shortest_one(self):
+        # A request still in flight when the day rung was applied can fail minutes
+        # later. The minute window has rolled by then; the day penalty has not, and
+        # that late failure is still part of the event already paid for.
+        m = model(rpm=3, rpd=10, rpw=20)
+        escalate(m, 2)  # on the day rung, anchored to the day window
+        m.handle_429(T0 + 5 * MINUTE)
+        self.assertEqual(m.to_dict()["penalty_rung"], 2)
+
+    def test_a_penalty_is_anchored_to_its_window_not_to_the_moment_it_lands(self):
+        # The 429 arrives partway into the window. Everything until that window
+        # rolls is still the same event, however late in the window it started.
+        m = model(rpm=3, rpd=10)
+        m.is_available(T0)  # opens the minute window at T0
+        m.handle_429(T0 + 30)
+        self.assertEqual(m.to_dict()["penalty_window_start"], T0)
+        m.handle_429(T0 + 40)
+        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+
     def test_the_penalty_never_lowers_a_counter(self):
         # Restored state can hold more requests than the current config allows.
         m = model(rpm=3)
@@ -505,7 +524,7 @@ class TestHandle429(unittest.TestCase):
             t += 30
         self.assertEqual(requests, 8640)
         self.assertGreater(probes, 0)  # it must keep probing, or it can never recover
-        self.assertLess(probes, 20)  # but not spend every request on a dead model
+        self.assertLess(probes, 10)  # but not spend every request on a dead model (it is 6)
 
 
 class TestRecordSuccess(unittest.TestCase):
@@ -592,6 +611,19 @@ class TestPersistence(unittest.TestCase):
 
         self.assertEqual(restored.to_dict(), state)
         self.assertEqual(restored.get_status(T0 + DAY), m.get_status(T0 + DAY))
+
+    def test_the_anchor_survives_a_restart_so_a_burst_is_not_re_escalated(self):
+        # The bot can be restarted mid-burst: the reloaded penalty must still know
+        # which window it was applied in, or the rest of the burst climbs a rung.
+        m = model(rpm=3, rpd=10)
+        m.handle_429(T0)
+
+        restored = model(rpm=3, rpd=10)
+        restored.load_from_dict(json.loads(json.dumps(m.to_dict())))
+        self.assertEqual(restored.to_dict()["penalty_window_start"], T0)
+
+        restored.handle_429(T0 + 30)
+        self.assertEqual(restored.to_dict()["penalty_rung"], 1)
 
     def test_a_restored_model_keeps_its_remaining_window(self):
         m = model(rpm=2)

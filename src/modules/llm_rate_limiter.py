@@ -10,10 +10,10 @@ class ModelConfig:
     """Configuration and rate-limit state for a single model."""
 
     name: str
-    rpm: int = 15  # requests per minute
-    rpd: int = 1500  # requests per day
-    rpw: int | None = None  # requests per week (optional)
-    tpm: int | None = None  # tokens per minute
+    rpm: int | None = 15  # requests per minute (None: no such limit)
+    rpd: int | None = 1500  # requests per day (None: no such limit)
+    rpw: int | None = None  # requests per week (None: no such limit)
+    tpm: int | None = None  # tokens per minute (None: no such limit)
     max_context_tokens: int = 128000  # context size limit in tokens
     thinking_level: str | None = None
     thinking_budget: int | None = None
@@ -28,7 +28,8 @@ class ModelConfig:
     _minute_window_start: float | None = field(default=None, repr=False)
     _day_window_start: float | None = field(default=None, repr=False)
     _week_window_start: float | None = field(default=None, repr=False)
-    _consecutive_429s: int = field(default=0, repr=False)
+    _penalty_rung: int = field(default=0, repr=False)  # 0 = unpenalised, else the 1-based rung
+    _penalty_window_start: float | None = field(default=None, repr=False)
 
     def _reset_windows_if_needed(self, now: float):
         """Reset counters if their time windows have expired. Handles NTP backwards jumps."""
@@ -66,7 +67,8 @@ class ModelConfig:
             "minute_window_start": self._minute_window_start,
             "day_window_start": self._day_window_start,
             "week_window_start": self._week_window_start,
-            "consecutive_429s": self._consecutive_429s,
+            "penalty_rung": self._penalty_rung,
+            "penalty_window_start": self._penalty_window_start,
         }
 
     def load_from_dict(self, data: dict):
@@ -79,12 +81,17 @@ class ModelConfig:
         self._minute_window_start = data.get("minute_window_start")
         self._day_window_start = data.get("day_window_start")
         self._week_window_start = data.get("week_window_start")
-        self._consecutive_429s = data.get("consecutive_429s", 0)
+        # "consecutive_429s" is what the penalty level was called before the ladder
+        # was built from the configured limits; existing state files still carry it.
+        self._penalty_rung = data.get("penalty_rung", data.get("consecutive_429s", 0))
+        self._penalty_window_start = data.get("penalty_window_start")
 
     def is_available(self, now: float, anticipated_tokens: int = 0) -> bool:
         """Check if this model can handle another request right now."""
         self._reset_windows_if_needed(now)
-        if self._minute_requests >= self.rpm or self._day_requests >= self.rpd:
+        if self.rpm is not None and self._minute_requests >= self.rpm:
+            return False
+        if self.rpd is not None and self._day_requests >= self.rpd:
             return False
         if self.rpw is not None and self._week_requests >= self.rpw:
             return False
@@ -113,35 +120,57 @@ class ModelConfig:
         if self._week_requests > 0:
             self._week_requests -= 1
 
-    def handle_429(self):
-        """Apply rate limits on 429: minute limit, then daily, then weekly. Handles concurrent 429s."""
-        # If the penalty is already active for this window, ignore concurrent 429s
-        if self._consecutive_429s == 1 and self._minute_requests >= self.rpm:
-            return
-        if self._consecutive_429s == 2 and self._day_requests >= self.rpd:
-            return
-        if self._consecutive_429s >= 3 and (self.rpw is None or self._week_requests >= self.rpw):
-            return
+    def _ladder(self) -> list[tuple[str, str, int]]:
+        """The penalty rungs: one per limit that exists, shortest window first."""
+        return [
+            (counter, window, cap)
+            for counter, window, cap in (
+                ("_minute_requests", "_minute_window_start", self.rpm),
+                ("_day_requests", "_day_window_start", self.rpd),
+                ("_week_requests", "_week_window_start", self.rpw),
+            )
+            if cap is not None
+        ]
 
-        self._consecutive_429s += 1
-        if self._consecutive_429s == 1:
-            self._minute_requests = self.rpm
-        elif self._consecutive_429s == 2:
-            self._day_requests = self.rpd
-        elif self._consecutive_429s >= 3 and self.rpw is not None:
-            self._week_requests = self.rpw
+    def handle_429(self, now: float):
+        """Step the penalty ladder: the shortest limit first, then the next one up.
+
+        After the longest rung it starts over at the shortest, so a model the provider
+        keeps refusing stays throttled instead of running out of rungs. A rung fills its
+        limit to the brim, which blocks the model until that window rolls; the penalty is
+        anchored to that window, so further 429s reported from inside it — a burst of
+        concurrent requests failing together — count as the one event they are.
+        """
+        rungs = self._ladder()
+        if not rungs:
+            return  # nothing is limited, so there is nothing to fill
+
+        self._reset_windows_if_needed(now)
+        if self._penalty_rung > len(rungs):
+            self._penalty_rung = 0  # the ladder shrank under us: start over
+
+        if self._penalty_rung:
+            _, window, _ = rungs[self._penalty_rung - 1]
+            if self._penalty_window_start == getattr(self, window):
+                return  # still the window this penalty was applied in
+
+        self._penalty_rung = self._penalty_rung % len(rungs) + 1
+        counter, window, cap = rungs[self._penalty_rung - 1]
+        setattr(self, counter, max(getattr(self, counter), cap))
+        self._penalty_window_start = getattr(self, window)
 
     def record_success(self):
-        """Reset consecutive 429s on success."""
-        self._consecutive_429s = 0
+        """Clear the penalty on success: the model has capacity after all."""
+        self._penalty_rung = 0
+        self._penalty_window_start = None
 
     def get_status(self, now: float) -> dict:
         """Return a snapshot of the current limits state for diagnostics."""
         self._reset_windows_if_needed(now)
         return {
             "model": self.name,
-            "minute_req": f"{self._minute_requests}/{self.rpm}",
-            "day_req": f"{self._day_requests}/{self.rpd}",
+            "minute_req": f"{self._minute_requests}/{self.rpm if self.rpm is not None else '∞'}",
+            "day_req": f"{self._day_requests}/{self.rpd if self.rpd is not None else '∞'}",
             "week_req": f"{self._week_requests}/{self.rpw if self.rpw is not None else '∞'}",
             "minute_tokens": f"{self._minute_tokens}/{self.tpm if self.tpm is not None else '∞'}",
             "day_tokens": self._day_tokens,

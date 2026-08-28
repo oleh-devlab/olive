@@ -59,6 +59,7 @@ class LLMClient:
                     name=m["name"],
                     rpm=m.get("rpm", 15),
                     rpd=m.get("rpd", 1500),
+                    rpw=m.get("rpw", None),
                     tpm=m.get("tpm", None),
                     max_context_tokens=m.get("max_context_tokens", 128000),
                     thinking_level=m.get("thinking_level", None),
@@ -218,10 +219,10 @@ class LLMClient:
                 if code == 429:
                     message = getattr(e, "message", str(e))
                     logger.error("APIError on model '%s': code=%s, message=%s", model.name, code, message)
-                    model.handle_429()
+                    model.handle_429(time.time())
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning(
-                        "Attempting fallback to next model due to 429 (Consecutive: %d)", model._consecutive_429s
+                        "Attempting fallback to next model due to 429 (penalty rung: %d)", model._penalty_rung
                     )
                     continue
                 elif isinstance(code, int) and code >= 500:
