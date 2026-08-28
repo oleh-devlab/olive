@@ -87,7 +87,12 @@ class ModelConfig:
         self._penalty_window_start = data.get("penalty_window_start")
 
     def is_available(self, now: float, anticipated_tokens: int = 0) -> bool:
-        """Check if this model can handle another request right now."""
+        """Check if this model can handle another request right now.
+
+        Read `now` at the point of use. A timestamp cached before a slow call is
+        indistinguishable here from a clock that moved backwards, and the windows
+        are reopened rather than trusted — see `_reset_windows_if_needed`.
+        """
         self._reset_windows_if_needed(now)
         if self.rpm is not None and self._minute_requests >= self.rpm:
             return False
