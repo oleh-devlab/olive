@@ -25,22 +25,25 @@ def model(**kwargs) -> ModelConfig:
     return ModelConfig(**{**defaults, **kwargs})
 
 
-def climb_the_429_ladder(m: ModelConfig, rungs: int) -> ModelConfig:
-    """Walk a model up `rungs` steps of the 429 ladder.
+def ladder_windows(m: ModelConfig) -> list[float]:
+    """The windows of the rungs this model actually has, shortest first."""
+    return [w for cap, w in ((m.rpm, MINUTE), (m.rpd, DAY), (m.rpw, WEEK)) if cap is not None]
 
-    Each rung needs the previous penalty's window to roll first, otherwise the
-    concurrency guard swallows the next 429 as a duplicate. Windows are anchored
-    wherever they were last reopened, so the offsets accumulate rather than being
-    measured from T0.
+
+def escalate(m: ModelConfig, steps: int, start: float = T0) -> float:
+    """Apply `steps` 429s, rolling each penalty's own window on the way.
+
+    A penalty holds until the window it was anchored to rolls, so the clock has to
+    move past that window before the next 429 can advance the ladder. Returns the
+    timestamp the last 429 was reported at.
     """
-    m.is_available(T0)
-    now = T0
-    for rung in range(rungs):
-        if rung:
-            now += MINUTE if rung == 1 else DAY
-            m.is_available(now)
-        m.handle_429()
-    return m
+    windows = ladder_windows(m)
+    t = start
+    for step in range(steps):
+        m.handle_429(t)
+        if step + 1 < steps:
+            t += windows[step % len(windows)]
+    return t
 
 
 class TestDefaults(unittest.TestCase):
@@ -71,7 +74,7 @@ class TestDefaults(unittest.TestCase):
         text = repr(m)
         self.assertIn("gemini-test", text)
         self.assertIn("rpm=3", text)
-        for hidden in ("_minute_requests", "_day_requests", "_consecutive_429s", "_minute_window_start"):
+        for hidden in ("_minute_requests", "_day_requests", "_penalty_rung", "_minute_window_start"):
             self.assertNotIn(hidden, text)
 
 
@@ -185,6 +188,25 @@ class TestIsAvailable(unittest.TestCase):
         m.record_request(T0)
         m.record_request(T0)
         self.assertFalse(m.is_available(T0))
+
+    def test_no_minute_limit_means_the_minute_never_blocks(self):
+        m = model(rpm=None, rpd=10**9, rpw=None)
+        for _ in range(1000):
+            m.record_request(T0)
+        self.assertTrue(m.is_available(T0))
+
+    def test_no_day_limit_means_the_day_never_blocks(self):
+        m = model(rpm=10**9, rpd=None, rpw=None)
+        for _ in range(1000):
+            m.record_request(T0)
+        self.assertTrue(m.is_available(T0))
+
+    def test_a_model_with_no_request_limits_is_always_available(self):
+        m = model(rpm=None, rpd=None, rpw=None, tpm=None)
+        for _ in range(1000):
+            m.record_request(T0)
+        m.record_tokens(T0, 10**7)
+        self.assertTrue(m.is_available(T0, anticipated_tokens=10**7))
 
     def test_no_weekly_limit_means_the_week_never_blocks(self):
         m = model(rpm=1000, rpd=1000, rpw=None)
@@ -329,154 +351,188 @@ class TestRefund(unittest.TestCase):
         m = model()
         m.record_request(T0)
         m.record_tokens(T0, 300)
-        m.handle_429()
+        m.handle_429(T0)
         m.refund_request()
         state = m.to_dict()
         self.assertEqual(state["minute_tokens"], 300)
-        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["penalty_rung"], 1)
 
 
 class TestHandle429(unittest.TestCase):
-    """The escalation ladder: a 429 costs the minute first, then the day, then the week.
+    """The penalty ladder.
 
-    `handle_429` takes no timestamp, so it can neither open nor roll a window. Every
-    test here opens the windows first with an `is_available` call, which is what the
-    client does anyway before it ever reaches a 429.
+    A 429 costs the model the shortest limit it has, then the next one up, and after
+    the longest it starts over at the shortest. Only limits that exist are rungs. A
+    penalty holds until the window it was anchored to rolls, so `handle_429` takes
+    `now` like every other method that mutates state.
     """
 
-    def test_the_first_429_burns_the_minute(self):
-        m = model(rpm=3)
-        m.is_available(T0)
-        m.handle_429()
+    def test_the_first_429_burns_the_shortest_limit(self):
+        m = model(rpm=3, rpd=10, rpw=20)
+        m.handle_429(T0)
         state = m.to_dict()
-        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["penalty_rung"], 1)
         self.assertEqual(state["minute_requests"], 3)
         self.assertEqual(state["day_requests"], 0)
         self.assertFalse(m.is_available(T0))
 
-    def test_a_concurrent_429_in_the_same_minute_is_ignored(self):
-        # Several in-flight calls can fail at once; only the first one escalates.
-        m = model()
-        m.is_available(T0)
-        m.handle_429()
-        m.handle_429()
-        m.handle_429()
+    def test_the_second_429_burns_the_day(self):
+        m = model(rpm=3, rpd=10, rpw=20)
+        escalate(m, 2)
         state = m.to_dict()
-        self.assertEqual(state["consecutive_429s"], 1)
-        self.assertEqual(state["day_requests"], 0)
-
-    def test_the_second_429_after_the_minute_rolls_burns_the_day(self):
-        m = model(rpm=3, rpd=10)
-        m.is_available(T0)
-        m.handle_429()
-        m.is_available(T0 + MINUTE)  # the roll that clears the minute penalty
-        m.handle_429()
-        state = m.to_dict()
-        self.assertEqual(state["consecutive_429s"], 2)
+        self.assertEqual(state["penalty_rung"], 2)
         self.assertEqual(state["day_requests"], 10)
-        self.assertFalse(m.is_available(T0 + MINUTE))
-
-    def test_a_repeat_429_while_the_day_is_burnt_is_ignored(self):
-        m = model()
-        m.is_available(T0)
-        m.handle_429()
-        m.is_available(T0 + MINUTE)
-        m.handle_429()
-        m.handle_429()
-        self.assertEqual(m.to_dict()["consecutive_429s"], 2)
 
     def test_the_third_429_burns_the_week(self):
-        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=20), rungs=3)
+        m = model(rpm=3, rpd=10, rpw=20)
+        escalate(m, 3)
         state = m.to_dict()
-        self.assertEqual(state["consecutive_429s"], 3)
+        self.assertEqual(state["penalty_rung"], 3)
         self.assertEqual(state["week_requests"], 20)
-        # The day rolled on the way up, so only the weekly penalty is still holding.
-        self.assertFalse(m.is_available(T0 + DAY))
 
-    def test_the_ladder_stops_at_the_day_when_there_is_no_weekly_limit(self):
-        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=None), rungs=3)
+    def test_the_fourth_429_starts_over_at_the_shortest_limit(self):
+        # The ladder wraps to the first rung, not to the previous one.
+        m = model(rpm=3, rpd=10, rpw=20)
+        t = escalate(m, 4)
         state = m.to_dict()
-        self.assertEqual(state["consecutive_429s"], 3)
+        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["minute_requests"], 3)
+        self.assertFalse(m.is_available(t))
+
+    def test_a_missing_limit_is_not_a_rung(self):
+        # No weekly quota: the ladder is minute -> day -> minute, never a dead end.
+        m = model(rpm=3, rpd=10, rpw=None)
+        t = escalate(m, 3)
+        state = m.to_dict()
+        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["minute_requests"], 3)
         self.assertEqual(state["week_requests"], 0)
-        # Nothing is left to penalise, so an uncapped model comes straight back.
-        self.assertTrue(m.is_available(T0 + DAY))
+        self.assertFalse(m.is_available(t))
 
-    def test_further_429s_stay_capped_without_a_weekly_limit(self):
-        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=None), rungs=3)
-        for _ in range(5):
-            m.handle_429()
-        self.assertEqual(m.to_dict()["consecutive_429s"], 3)
-
-    def test_further_429s_stay_capped_once_the_week_is_burnt(self):
-        m = climb_the_429_ladder(model(rpm=3, rpd=10, rpw=20), rungs=3)
-        for _ in range(5):
-            m.handle_429()
+    def test_the_ladder_can_start_above_the_minute(self):
+        m = model(rpm=None, rpd=10, rpw=20)
+        m.handle_429(T0)
         state = m.to_dict()
-        self.assertEqual(state["consecutive_429s"], 3)
+        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["day_requests"], 10)
+        self.assertEqual(state["minute_requests"], 0)
+
+    def test_a_single_rung_repeats_itself(self):
+        m = model(rpm=None, rpd=None, rpw=20)
+        t = escalate(m, 3)
+        state = m.to_dict()
+        self.assertEqual(state["penalty_rung"], 1)
         self.assertEqual(state["week_requests"], 20)
+        self.assertFalse(m.is_available(t))
 
-    def test_handle_429_does_not_open_or_roll_a_window(self):
-        # It takes no `now`, so the penalty it wrote can only be cleared by some
-        # later call that does pass a timestamp.
-        m = model()
-        m.is_available(T0)
-        m.handle_429()
-        self.assertEqual(m.to_dict()["minute_window_start"], T0)
-
-    def test_a_penalty_on_an_untouched_model_is_dropped_at_the_next_check(self):
-        # With no window ever opened, the first timestamped call treats the whole
-        # state as expired and clears the penalty with it. The client never gets
-        # here — it checks availability before it can see a 429 — but the order
-        # matters to anyone calling this by hand.
-        m = model(rpm=3)
-        m.handle_429()
-        self.assertEqual(m.to_dict()["minute_requests"], 3)
+    def test_a_model_with_no_limits_at_all_cannot_be_penalised(self):
+        m = model(rpm=None, rpd=None, rpw=None, tpm=None)
+        m.handle_429(T0)
+        self.assertEqual(m.to_dict()["penalty_rung"], 0)
         self.assertTrue(m.is_available(T0))
-        self.assertEqual(m.to_dict()["minute_requests"], 0)
 
-    def test_the_penalty_pins_the_counter_to_the_ceiling_exactly(self):
-        # Restored state can hold more requests than the current config allows;
-        # the penalty writes the ceiling rather than adding to what is there.
+    def test_a_burst_of_concurrent_429s_costs_one_rung(self):
+        # Several requests in flight fail together. The client refunds each reservation
+        # before reporting its 429, which is exactly what a counter-based guard misses.
+        m = model(rpm=15, rpd=10)
+        m.is_available(T0)
+        for _ in range(3):
+            m.record_request(T0)
+        for _ in range(3):
+            m.refund_request()
+            m.handle_429(T0)
+        state = m.to_dict()
+        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["day_requests"], 0)
+
+    def test_a_burst_cannot_climb_the_ladder(self):
+        m = model(rpm=15, rpd=10, rpw=20)
+        for _ in range(10):
+            m.handle_429(T0)
+        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+
+    def test_only_a_rolled_window_lets_the_ladder_advance(self):
+        m = model(rpm=3, rpd=10)
+        m.handle_429(T0)
+        m.handle_429(T0 + 59)  # still the same minute window: one event
+        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+        m.handle_429(T0 + MINUTE)  # the window rolled
+        self.assertEqual(m.to_dict()["penalty_rung"], 2)
+
+    def test_the_penalty_never_lowers_a_counter(self):
+        # Restored state can hold more requests than the current config allows.
         m = model(rpm=3)
-        m.load_from_dict({"minute_requests": 99})
-        m.handle_429()
-        self.assertEqual(m.to_dict()["minute_requests"], 3)
+        m.load_from_dict({"minute_requests": 99, "minute_window_start": T0})
+        m.handle_429(T0)
+        self.assertEqual(m.to_dict()["minute_requests"], 99)
+
+    def test_handle_429_opens_the_window_it_anchors_to(self):
+        # It takes `now`, so a penalty on a never-used model is not dropped by the
+        # next timestamped call the way it used to be.
+        m = model(rpm=3)
+        m.handle_429(T0)
+        self.assertEqual(m.to_dict()["minute_window_start"], T0)
+        self.assertFalse(m.is_available(T0))
 
     def test_a_penalised_model_recovers_when_its_window_rolls(self):
-        m = model()
-        m.is_available(T0)
-        m.handle_429()
-        self.assertFalse(m.is_available(T0))
+        m = model(rpm=3)
+        m.handle_429(T0)
+        self.assertFalse(m.is_available(T0 + 59))
         self.assertTrue(m.is_available(T0 + MINUTE))
+
+    def test_a_shrunken_ladder_starts_over_instead_of_crashing(self):
+        # Restored state can name a rung the current config no longer has.
+        m = model(rpm=3, rpd=10, rpw=None)
+        m.load_from_dict({"penalty_rung": 3})
+        m.handle_429(T0)
+        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+
+    def test_a_model_the_provider_keeps_refusing_is_probed_rarely(self):
+        """The regression test for the log this was written for.
+
+        A model whose quota is gone answers 429 forever. Every request used to be
+        spent on it, because the ladder ran out of rungs and stopped penalising.
+        """
+        m = model(rpm=15, rpd=1500, rpw=None)
+        t, probes, requests = T0, 0, 0
+        for _ in range(8640):  # a request every 30s for three days
+            requests += 1
+            if m.is_available(t):
+                probes += 1
+                m.record_request(t)
+                m.refund_request()
+                m.handle_429(t)
+            t += 30
+        self.assertEqual(requests, 8640)
+        self.assertGreater(probes, 0)  # it must keep probing, or it can never recover
+        self.assertLess(probes, 20)  # but not spend every request on a dead model
 
 
 class TestRecordSuccess(unittest.TestCase):
-    def test_success_clears_the_streak(self):
+    def test_success_clears_the_penalty(self):
         m = model()
-        m.handle_429()
+        m.handle_429(T0)
         m.record_success()
-        self.assertEqual(m.to_dict()["consecutive_429s"], 0)
+        state = m.to_dict()
+        self.assertEqual(state["penalty_rung"], 0)
+        self.assertIsNone(state["penalty_window_start"])
 
     def test_success_does_not_unblock_a_penalised_model(self):
         # Only the clock returns capacity; a success merely forgets the escalation.
         m = model(rpm=3)
-        m.is_available(T0)
-        m.handle_429()
+        m.handle_429(T0)
         m.record_success()
         self.assertEqual(m.to_dict()["minute_requests"], 3)
         self.assertFalse(m.is_available(T0))
 
-    def test_the_ladder_restarts_from_the_minute_after_a_success(self):
+    def test_the_ladder_starts_over_after_a_success(self):
         m = model(rpm=3, rpd=10)
-        m.is_available(T0)
-        m.handle_429()
-        m.is_available(T0 + MINUTE)
+        escalate(m, 2)  # sitting on the day rung
         m.record_success()
-        m.handle_429()
+        m.handle_429(T0 + 2 * DAY)
         state = m.to_dict()
-        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["penalty_rung"], 1)
         self.assertEqual(state["minute_requests"], 3)
-        self.assertEqual(state["day_requests"], 0)
 
     def test_success_on_a_clean_model_is_a_no_op(self):
         m = model()
@@ -498,7 +554,8 @@ class TestPersistence(unittest.TestCase):
         "minute_window_start",
         "day_window_start",
         "week_window_start",
-        "consecutive_429s",
+        "penalty_rung",
+        "penalty_window_start",
     }
 
     def test_to_dict_has_exactly_the_persisted_keys(self):
@@ -508,11 +565,10 @@ class TestPersistence(unittest.TestCase):
         m = model()
         m.record_request(T0)
         m.record_tokens(T0, 42)
-        m.handle_429()
+        m.handle_429(T0)
         state = m.to_dict()
-        self.assertEqual(state["day_requests"], 1)
         self.assertEqual(state["week_tokens"], 42)
-        self.assertEqual(state["consecutive_429s"], 1)
+        self.assertEqual(state["penalty_rung"], 1)
         self.assertEqual(state["day_window_start"], T0)
 
     def test_state_survives_a_round_trip_through_json(self):
@@ -524,7 +580,7 @@ class TestPersistence(unittest.TestCase):
         m.record_tokens(T0, 100)
         m.record_request(T0 + DAY)
         m.record_tokens(T0 + DAY, 5)
-        m.handle_429()
+        m.handle_429(T0 + DAY)
 
         state = m.to_dict()
         self.assertNotEqual(state["day_requests"], state["week_requests"])
@@ -551,18 +607,25 @@ class TestPersistence(unittest.TestCase):
         # A state file written by an older build simply loses the fields it lacks.
         m = model()
         m.record_request(T0)
-        m.handle_429()
+        m.handle_429(T0)
         m.load_from_dict({})
         self.assertEqual(m.to_dict(), ModelConfig(name="x").to_dict())
 
     def test_a_partial_payload_only_overwrites_what_it_carries(self):
         m = model()
-        m.load_from_dict({"day_requests": 7, "consecutive_429s": 2})
+        m.load_from_dict({"day_requests": 7, "penalty_rung": 2})
         state = m.to_dict()
         self.assertEqual(state["day_requests"], 7)
-        self.assertEqual(state["consecutive_429s"], 2)
+        self.assertEqual(state["penalty_rung"], 2)
         self.assertEqual(state["minute_requests"], 0)
         self.assertIsNone(state["day_window_start"])
+
+    def test_a_state_file_from_before_the_ladder_still_loads(self):
+        # `consecutive_429s` is what the penalty level used to be called; operators
+        # have those files on disk and they must not reset on upgrade.
+        m = model()
+        m.load_from_dict({"consecutive_429s": 2})
+        self.assertEqual(m.to_dict()["penalty_rung"], 2)
 
     def test_unknown_keys_are_ignored(self):
         m = model()
@@ -611,7 +674,9 @@ class TestGetStatus(unittest.TestCase):
         )
 
     def test_absent_limits_render_as_infinity(self):
-        status = ModelConfig(name="m", rpw=None, tpm=None).get_status(T0)
+        status = ModelConfig(name="m", rpm=None, rpd=None, rpw=None, tpm=None).get_status(T0)
+        self.assertEqual(status["minute_req"], "0/∞")
+        self.assertEqual(status["day_req"], "0/∞")
         self.assertEqual(status["week_req"], "0/∞")
         self.assertEqual(status["minute_tokens"], "0/∞")
 
@@ -647,8 +712,7 @@ class TestGetStatus(unittest.TestCase):
 
     def test_a_penalised_model_reads_as_full(self):
         m = model(rpm=3)
-        m.is_available(T0)
-        m.handle_429()
+        m.handle_429(T0)
         status = m.get_status(T0)
         self.assertEqual(status["minute_req"], "3/3")
         self.assertFalse(status["available"])
@@ -674,7 +738,7 @@ class TestClientFlows(unittest.TestCase):
         state = m.to_dict()
         self.assertEqual(state["minute_requests"], 1)
         self.assertEqual(state["minute_tokens"], 220)
-        self.assertEqual(state["consecutive_429s"], 0)
+        self.assertEqual(state["penalty_rung"], 0)
 
     def test_a_failed_call_gives_the_reservation_back(self):
         m = model(rpm=3)
@@ -687,7 +751,7 @@ class TestClientFlows(unittest.TestCase):
         m = model(rpm=3)
         m.record_request(T0)
         m.refund_request()
-        m.handle_429()
+        m.handle_429(T0)
         self.assertFalse(m.is_available(T0))
 
     def test_the_next_model_takes_over_when_the_first_is_out(self):
@@ -697,7 +761,7 @@ class TestClientFlows(unittest.TestCase):
 
         chosen = next(mc for mc in chain if mc.is_available(T0))
         chosen.record_request(T0)
-        chosen.handle_429()
+        chosen.handle_429(T0)
 
         remaining = [mc for mc in chain if mc.is_available(T0)]
         self.assertEqual([mc.name for mc in remaining], ["cheap"])
@@ -705,8 +769,7 @@ class TestClientFlows(unittest.TestCase):
     def test_every_model_blocked_is_what_the_client_reports_as_exhausted(self):
         chain = [model(name="best", rpm=1), model(name="cheap", rpm=1)]
         for mc in chain:
-            mc.is_available(T0)
-            mc.handle_429()
+            mc.handle_429(T0)
         self.assertFalse(any(mc.is_available(T0) for mc in chain))
         self.assertTrue(all(mc.is_available(T0 + MINUTE) for mc in chain))
 
