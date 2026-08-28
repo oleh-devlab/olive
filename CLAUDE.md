@@ -47,6 +47,7 @@ Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run 
 | --- | :-: | :-: | :-: |
 | `test_inflation_formatter` | – | – | – |
 | `test_llm_client` | – | – | – |
+| `test_llm_limits_formatter` | – | – | – |
 | `test_llm_rate_limiter` | – | – | – |
 | `test_migrations` | – | – | – |
 | `test_phrases` | – | – | – |
@@ -113,6 +114,8 @@ Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a 
 ### LLM subsystem
 
 `modules/llm_client.py` wraps Google GenAI with a client pool keyed by role (`default`, `private` — separate API keys from `tokens.json`) and a rate limiter whose model list comes from `phrases.json` → `olive` → `models`, ordered best-to-cheapest. Persistent state lives in `llm_limits_state{role}.json` (CWD-relative, one file per role) and in the `llm_token_budgets` table — rows `default` and `private`, seeded by migration 2 and edited live with `/token_budget set`. `modules/schedule_agent.py` is an agentic loop over `ScheduleAgentTools` (capped at `MAX_ITERATIONS`, changes revertible for 15 minutes) using the `private` role.
+
+`modules/llm_limits_formatter.py` renders the pool's snapshot for `cogs/embeds/llm_limits.py` as a single monospace table — the same models are configured under every API key, so a heading and four lines each turns seven models across two keys into a screenful of zeros. A column stays out until it has a cap of its own or a reading that has come apart from the window below it (a fresh week has counted exactly what the day has), the models with nothing spent fold into one line, and when the whole thing still will not fit the embed it gives up the idle models, then columns from the right, then models from the bottom — counted, never silently. It is free of `disnake`, `settings` and phrases: the cog reads the labels out of `phrases.json` → `llm_limits_embed` → `labels` and hands them over, which is what keeps its suite in the top block above.
 
 ## Conventions
 

@@ -38,6 +38,9 @@ cogs_blacklist = ["olive", "embeds.battery"] # If you disable the models that us
 
 uptime_update_seconds = 30
 llm_limits_update_seconds = 15
+# Fold the models with nothing spent and nothing blocking them into one line of the
+# limits embed. Set to False to list every configured model on every tick.
+llm_limits_collapse_idle = True
 llm_context_update_seconds = 30
 
 # How many tokens of history each conversation keeps on disk, counted per
