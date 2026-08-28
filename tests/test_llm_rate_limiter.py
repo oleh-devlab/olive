@@ -445,6 +445,30 @@ class TestHandle429(unittest.TestCase):
         self.assertEqual(state["penalty_rung"], 1)
         self.assertEqual(state["day_requests"], 0)
 
+    def test_a_burst_cannot_refund_the_penalty_away(self):
+        # Each failing request refunds its reservation before reporting its 429. The
+        # first one fills the limit to the brim; the refunds that follow must not
+        # drain it back under the cap and hand the model straight out again.
+        m = model(rpm=15, rpd=10)
+        m.is_available(T0)
+        for _ in range(3):
+            m.record_request(T0)
+        for _ in range(3):
+            m.refund_request()
+            m.handle_429(T0)
+        self.assertEqual(m.to_dict()["minute_requests"], 15)
+        self.assertFalse(m.is_available(T0))
+
+    def test_the_burst_re_fill_never_lowers_a_counter(self):
+        # Reservations made before the penalty landed can push the counter past the
+        # cap. Topping the penalty back up must not forget them.
+        m = model(rpm=15)
+        m.handle_429(T0)
+        for _ in range(5):
+            m.record_request(T0)
+        m.handle_429(T0)
+        self.assertEqual(m.to_dict()["minute_requests"], 20)
+
     def test_a_burst_cannot_climb_the_ladder(self):
         m = model(rpm=15, rpd=10, rpw=20)
         for _ in range(10):

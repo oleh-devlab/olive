@@ -150,9 +150,13 @@ class ModelConfig:
             self._penalty_rung = 0  # the ladder shrank under us: start over
 
         if self._penalty_rung:
-            _, window, _ = rungs[self._penalty_rung - 1]
+            counter, window, cap = rungs[self._penalty_rung - 1]
             if self._penalty_window_start == getattr(self, window):
-                return  # still the window this penalty was applied in
+                # Still the window this penalty was applied in, so the rest of a burst
+                # is the same event and must not climb a rung. It must not drain this
+                # one either: every failure refunds its reservation on the way here.
+                setattr(self, counter, max(getattr(self, counter), cap))
+                return
 
         self._penalty_rung = self._penalty_rung % len(rungs) + 1
         counter, window, cap = rungs[self._penalty_rung - 1]
