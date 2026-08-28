@@ -125,10 +125,8 @@ class LLMClient:
             models_to_use = list(reversed(self.models)) if cheap_first else self.models
 
         for model in models_to_use:
-            # Read the clock per attempt rather than once per call: an earlier model's
-            # request can outlast a rate-limit window, and a timestamp cached before it
-            # then looks to the limiter like the clock jumped backwards, which resets
-            # the very counters it is keeping.
+            # Per attempt, not once per call: an earlier model's request can outlast a
+            # window, and the limiter cannot tell a stale timestamp from a clock going back.
             now = time.time()
             if not model.is_available(now, anticipated_tokens=anticipated_tokens):
                 continue
@@ -226,7 +224,7 @@ class LLMClient:
                     model.handle_429(time.time())
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning(
-                        "Attempting fallback to next model due to 429 (penalty on: %s)", model._penalty_limit
+                        "Attempting fallback to next model due to 429 (penalty on: %s)", model.penalised_limit
                     )
                     continue
                 elif isinstance(code, int) and code >= 500:

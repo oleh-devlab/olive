@@ -74,7 +74,7 @@ class TestDefaults(unittest.TestCase):
         text = repr(m)
         self.assertIn("gemini-test", text)
         self.assertIn("rpm=3", text)
-        for hidden in ("_minute_requests", "_day_requests", "_penalty_rung", "_minute_window_start"):
+        for hidden in ("_windows", "_penalty", "requests=", "window_start"):
             self.assertNotIn(hidden, text)
 
 
@@ -803,6 +803,24 @@ class TestGetStatus(unittest.TestCase):
         self.assertEqual(status["minute_tokens"], "0/1000")
         self.assertEqual(status["day_req"], "1/10")
         self.assertEqual(status["day_tokens"], 250)
+
+    def test_the_snapshot_keeps_day_and_week_requests_apart(self):
+        # They only differ once the day has rolled under a still-open week, which is
+        # the one arrangement that tells the two counters apart at all.
+        m = model(rpm=10_000, rpd=10_000, rpw=10_000)
+        m.record_request(T0)
+        m.record_request(T0 + DAY)
+        status = m.get_status(T0 + DAY)
+        self.assertEqual(status["day_req"], "1/10000")
+        self.assertEqual(status["week_req"], "2/10000")
+
+    def test_penalised_limit_names_the_limit_the_penalty_filled(self):
+        m = model(rpm=3, rpd=10)
+        self.assertIsNone(m.penalised_limit)
+        escalate(m, 2)
+        self.assertEqual(m.penalised_limit, "day")
+        m.record_success()
+        self.assertIsNone(m.penalised_limit)
 
     def test_the_snapshot_keeps_day_and_week_tokens_apart(self):
         m = model(tpm=None)
