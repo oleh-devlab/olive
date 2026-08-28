@@ -315,14 +315,14 @@ class TestRefund(unittest.TestCase):
     def test_refund_undoes_a_reservation(self):
         m = model()
         m.record_request(T0)
-        m.refund_request()
+        m.refund_request(T0)
         state = m.to_dict()
         self.assertEqual((state["minute_requests"], state["day_requests"], state["week_requests"]), (0, 0, 0))
 
     def test_refund_never_goes_negative(self):
         m = model()
-        m.refund_request()
-        m.refund_request()
+        m.refund_request(T0)
+        m.refund_request(T0)
         state = m.to_dict()
         self.assertEqual((state["minute_requests"], state["day_requests"], state["week_requests"]), (0, 0, 0))
 
@@ -332,19 +332,47 @@ class TestRefund(unittest.TestCase):
         m = model(rpm=1000, rpd=1000, rpw=1000)
         m.record_request(T0)
         m.record_request(T0 + MINUTE)  # minute := 1, day/week := 2
-        m.refund_request()
-        m.refund_request()
+        m.refund_request(T0 + MINUTE)
+        m.refund_request(T0 + MINUTE)
         state = m.to_dict()
         self.assertEqual(state["minute_requests"], 0)
         self.assertEqual(state["day_requests"], 0)
         self.assertEqual(state["week_requests"], 0)
+
+    def test_a_refund_skips_a_window_that_rolled_since_the_request(self):
+        # The call outlived its minute window. That window never counted the request,
+        # so refunding there would hand back a slot it never took — while the day and
+        # week windows, still open, do owe it.
+        m = model(rpm=1000, rpd=1000, rpw=1000)
+        m.record_request(T0)
+        m.record_request(T0 + MINUTE)  # rolls the minute window, day and week stay
+        m.refund_request(T0)
+        state = m.to_dict()
+        self.assertEqual(state["minute_requests"], 1)
+        self.assertEqual(state["day_requests"], 1)
+        self.assertEqual(state["week_requests"], 1)
+
+    def test_a_refund_inside_its_own_windows_gives_everything_back(self):
+        m = model(rpm=1000, rpd=1000, rpw=1000)
+        m.record_request(T0)
+        m.refund_request(T0)
+        state = m.to_dict()
+        self.assertEqual((state["minute_requests"], state["day_requests"], state["week_requests"]), (0, 0, 0))
+
+    def test_a_refund_does_not_read_its_argument_as_the_current_time(self):
+        # It is handed the moment the request was recorded, which is in the past.
+        # Treating that as `now` would look like a backwards clock jump.
+        m = model()
+        m.record_request(T0)
+        m.refund_request(T0 - WEEK)
+        self.assertEqual(m.to_dict()["minute_window_start"], T0)
 
     def test_refund_does_not_roll_windows(self):
         # It takes no `now` at all, so a refund can never expire a window as a side effect.
         m = model()
         m.record_request(T0)
         before = m.to_dict()["minute_window_start"]
-        m.refund_request()
+        m.refund_request(T0)
         self.assertEqual(m.to_dict()["minute_window_start"], before)
 
     def test_refund_leaves_tokens_and_penalties_alone(self):
@@ -352,10 +380,10 @@ class TestRefund(unittest.TestCase):
         m.record_request(T0)
         m.record_tokens(T0, 300)
         m.handle_429(T0)
-        m.refund_request()
+        m.refund_request(T0)
         state = m.to_dict()
         self.assertEqual(state["minute_tokens"], 300)
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "minute")
 
 
 class TestHandle429(unittest.TestCase):
@@ -371,7 +399,7 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=3, rpd=10, rpw=20)
         m.handle_429(T0)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "minute")
         self.assertEqual(state["minute_requests"], 3)
         self.assertEqual(state["day_requests"], 0)
         self.assertFalse(m.is_available(T0))
@@ -380,14 +408,14 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=3, rpd=10, rpw=20)
         escalate(m, 2)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 2)
+        self.assertEqual(state["penalty_limit"], "day")
         self.assertEqual(state["day_requests"], 10)
 
     def test_the_third_429_burns_the_week(self):
         m = model(rpm=3, rpd=10, rpw=20)
         escalate(m, 3)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 3)
+        self.assertEqual(state["penalty_limit"], "week")
         self.assertEqual(state["week_requests"], 20)
 
     def test_the_fourth_429_starts_over_at_the_shortest_limit(self):
@@ -395,7 +423,7 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=3, rpd=10, rpw=20)
         t = escalate(m, 4)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "minute")
         self.assertEqual(state["minute_requests"], 3)
         self.assertFalse(m.is_available(t))
 
@@ -404,7 +432,7 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=3, rpd=10, rpw=None)
         t = escalate(m, 3)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "minute")
         self.assertEqual(state["minute_requests"], 3)
         self.assertEqual(state["week_requests"], 0)
         self.assertFalse(m.is_available(t))
@@ -413,7 +441,7 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=None, rpd=10, rpw=20)
         m.handle_429(T0)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "day")
         self.assertEqual(state["day_requests"], 10)
         self.assertEqual(state["minute_requests"], 0)
 
@@ -421,14 +449,14 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=None, rpd=None, rpw=20)
         t = escalate(m, 3)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "week")
         self.assertEqual(state["week_requests"], 20)
         self.assertFalse(m.is_available(t))
 
     def test_a_model_with_no_limits_at_all_cannot_be_penalised(self):
         m = model(rpm=None, rpd=None, rpw=None, tpm=None)
         m.handle_429(T0)
-        self.assertEqual(m.to_dict()["penalty_rung"], 0)
+        self.assertIsNone(m.to_dict()["penalty_limit"])
         self.assertTrue(m.is_available(T0))
 
     def test_a_burst_of_concurrent_429s_costs_one_rung(self):
@@ -439,10 +467,10 @@ class TestHandle429(unittest.TestCase):
         for _ in range(3):
             m.record_request(T0)
         for _ in range(3):
-            m.refund_request()
+            m.refund_request(T0)
             m.handle_429(T0)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "minute")
         self.assertEqual(state["day_requests"], 0)
 
     def test_a_burst_cannot_refund_the_penalty_away(self):
@@ -454,7 +482,7 @@ class TestHandle429(unittest.TestCase):
         for _ in range(3):
             m.record_request(T0)
         for _ in range(3):
-            m.refund_request()
+            m.refund_request(T0)
             m.handle_429(T0)
         self.assertEqual(m.to_dict()["minute_requests"], 15)
         self.assertFalse(m.is_available(T0))
@@ -473,15 +501,15 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=15, rpd=10, rpw=20)
         for _ in range(10):
             m.handle_429(T0)
-        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+        self.assertEqual(m.to_dict()["penalty_limit"], "minute")
 
     def test_only_a_rolled_window_lets_the_ladder_advance(self):
         m = model(rpm=3, rpd=10)
         m.handle_429(T0)
         m.handle_429(T0 + 59)  # still the same minute window: one event
-        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+        self.assertEqual(m.to_dict()["penalty_limit"], "minute")
         m.handle_429(T0 + MINUTE)  # the window rolled
-        self.assertEqual(m.to_dict()["penalty_rung"], 2)
+        self.assertEqual(m.to_dict()["penalty_limit"], "day")
 
     def test_a_penalty_holds_for_its_own_window_not_the_shortest_one(self):
         # A request still in flight when the day rung was applied can fail minutes
@@ -490,7 +518,7 @@ class TestHandle429(unittest.TestCase):
         m = model(rpm=3, rpd=10, rpw=20)
         escalate(m, 2)  # on the day rung, anchored to the day window
         m.handle_429(T0 + 5 * MINUTE)
-        self.assertEqual(m.to_dict()["penalty_rung"], 2)
+        self.assertEqual(m.to_dict()["penalty_limit"], "day")
 
     def test_a_penalty_is_anchored_to_its_window_not_to_the_moment_it_lands(self):
         # The 429 arrives partway into the window. Everything until that window
@@ -500,7 +528,7 @@ class TestHandle429(unittest.TestCase):
         m.handle_429(T0 + 30)
         self.assertEqual(m.to_dict()["penalty_window_start"], T0)
         m.handle_429(T0 + 40)
-        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+        self.assertEqual(m.to_dict()["penalty_limit"], "minute")
 
     def test_the_penalty_never_lowers_a_counter(self):
         # Restored state can hold more requests than the current config allows.
@@ -523,12 +551,23 @@ class TestHandle429(unittest.TestCase):
         self.assertFalse(m.is_available(T0 + 59))
         self.assertTrue(m.is_available(T0 + MINUTE))
 
-    def test_a_shrunken_ladder_starts_over_instead_of_crashing(self):
-        # Restored state can name a rung the current config no longer has.
+    def test_a_penalty_on_a_limit_that_is_gone_starts_over(self):
+        # Restored state can name a limit the current config no longer has.
         m = model(rpm=3, rpd=10, rpw=None)
-        m.load_from_dict({"penalty_rung": 3})
+        m.load_from_dict({"penalty_limit": "week"})
         m.handle_429(T0)
-        self.assertEqual(m.to_dict()["penalty_rung"], 1)
+        self.assertEqual(m.to_dict()["penalty_limit"], "minute")
+
+    def test_a_penalty_keeps_its_place_when_the_ladder_composition_changes(self):
+        # An operator adds a minute limit between restarts. The restored penalty
+        # names the day, so the next 429 goes to the week — the rung it was on does
+        # not silently become a different limit because the ladder grew beneath it.
+        m = model(rpm=3, rpd=10, rpw=20)
+        m.load_from_dict({"penalty_limit": "day", "penalty_window_start": T0 - DAY})
+        m.handle_429(T0)
+        state = m.to_dict()
+        self.assertEqual(state["penalty_limit"], "week")
+        self.assertEqual(state["week_requests"], 20)
 
     def test_a_model_the_provider_keeps_refusing_is_probed_rarely(self):
         """The regression test for the log this was written for.
@@ -543,7 +582,7 @@ class TestHandle429(unittest.TestCase):
             if m.is_available(t):
                 probes += 1
                 m.record_request(t)
-                m.refund_request()
+                m.refund_request(T0)
                 m.handle_429(t)
             t += 30
         self.assertEqual(requests, 8640)
@@ -557,7 +596,7 @@ class TestRecordSuccess(unittest.TestCase):
         m.handle_429(T0)
         m.record_success()
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 0)
+        self.assertIsNone(state["penalty_limit"])
         self.assertIsNone(state["penalty_window_start"])
 
     def test_success_does_not_unblock_a_penalised_model(self):
@@ -574,7 +613,7 @@ class TestRecordSuccess(unittest.TestCase):
         m.record_success()
         m.handle_429(T0 + 2 * DAY)
         state = m.to_dict()
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "minute")
         self.assertEqual(state["minute_requests"], 3)
 
     def test_success_on_a_clean_model_is_a_no_op(self):
@@ -597,7 +636,7 @@ class TestPersistence(unittest.TestCase):
         "minute_window_start",
         "day_window_start",
         "week_window_start",
-        "penalty_rung",
+        "penalty_limit",
         "penalty_window_start",
     }
 
@@ -611,7 +650,7 @@ class TestPersistence(unittest.TestCase):
         m.handle_429(T0)
         state = m.to_dict()
         self.assertEqual(state["week_tokens"], 42)
-        self.assertEqual(state["penalty_rung"], 1)
+        self.assertEqual(state["penalty_limit"], "minute")
         self.assertEqual(state["day_window_start"], T0)
 
     def test_state_survives_a_round_trip_through_json(self):
@@ -647,7 +686,7 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual(restored.to_dict()["penalty_window_start"], T0)
 
         restored.handle_429(T0 + 30)
-        self.assertEqual(restored.to_dict()["penalty_rung"], 1)
+        self.assertEqual(restored.to_dict()["penalty_limit"], "minute")
 
     def test_a_restored_model_keeps_its_remaining_window(self):
         m = model(rpm=2)
@@ -669,10 +708,10 @@ class TestPersistence(unittest.TestCase):
 
     def test_a_partial_payload_only_overwrites_what_it_carries(self):
         m = model()
-        m.load_from_dict({"day_requests": 7, "penalty_rung": 2})
+        m.load_from_dict({"day_requests": 7, "penalty_limit": "day"})
         state = m.to_dict()
         self.assertEqual(state["day_requests"], 7)
-        self.assertEqual(state["penalty_rung"], 2)
+        self.assertEqual(state["penalty_limit"], "day")
         self.assertEqual(state["minute_requests"], 0)
         self.assertIsNone(state["day_window_start"])
 
@@ -681,7 +720,14 @@ class TestPersistence(unittest.TestCase):
         # have those files on disk and they must not reset on upgrade.
         m = model()
         m.load_from_dict({"consecutive_429s": 2})
-        self.assertEqual(m.to_dict()["penalty_rung"], 2)
+        self.assertEqual(m.to_dict()["penalty_limit"], "day")
+
+    def test_a_legacy_level_past_the_end_loads_as_the_longest_limit(self):
+        # The old counter could climb past its own ladder. Anything above the top of
+        # it meant the weekly rung, and must not read back as "no penalty at all".
+        m = model()
+        m.load_from_dict({"consecutive_429s": 5})
+        self.assertEqual(m.to_dict()["penalty_limit"], "week")
 
     def test_unknown_keys_are_ignored(self):
         m = model()
@@ -794,19 +840,19 @@ class TestClientFlows(unittest.TestCase):
         state = m.to_dict()
         self.assertEqual(state["minute_requests"], 1)
         self.assertEqual(state["minute_tokens"], 220)
-        self.assertEqual(state["penalty_rung"], 0)
+        self.assertIsNone(state["penalty_limit"])
 
     def test_a_failed_call_gives_the_reservation_back(self):
         m = model(rpm=3)
         m.record_request(T0)
-        m.refund_request()  # any exception path in the client
+        m.refund_request(T0)  # any exception path in the client
         self.assertEqual(m.to_dict()["minute_requests"], 0)
         self.assertTrue(m.is_available(T0))
 
     def test_a_429_refunds_and_then_blocks_the_model(self):
         m = model(rpm=3)
         m.record_request(T0)
-        m.refund_request()
+        m.refund_request(T0)
         m.handle_429(T0)
         self.assertFalse(m.is_available(T0))
 

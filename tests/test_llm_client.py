@@ -232,9 +232,9 @@ class TestClockDiscipline(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(llm_client, "time", clock):
             await client.get_interaction([{"type": "text", "text": "hi"}], anticipated_tokens=10)
 
-        self.assertEqual(best.to_dict()["penalty_rung"], 1)
+        self.assertEqual(best.to_dict()["penalty_limit"], "minute")
         self.assertFalse(best.is_available(clock.time()))
-        self.assertEqual(cheap.to_dict()["penalty_rung"], 0)
+        self.assertIsNone(cheap.to_dict()["penalty_limit"])
 
     async def test_the_refused_model_is_skipped_on_the_next_call(self):
         clock = FakeClock(T0)

@@ -213,7 +213,7 @@ class LLMClient:
                 return response
 
             except Exception as e:
-                model.refund_request()
+                model.refund_request(now)
                 code = getattr(e, "code", None)
 
                 # Sometimes the code is only in the string representation
@@ -226,7 +226,7 @@ class LLMClient:
                     model.handle_429(time.time())
                     attempted_errors.append(f"{model.name} (APIError {code})")
                     logger.warning(
-                        "Attempting fallback to next model due to 429 (penalty rung: %d)", model._penalty_rung
+                        "Attempting fallback to next model due to 429 (penalty on: %s)", model._penalty_limit
                     )
                     continue
                 elif isinstance(code, int) and code >= 500:

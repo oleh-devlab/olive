@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 
+# Penalty levels written by builds that had a fixed minute/day/week ladder.
+_LEGACY_PENALTY_LEVELS = {1: "minute", 2: "day", 3: "week"}
+
 
 class RateLimitExceeded(Exception):
     """Raised when all models have exhausted their rate limits."""
@@ -28,7 +31,7 @@ class ModelConfig:
     _minute_window_start: float | None = field(default=None, repr=False)
     _day_window_start: float | None = field(default=None, repr=False)
     _week_window_start: float | None = field(default=None, repr=False)
-    _penalty_rung: int = field(default=0, repr=False)  # 0 = unpenalised, else the 1-based rung
+    _penalty_limit: str | None = field(default=None, repr=False)  # which limit the penalty filled
     _penalty_window_start: float | None = field(default=None, repr=False)
 
     def _reset_windows_if_needed(self, now: float):
@@ -67,7 +70,7 @@ class ModelConfig:
             "minute_window_start": self._minute_window_start,
             "day_window_start": self._day_window_start,
             "week_window_start": self._week_window_start,
-            "penalty_rung": self._penalty_rung,
+            "penalty_limit": self._penalty_limit,
             "penalty_window_start": self._penalty_window_start,
         }
 
@@ -81,9 +84,11 @@ class ModelConfig:
         self._minute_window_start = data.get("minute_window_start")
         self._day_window_start = data.get("day_window_start")
         self._week_window_start = data.get("week_window_start")
-        # "consecutive_429s" is what the penalty level was called before the ladder
-        # was built from the configured limits; existing state files still carry it.
-        self._penalty_rung = data.get("penalty_rung", data.get("consecutive_429s", 0))
+        # State files predating the ladder carry "consecutive_429s": a level on the
+        # fixed minute/day/week ladder of the time, which maps straight onto a limit.
+        self._penalty_limit = data.get("penalty_limit")
+        if self._penalty_limit is None and data.get("consecutive_429s"):
+            self._penalty_limit = _LEGACY_PENALTY_LEVELS.get(min(data["consecutive_429s"], 3))
         self._penalty_window_start = data.get("penalty_window_start")
 
     def is_available(self, now: float, anticipated_tokens: int = 0) -> bool:
@@ -110,29 +115,41 @@ class ModelConfig:
         self._week_requests += 1
 
     def record_tokens(self, now: float, tokens: int):
-        """Add tokens used by a request to the counters."""
+        """Add tokens used by a request to the counters.
+
+        Only the minute counter gates anything (`tpm`); the day and week totals are
+        carried for the diagnostics embed, and there is deliberately no `tpd`/`tpw`.
+        """
         self._reset_windows_if_needed(now)
         self._minute_tokens += tokens
         self._day_tokens += tokens
         self._week_tokens += tokens
 
-    def refund_request(self):
-        """Refund a request if the API call failed."""
-        if self._minute_requests > 0:
-            self._minute_requests -= 1
-        if self._day_requests > 0:
-            self._day_requests -= 1
-        if self._week_requests > 0:
-            self._week_requests -= 1
+    def refund_request(self, recorded_at: float):
+        """Give back a reservation that `record_request(recorded_at)` made.
 
-    def _ladder(self) -> list[tuple[str, str, int]]:
+        `recorded_at` is when the request was counted, not the current time: a window
+        that has rolled since then never counted it, and refunding there would hand
+        back a slot the request never took.
+        """
+        for counter, window_start in (
+            ("_minute_requests", self._minute_window_start),
+            ("_day_requests", self._day_window_start),
+            ("_week_requests", self._week_window_start),
+        ):
+            if window_start is not None and window_start > recorded_at:
+                continue
+            if getattr(self, counter) > 0:
+                setattr(self, counter, getattr(self, counter) - 1)
+
+    def _ladder(self) -> list[tuple[str, str, str, int]]:
         """The penalty rungs: one per limit that exists, shortest window first."""
         return [
-            (counter, window, cap)
-            for counter, window, cap in (
-                ("_minute_requests", "_minute_window_start", self.rpm),
-                ("_day_requests", "_day_window_start", self.rpd),
-                ("_week_requests", "_week_window_start", self.rpw),
+            (limit, counter, window, cap)
+            for limit, counter, window, cap in (
+                ("minute", "_minute_requests", "_minute_window_start", self.rpm),
+                ("day", "_day_requests", "_day_window_start", self.rpd),
+                ("week", "_week_requests", "_week_window_start", self.rpw),
             )
             if cap is not None
         ]
@@ -151,11 +168,14 @@ class ModelConfig:
             return  # nothing is limited, so there is nothing to fill
 
         self._reset_windows_if_needed(now)
-        if self._penalty_rung > len(rungs):
-            self._penalty_rung = 0  # the ladder shrank under us: start over
+        limits = [limit for limit, _, _, _ in rungs]
+        # The penalty names its limit rather than a position, so a config edit that
+        # adds or drops a limit cannot silently turn it into a different rung. A limit
+        # that is gone from the ladder leaves us at the start of it.
+        standing = limits.index(self._penalty_limit) if self._penalty_limit in limits else None
 
-        if self._penalty_rung:
-            counter, window, cap = rungs[self._penalty_rung - 1]
+        if standing is not None:
+            _, counter, window, cap = rungs[standing]
             if self._penalty_window_start == getattr(self, window):
                 # Still the window this penalty was applied in, so the rest of a burst
                 # is the same event and must not climb a rung. It must not drain this
@@ -163,14 +183,15 @@ class ModelConfig:
                 setattr(self, counter, max(getattr(self, counter), cap))
                 return
 
-        self._penalty_rung = self._penalty_rung % len(rungs) + 1
-        counter, window, cap = rungs[self._penalty_rung - 1]
+        nxt = 0 if standing is None else (standing + 1) % len(rungs)
+        limit, counter, window, cap = rungs[nxt]
+        self._penalty_limit = limit
         setattr(self, counter, max(getattr(self, counter), cap))
         self._penalty_window_start = getattr(self, window)
 
     def record_success(self):
         """Clear the penalty on success: the model has capacity after all."""
-        self._penalty_rung = 0
+        self._penalty_limit = None
         self._penalty_window_start = None
 
     def get_status(self, now: float) -> dict:
