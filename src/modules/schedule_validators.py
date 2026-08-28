@@ -4,8 +4,28 @@ import settings
 
 from core.time_utils import tz
 from modules.schedule_exceptions import ScheduleValidationError
-from modules.schedule_models import Routine, Task, TimeBlock
+from modules.schedule_models import (
+    REPEAT_DAILY,
+    REPEAT_ONCE,
+    REPEAT_WEEKLY,
+    TIMEBLOCK_REPEATS,
+    Routine,
+    Task,
+    TimeBlock,
+)
 from modules.schedule_provider import ScheduleProvider
+
+
+def validate_weekdays(weekdays: list[int] | None, what: str) -> list[int]:
+    """The days a weekly item recurs on. Weekly means at least one, Monday is 0."""
+    if not weekdays or not isinstance(weekdays, list):
+        raise ScheduleValidationError(f"Weekly {what} require a list of weekdays (0-6).")
+
+    for wd in weekdays:
+        if not isinstance(wd, int) or wd < 0 or wd > 6:
+            raise ScheduleValidationError("Weekdays must be integers from 0 (Monday) to 6 (Sunday).")
+
+    return weekdays
 
 
 def clean_text(text: str | None) -> str:
@@ -117,7 +137,23 @@ def validate_task_creation_data(
     )
 
 
-def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, daily: bool, name: str = "") -> TimeBlock:
+def validate_timeblock_creation_data(
+    start_time_str: str,
+    end_time_str: str,
+    repeat: str = REPEAT_ONCE,
+    name: str = "",
+    weekdays: list[int] | None = None,
+) -> TimeBlock:
+    # Checked before the parsing below, whose except turns everything it catches
+    # into "invalid time format" -- which a bad weekday is not.
+    if repeat not in TIMEBLOCK_REPEATS:
+        raise ScheduleValidationError(f"Repeat must be one of {', '.join(TIMEBLOCK_REPEATS)}.")
+
+    if repeat == REPEAT_WEEKLY:
+        weekdays = validate_weekdays(weekdays, "time blocks")
+    elif weekdays:
+        raise ScheduleValidationError(f"Weekdays only apply to weekly time blocks, not '{repeat}' ones.")
+
     try:
         now = datetime.datetime.now(tz)
 
@@ -139,7 +175,13 @@ def validate_timeblock_creation_data(start_time_str: str, end_time_str: str, dai
             else:
                 raise ValueError("End time must be after start time.")
 
-        return TimeBlock(start=start_dt, end=end_dt, daily=daily, name=name)
+        return TimeBlock(
+            start=start_dt,
+            end=end_dt,
+            daily=(repeat == REPEAT_DAILY),
+            name=name,
+            weekdays=weekdays,
+        )
     except Exception as e:
         if isinstance(e, ValueError) and str(e) == "End time must be after start time.":
             raise ScheduleValidationError(str(e))
@@ -247,11 +289,7 @@ def validate_routine_creation_data(
         parsed_deadline = parse_time(deadline_time_str)
 
     if repeat == "weekly":
-        if not weekdays or not isinstance(weekdays, list) or len(weekdays) == 0:
-            raise ScheduleValidationError("Weekly routines require a list of weekdays (0-6).")
-        for wd in weekdays:
-            if not isinstance(wd, int) or wd < 0 or wd > 6:
-                raise ScheduleValidationError("Weekdays must be integers from 0 (Monday) to 6 (Sunday).")
+        validate_weekdays(weekdays, "routines")
 
     return Routine(
         name=clean_text(name),
@@ -307,11 +345,7 @@ def validate_routine_update_data(
 
     if weekdays is not None:
         if repeat == "weekly" or updates.get("repeat") == "weekly":
-            if not isinstance(weekdays, list) or len(weekdays) == 0:
-                raise ScheduleValidationError("Weekly routines require a list of weekdays (0-6).")
-            for wd in weekdays:
-                if not isinstance(wd, int) or wd < 0 or wd > 6:
-                    raise ScheduleValidationError("Weekdays must be integers from 0 (Monday) to 6 (Sunday).")
+            validate_weekdays(weekdays, "routines")
         updates["weekdays"] = weekdays
 
     if priority is not None:

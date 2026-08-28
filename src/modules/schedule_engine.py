@@ -56,6 +56,11 @@ def _load_scheduler(client_ID: int, provider: ScheduleProvider, planning_days: i
     if not tasks and not routines:
         return None
 
+    # TODO: expose the solver's `max_horizon_days` as a per-user setting next to
+    # `planning_days` and the rest in `ScheduleProvider.get_settings()`. The
+    # solver now grows its horizon on demand and stops at this ceiling (365 days
+    # by default), so a user with a dense calendar can silently be planned a year
+    # out and hit the packer timeout instead of getting a shorter schedule.
     scheduler = Scheduler(
         min_horizon_days=planning_days,
         priority_threshold=provider.get_priority_threshold(client_ID),

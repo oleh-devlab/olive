@@ -125,7 +125,13 @@ def format_timeblock_list(blocks, style: Style = PLAIN) -> str:
         try:
             start = blk.start.strftime("%H:%M") if hasattr(blk.start, "strftime") else "???"
             end = blk.end.strftime("%H:%M") if hasattr(blk.end, "strftime") else "???"
-            repeat = "Daily" if getattr(blk, "daily", False) else "One-time"
+            weekdays = getattr(blk, "weekdays", None)
+            if weekdays:
+                repeat = f"Weekly on {weekdays}"
+            elif getattr(blk, "daily", False):
+                repeat = "Daily"
+            else:
+                repeat = "One-time"
             name = f" {style.b(blk.name)}" if getattr(blk, "name", None) else ""
             lines.append(f"{block_id}{name} {start} - {end} ({repeat})")
         except Exception:

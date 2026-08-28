@@ -51,6 +51,7 @@ class FakeBlock:
     start: datetime.time = datetime.time(13, 0)
     end: datetime.time = datetime.time(14, 0)
     daily: bool = True
+    weekdays: list | None = None
 
 
 @dataclass
@@ -173,6 +174,10 @@ class TestTimeBlockList(unittest.TestCase):
 
     def test_a_one_time_block_says_so(self):
         self.assertIn("(One-time)", format_timeblock_list([FakeBlock(daily=False)], PLAIN))
+
+    def test_a_weekly_block_names_its_days(self):
+        block = FakeBlock(daily=False, weekdays=[0, 2, 4])
+        self.assertIn("(Weekly on [0, 2, 4])", format_timeblock_list([block], PLAIN))
 
     def test_an_unnamed_block_is_listed_by_its_hours_alone(self):
         self.assertEqual(format_timeblock_list([FakeBlock(name=None)], PLAIN), "[ID: 7] 13:00 - 14:00 (Daily)")
