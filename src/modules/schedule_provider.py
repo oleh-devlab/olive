@@ -5,7 +5,16 @@ from pathlib import Path
 import settings
 
 from core.personal_channels import PersonalChannelRegistry
-from modules.schedule_models import CompletedTask, Routine, Task, TimeBlock
+from modules.schedule_models import (
+    REPEAT_DAILY,
+    REPEAT_ONCE,
+    REPEAT_WEEKLY,
+    CompletedTask,
+    Routine,
+    Task,
+    TimeBlock,
+    block_repeat,
+)
 
 
 def get_data_dir() -> Path:
@@ -130,13 +139,21 @@ def _dict_to_completed_task(d: dict) -> CompletedTask:
 def _timeblock_to_dict(block: TimeBlock) -> dict:
     start_val = _serialize_datetime(block.start) if isinstance(block.start, datetime.datetime) else block.start
     end_val = _serialize_datetime(block.end) if isinstance(block.end, datetime.datetime) else block.end
-    return {
+    repeat = block_repeat(block)
+    d = {
         "id": block.id,
         "start": start_val,
         "end": end_val,
-        "daily": block.daily,
+        "repeat": repeat,
         "name": getattr(block, "name", ""),
     }
+
+    # Written only where it means something, so a file never states a weekday
+    # for a block that does not recur on one.
+    if repeat == REPEAT_WEEKLY:
+        d["weekdays"] = list(block.weekdays)
+
+    return d
 
 
 def _dict_to_timeblock(d: dict) -> TimeBlock:
@@ -146,12 +163,22 @@ def _dict_to_timeblock(d: dict) -> TimeBlock:
     end = d.get("end")
     if isinstance(end, str):
         end = _deserialize_datetime(end)
+
+    repeat = d.get("repeat")
+    if repeat is None:
+        # A file written before the `repeat` grammar states a `daily` bool
+        # instead. Read rather than defaulted, because defaulting would turn
+        # every one-time block in an un-migrated file into a daily one --
+        # src/scripts/migrate_timeblock_repeat.py rewrites those in place.
+        repeat = REPEAT_DAILY if d.get("daily", True) else REPEAT_ONCE
+
     return TimeBlock(
         id=d.get("id"),
         start=start,
         end=end,
-        daily=d.get("daily", True),
+        daily=(repeat == REPEAT_DAILY),
         name=d.get("name", ""),
+        weekdays=d.get("weekdays") if repeat == REPEAT_WEEKLY else None,
     )
 
 

@@ -8,6 +8,7 @@ from core import cache, utils
 from core.personal_channels import ChannelSetupError, create_channel_pair
 from modules import schd_item_formatters
 from modules.schedule_exceptions import ScheduleValidationError
+from modules.schedule_models import REPEAT_ONCE, REPEAT_WEEKLY, TIMEBLOCK_REPEATS
 from modules.schedule_provider import ScheduleProvider
 from modules.schedule_validators import (
     validate_routine_creation_data,
@@ -242,7 +243,14 @@ class AutoSchedule(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         start_time: str = commands.Param(description=phrases_cmd.get("param_start_time", "Start time (HH:MM)")),
         end_time: str = commands.Param(description=phrases_cmd.get("param_end_time", "End time (HH:MM)")),
-        daily: bool = commands.Param(default=False, description=phrases_cmd.get("param_daily", "Repeat daily?")),
+        repeat: str = commands.Param(
+            default=REPEAT_ONCE,
+            choices=list(TIMEBLOCK_REPEATS),
+            description=phrases_cmd.get("param_repeat_block", "Repeat (once/daily/weekly)"),
+        ),
+        weekdays: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_weekdays", "Weekdays (0=Mon..6=Sun, e.g. 0,2,4)")
+        ),
         name: str = commands.Param(default="", description=phrases_cmd.get("param_timeblock_name", "Name")),
     ):
         await inter.response.defer(ephemeral=True)
@@ -254,7 +262,14 @@ class AutoSchedule(commands.Cog):
                     f"You have reached the maximum limit of {max_blocks} timeblocks."
                 )
 
-            block = validate_timeblock_creation_data(start_time, end_time, daily, name)
+            wd_list = None
+            if weekdays:
+                # Naming days is what makes a block weekly, the same way it does
+                # for a routine above -- the choice need not be stated twice.
+                repeat = REPEAT_WEEKLY
+                wd_list = [int(x.strip()) for x in weekdays.split(",") if x.strip().isdigit()]
+
+            block = validate_timeblock_creation_data(start_time, end_time, repeat, name, wd_list)
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
         except Exception as e:

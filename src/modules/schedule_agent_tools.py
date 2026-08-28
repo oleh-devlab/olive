@@ -148,24 +148,33 @@ class ScheduleAgentTools:
         return schd_item_formatters.format_timeblock_list(blocks, schd_item_formatters.PLAIN)
 
     @log_tool(modifies_schedule=True)
-    def add_time_block(self, start_time_str: str, end_time_str: str, daily: bool = False, name: str = "") -> str:
+    def add_time_block(
+        self,
+        start_time_str: str,
+        end_time_str: str,
+        repeat: str = "once",
+        name: str = "",
+        weekdays: list[int] | None = None,
+    ) -> str:
         """
         Adds a strict time block (busy time) during which NO tasks can be scheduled.
         Args:
             start_time_str: The start time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
             end_time_str: The end time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
-            daily: Whether it repeats every day.
+            repeat: 'once' (a single occurrence), 'daily' (every day) or 'weekly' (on the given weekdays).
             name: Optional name for the block.
+            weekdays: Required if repeat='weekly'. List of integers (0=Mon, 6=Sun).
         """
         try:
             from modules.schedule_validators import validate_timeblock_creation_data
 
-            block = validate_timeblock_creation_data(start_time_str, end_time_str, daily, name)
+            block = validate_timeblock_creation_data(start_time_str, end_time_str, repeat, name, weekdays)
         except ScheduleValidationError as e:
             raise ValueError(str(e))
 
         self.provider.add_time_block(self.user_id, block)
-        return f"Time block added: {start_time_str} - {end_time_str} (Daily: {daily})."
+        on_days = f" on weekdays {weekdays}" if weekdays else ""
+        return f"Time block added: {start_time_str} - {end_time_str} ({repeat}{on_days})."
 
     @log_tool(modifies_schedule=True)
     def remove_time_block(self, block_id: int) -> str:
