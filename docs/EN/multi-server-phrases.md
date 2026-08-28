@@ -63,7 +63,7 @@ When the code has access to a guild object — slash commands, prefix commands, 
 
 ```python
 text = get_phrases(inter.guild.id).get("utils", {}).get("ping_response", "...")
-text = get_phrases(message.guild.id).get("olive", {}).get("system_instruction", "...")
+text = get_phrases(message.guild.id).get("errors", {}).get("access_denied", "...")
 ```
 
 ### Channel-context — use `get_phrases(channel.guild.id)`
@@ -83,3 +83,32 @@ When there is no server context at all — `print()` calls, embed generators tha
 raw_embed_data = get_phrases().get("uptime_embed", {}).get("embed_data", {...})
 text = get_phrases().get("utils", {}).get("on_connected", "Bot connected.")
 ```
+
+## What does not live here: `llm_config.json`
+
+A phrase is text a reader sees. The LLM's own configuration is not that, and it lives in `llm_config.json` (see `core/llm_config.py`) — model lists and their rate limits, which models a given kind of call prefers, and the system instructions the models are given. Nobody reads a rate limit, and a system instruction is written for a model rather than for a person.
+
+That file is shaped exactly like this one — a `global` section plus one optional section per guild id, deep-merged the same way — so a server can still have its own instruction:
+
+```json
+{
+    "global": {
+        "models": [{"name": "gemini-3-flash-preview", "rpm": 10, "rpd": 250}],
+        "priorities": {"response_gate": ["gemma-4-31b-it"]},
+        "instructions": {"system": {"file": "prompts/system.md"}}
+    },
+    "123456789012345678": {
+        "instructions": {"system": {"file": "prompts/system.123456789012345678.md"}}
+    }
+}
+```
+
+An instruction is written either inline or as `{"file": "..."}`, resolved next to the config. Prompt files are re-read when they change on disk; the config file itself needs `/reload_llm_config`.
+
+```python
+from core.llm_config import get_instruction, get_models, get_priority
+
+instruction = get_instruction("system", guild_id, default="You're the AI assistant on the Discord server.")
+```
+
+`src/scripts/migrate_llm_config.py` moves these keys out of an existing `phrases.json` once.

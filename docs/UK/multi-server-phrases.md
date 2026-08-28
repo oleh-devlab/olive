@@ -63,7 +63,7 @@ text = format_phrase(section, "cooldown_message", "Default: {seconds}s left", se
 
 ```python
 text = get_phrases(inter.guild.id).get("utils", {}).get("ping_response", "...")
-text = get_phrases(message.guild.id).get("olive", {}).get("system_instruction", "...")
+text = get_phrases(message.guild.id).get("errors", {}).get("access_denied", "...")
 ```
 
 ### Channel-context — використовується `get_phrases(channel.guild.id)`
@@ -83,3 +83,32 @@ text = get_phrases(channel.guild.id).get("category", {}).get("key", "...")
 raw_embed_data = get_phrases().get("uptime_embed", {}).get("embed_data", {...})
 text = get_phrases().get("utils", {}).get("on_connected", "Bot connected.")
 ```
+
+## Чого тут немає: `llm_config.json`
+
+Фраза — це текст, який читає людина. Конфігурація самої LLM нею не є, і живе в `llm_config.json` (див. `core/llm_config.py`): список моделей з їхніми лімітами, пріоритети моделей для окремих типів викликів і системні інструкції, які отримують моделі. Ліміт запитів ніхто не читає, а системна інструкція написана для моделі, а не для людини.
+
+Файл має ту саму форму, що й цей — секція `global` плюс необов'язкова секція на кожен guild id, з тим самим deep-merge, — тож сервер і далі може мати власну інструкцію:
+
+```json
+{
+    "global": {
+        "models": [{"name": "gemini-3-flash-preview", "rpm": 10, "rpd": 250}],
+        "priorities": {"response_gate": ["gemma-4-31b-it"]},
+        "instructions": {"system": {"file": "prompts/system.md"}}
+    },
+    "123456789012345678": {
+        "instructions": {"system": {"file": "prompts/system.123456789012345678.md"}}
+    }
+}
+```
+
+Інструкція пишеться або текстом, або як `{"file": "..."}` — шлях резолвиться поруч із конфігом. Файли промптів перечитуються, коли змінюються на диску; сам конфіг потребує `/reload_llm_config`.
+
+```python
+from core.llm_config import get_instruction, get_models, get_priority
+
+instruction = get_instruction("system", guild_id, default="You're the AI assistant on the Discord server.")
+```
+
+`src/scripts/migrate_llm_config.py` одноразово переносить ці ключі зі старого `phrases.json`.

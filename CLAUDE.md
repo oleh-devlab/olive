@@ -14,12 +14,14 @@ The bot runs from inside `src/`; the checks run from the repo root. Which direct
 git submodule update --init --recursive   # tests for inflation need these present
 pip install -r requirements.txt
 cp settings.py.example src/settings.py    # plus tokens.json
+cp llm_config.json.example src/llm_config.json   # models, priorities, prompts
 cd src && python main.py
 ```
 
 | What | Resolved against | So it lands in |
 | --- | --- | --- |
-| `config.ini`, `phrases.json`, `llm_limits_state{role}.json`, `olive.sqlite3` | process CWD | `src/`, because that is where the bot is started |
+| `config.ini`, `phrases.json`, `llm_config.json`, `llm_limits_state{role}.json`, `olive.sqlite3` | process CWD | `src/`, because that is where the bot is started |
+| a prompt file named by `llm_config.json` | the directory holding that config | `src/prompts/` |
 | the `cogs` extension path | process CWD | `src/cogs/` |
 | `tokens.json` | `core/token_manager.py`'s own `__file__` | always `src/tokens.json` |
 | the providers' JSON (`data/…`) | `modules/*_provider.py`'s own `__file__` | always repo-root `data/` |
@@ -27,7 +29,7 @@ cd src && python main.py
 
 The last three rows are the ones worth remembering: the bottom two exceptions do not move when you `cd`, and the checks do.
 
-`src/settings.py`, `src/tokens.json`, `src/phrases.json`, `config.ini`, `data/` and `*.sqlite3` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) but `settings.py` is imported directly and its absence is fatal.
+`src/settings.py`, `src/tokens.json`, `src/phrases.json`, `src/llm_config.json`, every `src/prompts/*.md` but the schedule agent's, `config.ini`, `data/` and `*.sqlite3` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) and a missing `llm_config.json` (the bot then has no models and disables its LLM, but still starts), while `settings.py` is imported directly and its absence is fatal.
 
 ```bash
 python -m unittest discover                 # from repo root; CI runs exactly this
@@ -46,6 +48,7 @@ Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run 
 | Test module | submodules | `ortools` | `disnake` |
 | --- | :-: | :-: | :-: |
 | `test_inflation_formatter` | – | – | – |
+| `test_llm_config` | – | – | – |
 | `test_migrations` | – | – | – |
 | `test_phrases` | – | – | – |
 | `test_schd_item_formatters` | – | – | – |
@@ -108,9 +111,13 @@ A stored time block says `"repeat": "once" | "daily" | "weekly"`, plus `"weekday
 
 Nearly all user-facing text comes from `phrases.json`, keyed by guild id with a `"global"` fallback; guild sections are deep-merged over global at load time. Use `get_phrases(guild_id)` when a guild is in scope and `get_phrases()` otherwise, always with an inline fallback string. `format_phrase()` / `format_embed_data()` fall back rather than raise when a hand-edited placeholder does not match. Editable live via `/edit_phrases` + `/reload_phrases` — but only the text looked up at call time. A cog that reads a `*_cmd` section into a module-level dict (`cogs/inflation/tools.py`, `cogs/schedule/tools.py`) does so at import, and those strings are the command and parameter descriptions Discord already registered, so reloading phrases cannot change them.
 
+A phrase is text a reader sees, which is what decides whether something belongs in that file. The LLM's own configuration is not that and lives in `llm_config.json` (below); the placeholder standing in for a message whose author withheld consent is not either — only the model ever reads it, so its wording is a constant in `modules/llm_message_formatter.py` rather than a phrase there is nobody to localize.
+
 ### LLM subsystem
 
-`modules/llm_client.py` wraps Google GenAI with a client pool keyed by role (`default`, `private` — separate API keys from `tokens.json`) and a rate limiter whose model list comes from `phrases.json` → `olive` → `models`, ordered best-to-cheapest. Persistent state lives in `llm_limits_state{role}.json` (CWD-relative, one file per role) and in the `llm_token_budgets` table — rows `default` and `private`, seeded by migration 2 and edited live with `/token_budget set`. `modules/schedule_agent.py` is an agentic loop over `ScheduleAgentTools` (capped at `MAX_ITERATIONS`, changes revertible for 15 minutes) using the `private` role.
+`modules/llm_client.py` wraps Google GenAI with a client pool keyed by role (`default`, `private` — separate API keys from `tokens.json`) and a rate limiter whose model list comes from `llm_config.json` → `global` → `models`, ordered best-to-cheapest. Persistent state lives in `llm_limits_state{role}.json` (CWD-relative, one file per role) and in the `llm_token_budgets` table — rows `default` and `private`, seeded by migration 2 and edited live with `/token_budget set`. `modules/schedule_agent.py` is an agentic loop over `ScheduleAgentTools` (capped at `MAX_ITERATIONS`, changes revertible for 15 minutes) using the `private` role.
+
+`core/llm_config.py` reads that file, and it is shaped like `phrases.json` — a `global` section plus one section per guild id, deep-merged over global at load time — because a server can have its own system instruction the same way it has its own wording. It holds three things: `models` (every public `ModelConfig` field is settable, and `llm_client` passes through whatever the dataclass declares, so a new limit becomes configurable by being declared there), `priorities` (`response_gate`, `schedule_agent` — model names one kind of call prefers), and `instructions` (`system`, `system_addition`, `response_gate_addition`, `schedule_agent`). An instruction is written inline or as `{"file": "prompts/system.md"}`, resolved against the directory holding the config. `src/prompts/schedule_agent.md` is the only prompt in git: it describes the agent's tools rather than a server, and the code names it as a `default_file` so the agent works on a checkout carrying no config at all. Prompt files are re-read when their mtime changes; the config file itself needs `/reload_llm_config` (`cogs/llm_tools.py`), and a model list edit needs a restart, because an `LLMClient` builds its `ModelConfig` objects once and those objects carry the running rate-limit counters. `src/scripts/migrate_llm_config.py` moves the keys out of an operator's existing `phrases.json` once — nothing reads the old ones.
 
 ## Conventions
 

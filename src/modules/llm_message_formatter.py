@@ -5,14 +5,16 @@ from enum import Enum
 import disnake
 
 from core.time_utils import tz
-from core.utils import get_phrases
 from modules.message_metadata import UserMessageMetadata
 
 logger = logging.getLogger(__name__)
 
 days_uk = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
-_NO_CONSENT_FALLBACK = "*This message is hidden.*"
+# What stands in for a message whose author has not consented to being sent to the
+# model. Only the model ever reads it, so it is not a phrase: there is nobody to
+# localize it for, and its wording is part of how the context reads.
+NO_CONSENT_PLACEHOLDER = "*This message is hidden.*"
 
 
 class FormattingProfile(Enum):
@@ -20,11 +22,6 @@ class FormattingProfile(Enum):
 
     FULL = "full"  # Full format: [day, date time][display_name][username]: "text" + reply prefix
     AGENT = "agent"  # Minimal format for agents: [day, date time]: "text" (no author, no reply)
-
-
-def _get_no_consent_placeholder() -> str:
-    """Returns the no-consent placeholder text from phrases."""
-    return get_phrases().get("olive", {}).get("no_consent_placeholder", _NO_CONSENT_FALLBACK)
 
 
 async def format_user_message(
@@ -44,7 +41,7 @@ async def format_user_message(
     and reply metadata is omitted.
     """
     dt_now = datetime.fromtimestamp(meta.timestamp_ms / 1000.0, tz)
-    content = message.content if has_consent else _get_no_consent_placeholder()
+    content = message.content if has_consent else NO_CONSENT_PLACEHOLDER
 
     day_name = days_uk[dt_now.weekday()]
     time_now = f"{day_name}, {dt_now.strftime('%d.%m.%Y %H:%M:%S')}"

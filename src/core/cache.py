@@ -18,6 +18,9 @@ active_cogs_list = {}
 
 _phrases = {}
 
+# See core/llm_config.py: models, priorities and system instructions, by guild id.
+_llm_config = {}
+
 # channel_id -> core.paged_message.PagedChannelMessage
 channel_states = {}
 

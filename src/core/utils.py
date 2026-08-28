@@ -108,11 +108,11 @@ async def send_long_reply(message, text, max_length=2000, delay=0.5, **kwargs):
     return sent_messages
 
 
-def _deep_merge(base: dict, override: dict) -> dict:
+def deep_merge(base: dict, override: dict) -> dict:
     merged = base.copy()
     for k, v in override.items():
         if isinstance(v, dict) and isinstance(merged.get(k), dict):
-            merged[k] = _deep_merge(merged[k], v)
+            merged[k] = deep_merge(merged[k], v)
         else:
             merged[k] = v
     return merged
@@ -160,7 +160,7 @@ def load_phrases():
     # may consume significant memory if the bot is present in a large number of servers.
     for key, value in new_phrases.items():
         if key != "global" and isinstance(value, dict):
-            new_phrases[key] = _deep_merge(global_phrases, value)
+            new_phrases[key] = deep_merge(global_phrases, value)
 
     core.cache._phrases.clear()
     core.cache._phrases.update(new_phrases)

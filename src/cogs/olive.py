@@ -6,6 +6,7 @@ import settings
 from disnake.ext import commands
 
 from core import cache
+from core.llm_config import get_instruction
 from core.token_manager import token_registry
 from core.utils import TaskDebouncer, get_phrases, send_long_reply
 from modules.llm_client import LLMClientPool
@@ -22,6 +23,8 @@ from modules.schedule_agent import (
 )
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SYSTEM_INSTRUCTION = "You're the AI assistant on the Discord server."
 
 
 class AIAssistantCog(commands.Cog):
@@ -140,17 +143,15 @@ class AIAssistantCog(commands.Cog):
     def _resolve_system_instruction(guild_id) -> str:
         """
         Resolves the system instruction for a guild using a hierarchical approach:
-        - Server-specific system_instruction takes priority over the global one.
-        - system_instruction_addition is always appended (with two newlines) if present.
+        - A server's own `system` instruction takes priority over the global one.
+        - `system_addition` is always appended (with two newlines) if present.
+
+        Both come from `llm_config.json`, where a guild section is merged over the
+        global one at load time, so one lookup already answers both questions.
         """
-        guild_olive = get_phrases(guild_id).get("olive", {})
-        global_olive = get_phrases().get("olive", {})
+        instruction = get_instruction("system", guild_id, default=DEFAULT_SYSTEM_INSTRUCTION)
 
-        instruction = guild_olive.get("system_instruction") or global_olive.get(
-            "system_instruction", "You're the AI assistant on the Discord server."
-        )
-
-        addition = guild_olive.get("system_instruction_addition")
+        addition = get_instruction("system_addition", guild_id)
         if addition:
             instruction = f"{instruction}\n\n{addition}"
 

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 
-from core.utils import get_phrases
+from core.llm_config import get_instruction, get_priority
 from modules.llm_rate_limiter import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
@@ -26,19 +26,16 @@ async def want_respond(
     """
     Determines whether the bot should respond in the current conversation.
 
-    Sends a cheap test request to the LLM with the test_instruction_addition appended
-    to the system instruction, expecting a JSON response with 'i_want_to_reply'.
+    Sends a cheap test request to the LLM with the `response_gate_addition` instruction
+    appended to the system instruction, expecting a JSON response with 'i_want_to_reply'.
 
     Returns True if:
-    - No test_instruction_addition is configured (always respond)
+    - No `response_gate_addition` is configured (always respond)
     - The LLM decides it wants to reply
 
     Returns False if the LLM decides not to reply or if parsing fails.
     """
-    global_olive = get_phrases().get("olive", {})
-    guild_olive = get_phrases(guild_id).get("olive", {})
-
-    test_instruction = guild_olive.get("test_instruction_addition") or global_olive.get("test_instruction_addition")
+    test_instruction = get_instruction("response_gate_addition", guild_id)
 
     if not test_instruction:
         return True
@@ -51,7 +48,7 @@ async def want_respond(
         "schema": _WANT_REPLY_SCHEMA,
     }
 
-    test_models_priority = global_olive.get("test_models_priority")
+    test_models_priority = get_priority("response_gate", guild_id)
 
     try:
         response = await llm_client.get_interaction(

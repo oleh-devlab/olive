@@ -10,6 +10,7 @@ import core.bot
 import core.cache
 import core.log_setup
 from core.config import app_config as config
+from core.llm_config import load_llm_config
 from core.time_utils import tz
 from core.token_manager import token_registry
 from core.utils import get_phrases
@@ -106,6 +107,7 @@ async def on_ready():
 
 if __name__ == "__main__":
     core.utils.load_phrases()
+    load_llm_config()
     bot.load_extensions(cogs_directory)  # The source code says that this calls `load_extension`
 
     print("[INFO] bot.run() trying to start...")

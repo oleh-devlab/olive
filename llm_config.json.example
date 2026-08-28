@@ -1,0 +1,42 @@
+{
+    "global": {
+        "models": [
+            {
+                "name": "gemini-3-pro-preview",
+                "rpm": 5,
+                "rpd": 100,
+                "tpm": 250000,
+                "max_context_tokens": 1000000,
+                "thinking_level": "high"
+            },
+            {
+                "name": "gemini-3-flash-preview",
+                "rpm": 10,
+                "rpd": 250,
+                "tpm": 250000,
+                "max_context_tokens": 1000000
+            },
+            {
+                "name": "gemma-4-31b-it",
+                "rpm": 30,
+                "rpd": 14400,
+                "max_context_tokens": 128000
+            }
+        ],
+        "priorities": {
+            "response_gate": ["gemma-4-31b-it"],
+            "schedule_agent": ["gemini-3-pro-preview", "gemini-3-flash-preview"]
+        },
+        "instructions": {
+            "system": {"file": "prompts/system.md"},
+            "response_gate_addition": {"file": "prompts/response_gate_addition.md"},
+            "schedule_agent": {"file": "prompts/schedule_agent.md"}
+        }
+    },
+    "123456789012345678": {
+        "instructions": {
+            "system": {"file": "prompts/system.123456789012345678.md"},
+            "system_addition": "This server is about gardening. Keep it short."
+        }
+    }
+}

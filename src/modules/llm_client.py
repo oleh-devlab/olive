@@ -1,13 +1,14 @@
 import json
 import logging
 import time
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
 from google import genai
 from google.genai import types
 
-from core.utils import get_phrases
+from core.llm_config import get_models
 from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class LLMClient:
 
         self.models: list[ModelConfig] = self._load_models_config()
         if not self.models:
-            raise ValueError("No models configured in phrases.json")
+            raise ValueError("No models configured in llm_config.json")
 
         suffix = f"_{state_file_suffix}" if state_file_suffix else ""
         self.state_file = Path(f"llm_limits_state{suffix}.json")
@@ -44,33 +45,18 @@ class LLMClient:
     @staticmethod
     def _load_models_config() -> list[ModelConfig]:
         """
-        Load models from phrases.json → olive → models.
-        Falls back to the legacy 'model_name' key for backward compatibility.
+        Build the model list from `llm_config.json` -> global -> models.
 
-        We recommend making sure that the models are ordered from “best/most expensive" to "weakest/cheapest,"
+        Every public `ModelConfig` field is configurable and everything absent
+        keeps the dataclass default, so a new limit becomes settable by being
+        declared there rather than by being repeated here.
+
+        We recommend making sure that the models are ordered from "best/most expensive" to "weakest/cheapest,"
         as this may affect certain features of this class, such as the reverse cycle.
         """
-        olive_cfg = get_phrases().get("olive", {})
-        models_raw = olive_cfg.get("models")
+        allowed = {field.name for field in fields(ModelConfig) if not field.name.startswith("_")}
 
-        if models_raw and isinstance(models_raw, list):
-            return [
-                ModelConfig(
-                    name=m["name"],
-                    rpm=m.get("rpm", 15),
-                    rpd=m.get("rpd", 1500),
-                    tpm=m.get("tpm", None),
-                    max_context_tokens=m.get("max_context_tokens", 128000),
-                    thinking_level=m.get("thinking_level", None),
-                    thinking_budget=m.get("thinking_budget", None),
-                )
-                for m in models_raw
-                if isinstance(m, dict) and "name" in m
-            ]
-
-        # Legacy fallback: single model_name
-        legacy_name = olive_cfg.get("model_name", "gemma-4-31b-it")
-        return [ModelConfig(name=legacy_name)]
+        return [ModelConfig(**{key: value for key, value in model.items() if key in allowed}) for model in get_models()]
 
     @property
     def is_available(self) -> bool:

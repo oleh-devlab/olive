@@ -30,3 +30,7 @@ webhooks_config.json
 *_api
 
 probes/
+
+llm_config.json
+src/prompts/*.md
+!src/prompts/schedule_agent.md
