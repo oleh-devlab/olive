@@ -48,6 +48,13 @@ llm_context_update_seconds = 30
 llm_stored_context_token_limit = None
 schedule_agent_stored_context_token_limit = 1_000_000
 hosting_update_seconds = 10
+
+# How long a single request to a model may take, in seconds, before it is abandoned.
+# Has to cover the slowest generation you expect, thinking included: it is a ceiling
+# on a whole request, not on how long the connection may idle. Left unset, the SDK
+# runs with no timeout at all and a stalled request never returns.
+llm_request_timeout = 240
+
 currency_update_seconds = 10
 active_cogs_update_seconds = 45
 usage_stats_update_seconds = 60

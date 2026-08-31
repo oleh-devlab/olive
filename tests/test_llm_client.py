@@ -17,6 +17,10 @@ from unittest import mock
 src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
+# `llm_client` reads its request timeout off settings at construction. An empty stub is
+# the whole of what it needs: every read carries its own default.
+sys.modules.setdefault("settings", types.ModuleType("settings"))
+
 
 def _stub_google_genai() -> None:
     """Stand in for the SDK so the module under test can be imported without it."""
@@ -53,12 +57,29 @@ logging.getLogger("modules.llm_client").propagate = False
 
 
 class FakeAPIError(Exception):
-    """What the SDK raises: the code is an attribute, not just text."""
+    """What `google.genai.errors` raises: the status is on `code`."""
 
     def __init__(self, code: int, message: str = "You exceeded your current quota"):
         super().__init__(f"Error code: {code} - {message}")
         self.code = code
         self.message = message
+
+
+class FakeInteractionsError(Exception):
+    """What the Interactions path raises: `status_code`, and a response carrying it too.
+
+    A different class hierarchy from `FakeAPIError` on purpose -- the two are not related
+    in the SDK either, and the point of the tests below is that neither spelling is missed.
+    The message is deliberately free of the status: a non-JSON error body composes one that
+    way, which is what makes reading the attribute rather than the text load-bearing.
+    """
+
+    def __init__(self, status_code: int, *, on_response: bool = False):
+        super().__init__("the model is having a rough day")
+        if on_response:
+            self.response = types.SimpleNamespace(status_code=status_code)
+        else:
+            self.status_code = status_code
 
 
 class FakeClock:
@@ -250,6 +271,68 @@ class TestClockDiscipline(unittest.IsolatedAsyncioTestCase):
             await client.get_interaction([{"type": "text", "text": "hi"}], anticipated_tokens=10)
 
         self.assertEqual(client.interactions.models_called, ["gemini-best", "gemini-cheap", "gemini-cheap"])
+
+
+class TestErrorStatusIsRead(unittest.IsolatedAsyncioTestCase):
+    """A refusal must be recognised whichever attribute the SDK path spells it under."""
+
+    async def test_a_429_carried_on_status_code_still_penalises_the_model(self):
+        # The Interactions path names it `status_code`. Read only `code` and this arrives
+        # as a status-less exception: the model keeps its clean record and is handed out
+        # again on the next call, having just been told it is over quota.
+        clock = FakeClock(T0)
+        best = ModelConfig(name="gemini-best", rpm=15)
+        cheap = ModelConfig(name="gemini-cheap", rpm=15)
+        client = build_client([best, cheap], [FakeInteractionsError(429), types.SimpleNamespace(usage=None)])
+
+        with mock.patch.object(llm_client, "time", clock):
+            await client.get_interaction([{"type": "text", "text": "hi"}], anticipated_tokens=10)
+
+        self.assertEqual(best.to_dict()["penalty_limit"], "minute")
+        self.assertFalse(best.is_available(clock.time()))
+
+    async def test_a_status_only_on_the_response_is_read_too(self):
+        clock = FakeClock(T0)
+        best = ModelConfig(name="gemini-best", rpm=15)
+        cheap = ModelConfig(name="gemini-cheap", rpm=15)
+        client = build_client(
+            [best, cheap],
+            [FakeInteractionsError(429, on_response=True), types.SimpleNamespace(usage=None)],
+        )
+
+        with mock.patch.object(llm_client, "time", clock):
+            await client.get_interaction([{"type": "text", "text": "hi"}], anticipated_tokens=10)
+
+        self.assertEqual(best.to_dict()["penalty_limit"], "minute")
+
+    async def test_a_server_error_is_not_mistaken_for_a_refusal(self):
+        # A 5xx falls back to the next model like a 429 does, but it is the server's
+        # fault, not the model's: nothing about it may cost the model its quota.
+        clock = FakeClock(T0)
+        best = ModelConfig(name="gemini-best", rpm=15)
+        cheap = ModelConfig(name="gemini-cheap", rpm=15)
+        client = build_client([best, cheap], [FakeInteractionsError(503), types.SimpleNamespace(usage=None)])
+
+        with mock.patch.object(llm_client, "time", clock):
+            await client.get_interaction([{"type": "text", "text": "hi"}], anticipated_tokens=10)
+
+        self.assertIsNone(best.to_dict()["penalty_limit"])
+        self.assertEqual(client.interactions.models_called, ["gemini-best", "gemini-cheap"])
+
+
+class TestStatusOf(unittest.TestCase):
+    """`_status_of` reads the status, and does not invent one."""
+
+    def test_the_legacy_code_attribute_is_read(self):
+        self.assertEqual(llm_client._status_of(FakeAPIError(429)), 429)
+
+    def test_a_non_integer_status_is_not_taken_for_one(self):
+        error = Exception("boom")
+        error.code = "RESOURCE_EXHAUSTED"
+        self.assertIsNone(llm_client._status_of(error))
+
+    def test_an_error_carrying_no_status_reads_as_none(self):
+        self.assertIsNone(llm_client._status_of(Exception("boom")))
 
 
 if __name__ == "__main__":
