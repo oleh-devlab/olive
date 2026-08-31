@@ -7,17 +7,68 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+import settings
 from core.utils import get_phrases
 from modules.llm_rate_limiter import ModelConfig, RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
+# What the SDK is allowed to retry on our behalf, and what it must hand straight back.
+#
+# The Interactions API is not served by the SDK's own tenacity path: it goes through the
+# generated client bundled at `google/genai/_gaos/`, which reads these same options through
+# a translation of its own. Two of its habits decide the values here.
+#
+# 429 and 408 are deliberately absent. Left in, the generated client answers a 429 itself:
+# it sleeps for exactly what `Retry-After` names -- the header is obeyed verbatim, and
+# `max_delay` does not cap it, so a server naming an hour is slept for an hour -- and only
+# surfaces the error once its own attempts are spent. Our ladder (handle_429, then the next
+# model) is the faster and better-informed answer, so a 429 has to arrive unslept.
+_RETRY_STATUS_CODES = [500, 502, 503, 504]
+
+# `attempts` is documented as counting the original request, and does on the tenacity path.
+# The generated client reads it as a retry count instead, so this is three requests to a
+# model there and two elsewhere. The ceiling is what matters; the exact figure is not.
+_RETRY_ATTEMPTS = 2
+_RETRY_INITIAL_DELAY = 1.0
+_RETRY_MAX_DELAY = 8.0
+
+
+def _status_of(error: Exception) -> int | None:
+    """The HTTP status behind an SDK error, whichever name this path spells it under.
+
+    `google.genai.errors.APIError` carries `code`. The generated client serving Interactions
+    raises classes of its own, which carry `status_code` and the response they were built
+    from. Reading only one of the two is how a 5xx used to arrive here as a status-less
+    exception and be logged as one.
+    """
+    for attr in ("code", "status_code"):
+        value = getattr(error, attr, None)
+        if isinstance(value, int):
+            return value
+
+    value = getattr(getattr(error, "response", None), "status_code", None)
+    return value if isinstance(value, int) else None
+
 
 class LLMClient:
     def __init__(self, token: str, state_file_suffix: str = ""):
+        # Milliseconds, which is what HttpOptions takes. Unset, the SDK builds its HTTP
+        # client with every timeout disabled, and one stalled request waits forever --
+        # no retry ceiling helps when the attempt it counts never ends.
+        timeout_ms = int(getattr(settings, "llm_request_timeout", 240) * 1000)
+
         self.client = genai.Client(
             api_key=token,
-            http_options=types.HttpOptions(retryOptions=types.HttpRetryOptions(attempts=2)),
+            http_options=types.HttpOptions(
+                timeout=timeout_ms,
+                retryOptions=types.HttpRetryOptions(
+                    attempts=_RETRY_ATTEMPTS,
+                    initial_delay=_RETRY_INITIAL_DELAY,
+                    max_delay=_RETRY_MAX_DELAY,
+                    http_status_codes=_RETRY_STATUS_CODES,
+                ),
+            ),
         )
 
         self.models: list[ModelConfig] = self._load_models_config()
@@ -212,7 +263,7 @@ class LLMClient:
 
             except Exception as e:
                 model.refund_request(now)
-                code = getattr(e, "code", None)
+                code = _status_of(e)
 
                 # Sometimes the code is only in the string representation
                 if code is None and "429" in str(e):
