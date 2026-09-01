@@ -137,6 +137,44 @@ def validate_task_creation_data(
     )
 
 
+def parse_timeblock_bound(time_str: str, anchor: datetime.datetime | None = None) -> datetime.datetime:
+    """One end of a block: a date and time spelled out, or a bare time of day.
+
+    A bare 'HH:MM' needs a date to land on. On the way in that is today; on an
+    edit it is the day the bound being replaced already sits on, so retiming a
+    block does not drag one of its ends onto a different date than the other.
+    """
+    try:
+        if " " in time_str:
+            return datetime.datetime.strptime(time_str, "%d.%m.%Y %H:%M").replace(tzinfo=tz)
+
+        h, m = map(int, time_str.split(":"))
+        on = anchor if isinstance(anchor, datetime.datetime) else datetime.datetime.now(tz)
+        return on.replace(hour=h, minute=m, second=0, microsecond=0)
+    except ScheduleValidationError:
+        raise
+    except Exception:
+        raise ScheduleValidationError("Invalid time format. Use 'HH:MM' or 'DD.MM.YYYY HH:MM'.")
+
+
+def resolve_block_bounds(
+    start_dt: datetime.datetime, end_dt: datetime.datetime
+) -> tuple[datetime.datetime, datetime.datetime]:
+    """A block's pair of bounds, with the one that crosses midnight moved onto the next day.
+
+    Only when both landed on the same date, which is what a bare 'HH:MM' pair
+    does -- once a date was stated, an end before the start is a mistake rather
+    than a night shift.
+    """
+    if end_dt <= start_dt:
+        if start_dt.date() == end_dt.date():
+            end_dt += datetime.timedelta(days=1)
+        else:
+            raise ScheduleValidationError("End time must be after start time.")
+
+    return start_dt, end_dt
+
+
 def validate_timeblock_creation_data(
     start_time_str: str,
     end_time_str: str,
@@ -144,8 +182,8 @@ def validate_timeblock_creation_data(
     name: str = "",
     weekdays: list[int] | None = None,
 ) -> TimeBlock:
-    # Checked before the parsing below, whose except turns everything it catches
-    # into "invalid time format" -- which a bad weekday is not.
+    # Checked before the parsing below, which reports everything it cannot read
+    # as "invalid time format" -- which a bad weekday is not.
     if repeat not in TIMEBLOCK_REPEATS:
         raise ScheduleValidationError(f"Repeat must be one of {', '.join(TIMEBLOCK_REPEATS)}.")
 
@@ -154,38 +192,73 @@ def validate_timeblock_creation_data(
     elif weekdays:
         raise ScheduleValidationError(f"Weekdays only apply to weekly time blocks, not '{repeat}' ones.")
 
-    try:
-        now = datetime.datetime.now(tz)
+    start_dt, end_dt = resolve_block_bounds(parse_timeblock_bound(start_time_str), parse_timeblock_bound(end_time_str))
 
-        def parse_tb_time(time_str: str) -> datetime.datetime:
-            if " " in time_str:
-                dt = datetime.datetime.strptime(time_str, "%d.%m.%Y %H:%M")
+    return TimeBlock(
+        start=start_dt,
+        end=end_dt,
+        daily=(repeat == REPEAT_DAILY),
+        name=name,
+        weekdays=weekdays,
+    )
+
+
+def validate_timeblock_update_data(
+    block: TimeBlock,
+    start_time_str: str | None = None,
+    end_time_str: str | None = None,
+    repeat: str | None = None,
+    name: str | None = None,
+    weekdays: list[int] | None = None,
+) -> dict:
+    """The fields to change on an existing block, read against what it already says.
+
+    Partial by design, which is why this takes the block and the creation
+    validator does not: a block's bounds are a pair and its recurrence is spread
+    over `daily` and `weekdays`, so moving one end -- or naming days -- only
+    means something next to the half that is staying.
+    """
+    updates: dict = {}
+
+    if name is not None:
+        updates["name"] = clean_text(name)
+
+    # Naming days is what makes a block weekly, the same way it does on the way
+    # in; stating a repeat as well still wins, so "daily" can drop the days.
+    if weekdays is not None and repeat is None:
+        repeat = REPEAT_WEEKLY
+
+    if repeat is not None:
+        if repeat not in TIMEBLOCK_REPEATS:
+            raise ScheduleValidationError(f"Repeat must be one of {', '.join(TIMEBLOCK_REPEATS)}.")
+
+        if repeat == REPEAT_WEEKLY:
+            # The days already on the block carry over, so a weekly block can be
+            # renamed or moved without restating which days it falls on.
+            days = weekdays if weekdays is not None else block.weekdays
+            updates["weekdays"] = validate_weekdays(days, "time blocks")
+        elif weekdays:
+            raise ScheduleValidationError(f"Weekdays only apply to weekly time blocks, not '{repeat}' ones.")
+        else:
+            updates["weekdays"] = None
+
+        updates["daily"] = repeat == REPEAT_DAILY
+
+    if start_time_str is not None or end_time_str is not None:
+
+        def kept(dt):
+            # A bound carried over from a hand-written file may be naive, while
+            # the one just parsed never is, and the two have to be comparable.
+            if isinstance(dt, datetime.datetime) and dt.tzinfo is None:
                 return dt.replace(tzinfo=tz)
-            else:
-                h, m = map(int, time_str.split(":"))
-                return now.replace(hour=h, minute=m, second=0, microsecond=0)
+            return dt
 
-        start_dt = parse_tb_time(start_time_str)
-        end_dt = parse_tb_time(end_time_str)
+        was_start, was_end = kept(block.start), kept(block.end)
+        start_dt = parse_timeblock_bound(start_time_str, was_start) if start_time_str is not None else was_start
+        end_dt = parse_timeblock_bound(end_time_str, was_end) if end_time_str is not None else was_end
+        updates["start"], updates["end"] = resolve_block_bounds(start_dt, end_dt)
 
-        # If it crosses midnight and the dates are the same (e.g. both used HH:MM for today)
-        if end_dt <= start_dt:
-            if start_dt.date() == end_dt.date():
-                end_dt += datetime.timedelta(days=1)
-            else:
-                raise ValueError("End time must be after start time.")
-
-        return TimeBlock(
-            start=start_dt,
-            end=end_dt,
-            daily=(repeat == REPEAT_DAILY),
-            name=name,
-            weekdays=weekdays,
-        )
-    except Exception as e:
-        if isinstance(e, ValueError) and str(e) == "End time must be after start time.":
-            raise ScheduleValidationError(str(e))
-        raise ScheduleValidationError("Invalid time format. Use 'HH:MM' or 'DD.MM.YYYY HH:MM'.")
+    return updates
 
 
 def validate_task_update_data(

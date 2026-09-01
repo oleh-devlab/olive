@@ -58,7 +58,8 @@ TimeBlocks are strict periods of "busy time" when the user is unavailable (e.g.,
 - They recur in one of three ways, given as `repeat`: `once` (a single occurrence, today only), `daily` (every day), or `weekly` (only on the weekdays listed in `weekdays`, 0=Mon..6=Sun).
 - Use `weekly` for anything that happens on some days but not others (e.g., gym on Mon/Wed/Fri, lectures on Tue/Thu). Do NOT add one `once` block per day for this.
 - For a `weekly` or `daily` block only the time of day matters; the date part of `start_time_str` is just a template.
-- Use `add_time_block`, `list_time_blocks`, and `remove_time_block` tools to manage them.
+- Use `add_time_block`, `list_time_blocks`, `edit_time_block`, and `remove_time_block` tools to manage them.
+- To change an existing block, edit it rather than removing and re-adding it: `edit_time_block` takes only the fields that change and keeps the rest, including the block's id.
 - It is highly recommended NOT to specify a name for a TimeBlock (leave it empty) so that it doesn't clutter the schedule visually.
 - You should only specify a name for one-time events (e.g., a specific meeting or appointment).
 - If the user explicitly asks to specify a name for a daily or recurring TimeBlock, you must warn them that this might clutter their schedule visually.
@@ -178,6 +179,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
         tools_instance.clear_completed_tasks,
         tools_instance.list_time_blocks,
         tools_instance.add_time_block,
+        tools_instance.edit_time_block,
         tools_instance.remove_time_block,
         tools_instance.add_task,
         tools_instance.remove_task,
@@ -334,6 +336,7 @@ async def run_schedule_agent(bot, message: disnake.Message, user_id: int):
                                 "edit_routine",
                                 "skip_routine",
                                 "add_time_block",
+                                "edit_time_block",
                                 "remove_time_block",
                                 "clear_completed_tasks",
                             ]:

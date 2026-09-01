@@ -177,6 +177,44 @@ class ScheduleAgentTools:
         return f"Time block added: {start_time_str} - {end_time_str} ({repeat}{on_days})."
 
     @log_tool(modifies_schedule=True)
+    def edit_time_block(
+        self,
+        block_id: int,
+        start_time_str: str | None = None,
+        end_time_str: str | None = None,
+        repeat: str | None = None,
+        name: str | None = None,
+        weekdays: list[int] | None = None,
+    ) -> str:
+        """
+        Edits specific fields of an existing time block (use list_time_blocks first).
+        Only provide the fields you want to change; omit any parameter you want to keep unchanged.
+        Args:
+            block_id: The ID of the time block.
+            start_time_str: New start time. Format 'HH:MM' or 'DD.MM.YYYY HH:MM'.
+            end_time_str: New end time. Format 'HH:MM' or 'DD.MM.YYYY HH:MM'.
+            repeat: 'once', 'daily' or 'weekly'. Switching to 'once' or 'daily' drops the weekdays.
+            name: New name for the block.
+            weekdays: New list of weekdays (0=Mon, 6=Sun), which makes the block weekly.
+        """
+        block = self.provider.get_time_block(self.user_id, block_id)
+        if not block:
+            raise ValueError(f"Time block {block_id} not found.")
+
+        try:
+            from modules.schedule_validators import validate_timeblock_update_data
+
+            updates = validate_timeblock_update_data(block, start_time_str, end_time_str, repeat, name, weekdays)
+        except ScheduleValidationError as e:
+            raise ValueError(str(e))
+
+        if not updates:
+            raise ValueError("Nothing to change: name at least one field to edit.")
+
+        self.provider.edit_time_block(self.user_id, block_id, **updates)
+        return f"Time block {block_id} updated successfully."
+
+    @log_tool(modifies_schedule=True)
     def remove_time_block(self, block_id: int) -> str:
         """
         Removes a time block by its ID (use list_time_blocks first).
