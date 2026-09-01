@@ -29,8 +29,12 @@ sys.modules.setdefault("settings", types.ModuleType("settings"))
 
 from modules import schedule_provider  # noqa: E402
 from modules.schedule_models import TimeBlock, block_repeat  # noqa: E402
-from modules.schedule_validators import validate_timeblock_creation_data  # noqa: E402
+from modules.schedule_validators import (  # noqa: E402
+    validate_timeblock_creation_data,
+    validate_timeblock_update_data,
+)
 from modules.schedule_exceptions import ScheduleValidationError  # noqa: E402
+from core.time_utils import tz  # noqa: E402
 from scripts.migrate_timeblock_repeat import migrate_block, migrate_data_dir  # noqa: E402
 
 START = datetime.datetime(2026, 8, 28, 18, 0)
@@ -144,6 +148,89 @@ class TestValidation(unittest.TestCase):
         self.assertGreater(block.end, block.start)
 
 
+class TestUpdateValidation(unittest.TestCase):
+    """An edit states only what changes, so every field has a half that stays."""
+
+    # Aware, unlike the bare fixtures above: every stored block went through the
+    # creation validator, which stamps the configured zone on both bounds, and
+    # an edit compares what it parses against what the block already holds.
+    START_TZ = START.replace(tzinfo=tz)
+    END_TZ = END.replace(tzinfo=tz)
+
+    def _block(self, **kwargs) -> TimeBlock:
+        return TimeBlock(**{"start": self.START_TZ, "end": self.END_TZ, "id": 1, **kwargs})
+
+    def test_an_edit_naming_nothing_changes_nothing(self):
+        self.assertEqual(validate_timeblock_update_data(self._block()), {})
+
+    def test_a_renamed_block_keeps_its_hours(self):
+        updates = validate_timeblock_update_data(self._block(name="gym"), name="climbing")
+        self.assertEqual(updates, {"name": "climbing"})
+
+    def test_moving_one_end_keeps_the_other(self):
+        updates = validate_timeblock_update_data(self._block(), start_time_str="17:00")
+        self.assertEqual(updates["start"].hour, 17)
+        self.assertEqual(updates["end"].hour, END.hour)
+
+    def test_a_bare_time_stays_on_the_day_the_block_is_already_on(self):
+        # Not today's, which would leave the two ends on different dates and be
+        # refused as an end before its start.
+        updates = validate_timeblock_update_data(self._block(), start_time_str="17:00")
+        self.assertEqual(updates["start"].date(), START.date())
+
+    def test_a_stated_date_moves_the_block_to_it(self):
+        updates = validate_timeblock_update_data(
+            self._block(), start_time_str="30.08.2026 09:00", end_time_str="30.08.2026 10:00"
+        )
+        self.assertEqual(updates["start"].date(), datetime.date(2026, 8, 30))
+
+    def test_an_end_that_would_land_before_the_start_moves_past_midnight(self):
+        # The same reading the creation validator gives a bare "23:00"-"01:00".
+        updates = validate_timeblock_update_data(self._block(), end_time_str="01:00")
+        self.assertGreater(updates["end"], updates["start"])
+
+    def test_a_stated_date_before_the_start_is_refused_rather_than_moved(self):
+        with self.assertRaises(ScheduleValidationError):
+            validate_timeblock_update_data(self._block(), end_time_str="27.08.2026 19:00")
+
+    def test_naming_days_makes_a_block_weekly(self):
+        updates = validate_timeblock_update_data(self._block(daily=True), weekdays=[1, 3])
+        self.assertEqual(updates["weekdays"], [1, 3])
+        self.assertFalse(updates["daily"])
+
+    def test_a_weekly_block_keeps_its_days_through_an_unrelated_edit(self):
+        updates = validate_timeblock_update_data(self._block(weekdays=[0, 2]), repeat="weekly", start_time_str="19:00")
+        self.assertEqual(updates["weekdays"], [0, 2])
+
+    def test_going_daily_drops_the_days(self):
+        updates = validate_timeblock_update_data(self._block(weekdays=[0, 2]), repeat="daily")
+        self.assertIsNone(updates["weekdays"])
+        self.assertTrue(updates["daily"])
+
+    def test_going_once_drops_the_days(self):
+        updates = validate_timeblock_update_data(self._block(weekdays=[0, 2]), repeat="once")
+        self.assertIsNone(updates["weekdays"])
+        self.assertFalse(updates["daily"])
+
+    def test_days_on_a_block_being_made_daily_are_refused(self):
+        with self.assertRaises(ScheduleValidationError):
+            validate_timeblock_update_data(self._block(), repeat="daily", weekdays=[0])
+
+    def test_a_block_made_weekly_without_days_to_fall_back_on_is_refused(self):
+        with self.assertRaises(ScheduleValidationError):
+            validate_timeblock_update_data(self._block(daily=True), repeat="weekly")
+
+    def test_an_unknown_repeat_is_refused_as_such(self):
+        with self.assertRaises(ScheduleValidationError) as caught:
+            validate_timeblock_update_data(self._block(), repeat="monthly")
+        self.assertIn("Repeat must be", str(caught.exception))
+
+    def test_an_unreadable_time_is_refused_as_such(self):
+        with self.assertRaises(ScheduleValidationError) as caught:
+            validate_timeblock_update_data(self._block(), start_time_str="half past six")
+        self.assertIn("Invalid time format", str(caught.exception))
+
+
 class TestMigrationScript(unittest.TestCase):
     def test_a_daily_bool_becomes_a_repeat_word(self):
         block = {"id": 1, "daily": True}
@@ -233,6 +320,68 @@ class TestProviderStoresWhatItIsGiven(unittest.TestCase):
             (block,) = provider.list_time_blocks(42)
             self.assertEqual(block.weekdays, [1, 3])
             self.assertFalse(block.daily)
+
+
+class TestProviderEditsInPlace(unittest.TestCase):
+    """An edited block stays the same block: same id, same position, one entry."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        patcher = mock.patch.object(schedule_provider, "get_data_dir", return_value=Path(self._tmp.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.provider = schedule_provider.ScheduleProvider()
+
+    def _stored(self) -> list[dict]:
+        path = Path(self._tmp.name) / "42_schedule.json"
+        return json.loads(path.read_text(encoding="utf-8"))["time_blocks"]
+
+    def test_an_unknown_id_is_reported_rather_than_written(self):
+        self.assertFalse(self.provider.edit_time_block(42, 99, name="nope"))
+
+    def test_a_renamed_block_keeps_its_id_and_its_hours(self):
+        block_id = self.provider.add_time_block(42, TimeBlock(start=START, end=END, daily=True, name="gym"))
+        self.assertTrue(self.provider.edit_time_block(42, block_id, name="climbing"))
+
+        (stored,) = self._stored()
+        self.assertEqual((stored["id"], stored["name"], stored["repeat"]), (block_id, "climbing", "daily"))
+        self.assertEqual(stored["start"], START.isoformat())
+
+    def test_a_block_made_weekly_stops_claiming_to_be_daily(self):
+        # setattr alone would leave both fields set: only __post_init__ clears
+        # `daily`, which is why the provider rebuilds the block.
+        block_id = self.provider.add_time_block(42, TimeBlock(start=START, end=END, daily=True))
+        self.provider.edit_time_block(42, block_id, weekdays=[1, 3], daily=False)
+
+        (stored,) = self._stored()
+        self.assertEqual(stored["repeat"], "weekly")
+        self.assertEqual(stored["weekdays"], [1, 3])
+
+        (block,) = self.provider.list_time_blocks(42)
+        self.assertFalse(block.daily)
+
+    def test_a_block_made_daily_stops_storing_weekdays(self):
+        block_id = self.provider.add_time_block(42, TimeBlock(start=START, end=END, weekdays=[1, 3]))
+        self.provider.edit_time_block(42, block_id, weekdays=None, daily=True)
+
+        (stored,) = self._stored()
+        self.assertEqual(stored["repeat"], "daily")
+        self.assertNotIn("weekdays", stored)
+
+    def test_editing_one_block_leaves_its_neighbours_alone(self):
+        first = self.provider.add_time_block(42, TimeBlock(start=START, end=END, daily=True, name="one"))
+        second = self.provider.add_time_block(42, TimeBlock(start=START, end=END, daily=True, name="two"))
+        self.provider.edit_time_block(42, first, name="edited")
+
+        stored = self._stored()
+        self.assertEqual([b["id"] for b in stored], [first, second])
+        self.assertEqual([b["name"] for b in stored], ["edited", "two"])
+
+    def test_a_block_is_found_by_its_id(self):
+        block_id = self.provider.add_time_block(42, TimeBlock(start=START, end=END, name="gym"))
+        self.assertEqual(self.provider.get_time_block(42, block_id).name, "gym")
+        self.assertIsNone(self.provider.get_time_block(42, 99))
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from modules.schedule_validators import (
     validate_task_creation_data,
     validate_task_update_data,
     validate_timeblock_creation_data,
+    validate_timeblock_update_data,
 )
 
 logger = logging.getLogger(__name__)
@@ -276,6 +277,49 @@ class AutoSchedule(commands.Cog):
             await inter.edit_original_response(f"Error: {e!s}")
 
     @timeblock.sub_command(
+        name="edit",
+        description=phrases_cmd.get("cmd_timeblock_edit_desc", "Edit specific fields of an existing time block"),
+    )
+    async def timeblock_edit(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        block_id: int = commands.Param(description=phrases_cmd.get("param_timeblock_id", "ID of the timeblock")),
+        start_time: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_start_time", "Start time (HH:MM)")
+        ),
+        end_time: str = commands.Param(default=None, description=phrases_cmd.get("param_end_time", "End time (HH:MM)")),
+        repeat: str = commands.Param(
+            default=None,
+            choices=list(TIMEBLOCK_REPEATS),
+            description=phrases_cmd.get("param_repeat_block", "Repeat (once/daily/weekly)"),
+        ),
+        weekdays: str = commands.Param(
+            default=None, description=phrases_cmd.get("param_weekdays", "Weekdays (0=Mon..6=Sun, e.g. 0,2,4)")
+        ),
+        name: str = commands.Param(default=None, description=phrases_cmd.get("param_timeblock_name", "Name")),
+    ):
+        await inter.response.defer(ephemeral=True)
+        try:
+            block = provider.get_time_block(inter.author.id, block_id)
+            if not block:
+                return await inter.edit_original_response(f"Invalid timeblock ID: {block_id}.")
+
+            wd_list = None
+            if weekdays:
+                wd_list = [int(x.strip()) for x in weekdays.split(",") if x.strip().isdigit()]
+
+            updates = validate_timeblock_update_data(block, start_time, end_time, repeat, name, wd_list)
+            if not updates:
+                return await inter.edit_original_response("Nothing to change: name at least one field to edit.")
+
+            provider.edit_time_block(inter.author.id, block_id, **updates)
+            await inter.edit_original_response(f"Timeblock {block_id} updated.")
+        except ScheduleValidationError as e:
+            await inter.edit_original_response(str(e))
+        except Exception as e:
+            await inter.edit_original_response(f"Error: {e!s}")
+
+    @timeblock.sub_command(
         name="remove", description=phrases_cmd.get("cmd_timeblock_remove_desc", "Remove a time block by ID")
     )
     async def timeblock_remove(
@@ -288,7 +332,6 @@ class AutoSchedule(commands.Cog):
             success = provider.remove_time_block(inter.author.id, block_id)
             if success:
                 await inter.edit_original_response(f"Timeblock {block_id} removed.")
-                self.bot.dispatch("schedule_update", inter.channel.id)
             else:
                 await inter.edit_original_response(f"Invalid timeblock ID: {block_id}.")
         except Exception as e:

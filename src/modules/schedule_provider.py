@@ -463,6 +463,42 @@ class ScheduleProvider:
 
         return [_dict_to_timeblock(b) for b in blocks]
 
+    def get_time_block(self, user_id: int, block_id: int) -> TimeBlock | None:
+        # Through list_time_blocks rather than the raw dicts, so a legacy block
+        # that has just been given an id can be found by it.
+        for block in self.list_time_blocks(user_id):
+            if block.id == block_id:
+                return block
+        return None
+
+    def edit_time_block(self, user_id: int, block_id: int, **kwargs) -> bool:
+        block = self.get_time_block(user_id, block_id)
+        if not block:
+            return False
+
+        # Rebuilt rather than setattr'd, the way edit_task and edit_routine do:
+        # `daily` and `weekdays` are two fields stating one recurrence, and only
+        # __post_init__ keeps them from contradicting each other.
+        fields = {
+            "id": block.id,
+            "start": block.start,
+            "end": block.end,
+            "daily": block.daily,
+            "name": block.name,
+            "weekdays": block.weekdays,
+        }
+        fields.update({k: v for k, v in kwargs.items() if k in fields})
+        edited = TimeBlock(**fields)
+
+        data = self._load_data(user_id)
+        for i, b in enumerate(data.get("time_blocks", [])):
+            if b.get("id") == block_id:
+                data["time_blocks"][i] = _timeblock_to_dict(edited)
+                break
+
+        self._save_data(user_id, data)
+        return True
+
     def remove_time_block(self, user_id: int, block_id: int) -> bool:
         data = self._load_data(user_id)
         blocks = data.get("time_blocks", [])
