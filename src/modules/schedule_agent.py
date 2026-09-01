@@ -59,7 +59,7 @@ TimeBlocks are strict periods of "busy time" when the user is unavailable (e.g.,
 - Use `weekly` for anything that happens on some days but not others (e.g., gym on Mon/Wed/Fri, lectures on Tue/Thu). Do NOT add one `once` block per day for this.
 - For a `weekly` or `daily` block only the time of day matters; the date part of `start_time_str` is just a template.
 - Use `add_time_block`, `list_time_blocks`, `edit_time_block`, and `remove_time_block` tools to manage them.
-- To change an existing block, edit it rather than removing and re-adding it: `edit_time_block` takes only the fields that change and keeps the rest, including the block's id.
+- To change an existing block, edit it: `edit_time_block` takes only the fields that change and keeps the rest, including the block's id.
 - It is highly recommended NOT to specify a name for a TimeBlock (leave it empty) so that it doesn't clutter the schedule visually.
 - You should only specify a name for one-time events (e.g., a specific meeting or appointment).
 - If the user explicitly asks to specify a name for a daily or recurring TimeBlock, you must warn them that this might clutter their schedule visually.
