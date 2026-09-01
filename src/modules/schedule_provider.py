@@ -484,7 +484,7 @@ class ScheduleProvider:
             "start": block.start,
             "end": block.end,
             "daily": block.daily,
-            "name": getattr(block, "name", ""),
+            "name": block.name,
             "weekdays": block.weekdays,
         }
         fields.update({k: v for k, v in kwargs.items() if k in fields})

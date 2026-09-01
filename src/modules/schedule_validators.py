@@ -137,22 +137,21 @@ def validate_task_creation_data(
     )
 
 
-def parse_timeblock_bound(time_str: str, anchor: datetime.datetime | None = None) -> datetime.datetime:
+def parse_timeblock_bound(time_str: str, anchor: datetime.datetime) -> datetime.datetime:
     """One end of a block: a date and time spelled out, or a bare time of day.
 
-    A bare 'HH:MM' needs a date to land on. On the way in that is today; on an
-    edit it is the day the bound being replaced already sits on, so retiming a
-    block does not drag one of its ends onto a different date than the other.
+    A bare 'HH:MM' needs a date to land on, and which one it is differs by
+    caller, so it is asked for rather than assumed: today for a block being
+    added, and the day the replaced bound already sits on for one being edited
+    -- retiming a block must not drag one of its ends onto a different date
+    than the other.
     """
     try:
         if " " in time_str:
             return datetime.datetime.strptime(time_str, "%d.%m.%Y %H:%M").replace(tzinfo=tz)
 
         h, m = map(int, time_str.split(":"))
-        on = anchor if isinstance(anchor, datetime.datetime) else datetime.datetime.now(tz)
-        return on.replace(hour=h, minute=m, second=0, microsecond=0)
-    except ScheduleValidationError:
-        raise
+        return anchor.replace(hour=h, minute=m, second=0, microsecond=0)
     except Exception:
         raise ScheduleValidationError("Invalid time format. Use 'HH:MM' or 'DD.MM.YYYY HH:MM'.")
 
@@ -192,7 +191,12 @@ def validate_timeblock_creation_data(
     elif weekdays:
         raise ScheduleValidationError(f"Weekdays only apply to weekly time blocks, not '{repeat}' ones.")
 
-    start_dt, end_dt = resolve_block_bounds(parse_timeblock_bound(start_time_str), parse_timeblock_bound(end_time_str))
+    # One clock reading for both bounds: taken twice, a pair given as bare times
+    # could straddle midnight and land on two different dates.
+    now = datetime.datetime.now(tz)
+    start_dt, end_dt = resolve_block_bounds(
+        parse_timeblock_bound(start_time_str, now), parse_timeblock_bound(end_time_str, now)
+    )
 
     return TimeBlock(
         start=start_dt,
@@ -245,17 +249,8 @@ def validate_timeblock_update_data(
         updates["daily"] = repeat == REPEAT_DAILY
 
     if start_time_str is not None or end_time_str is not None:
-
-        def kept(dt):
-            # A bound carried over from a hand-written file may be naive, while
-            # the one just parsed never is, and the two have to be comparable.
-            if isinstance(dt, datetime.datetime) and dt.tzinfo is None:
-                return dt.replace(tzinfo=tz)
-            return dt
-
-        was_start, was_end = kept(block.start), kept(block.end)
-        start_dt = parse_timeblock_bound(start_time_str, was_start) if start_time_str is not None else was_start
-        end_dt = parse_timeblock_bound(end_time_str, was_end) if end_time_str is not None else was_end
+        start_dt = parse_timeblock_bound(start_time_str, block.start) if start_time_str is not None else block.start
+        end_dt = parse_timeblock_bound(end_time_str, block.end) if end_time_str is not None else block.end
         updates["start"], updates["end"] = resolve_block_bounds(start_dt, end_dt)
 
     return updates

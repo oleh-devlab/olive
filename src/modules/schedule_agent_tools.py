@@ -12,6 +12,7 @@ from modules.schedule_validators import (
     validate_routine_update_data,
     validate_task_creation_data,
     validate_task_update_data,
+    validate_timeblock_update_data,
 )
 
 MAX_SCHEDULE_LINES = 60
@@ -202,8 +203,6 @@ class ScheduleAgentTools:
             raise ValueError(f"Time block {block_id} not found.")
 
         try:
-            from modules.schedule_validators import validate_timeblock_update_data
-
             updates = validate_timeblock_update_data(block, start_time_str, end_time_str, repeat, name, weekdays)
         except ScheduleValidationError as e:
             raise ValueError(str(e))

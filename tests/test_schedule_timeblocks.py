@@ -34,6 +34,7 @@ from modules.schedule_validators import (  # noqa: E402
     validate_timeblock_update_data,
 )
 from modules.schedule_exceptions import ScheduleValidationError  # noqa: E402
+from core.time_utils import tz  # noqa: E402
 from scripts.migrate_timeblock_repeat import migrate_block, migrate_data_dir  # noqa: E402
 
 START = datetime.datetime(2026, 8, 28, 18, 0)
@@ -150,8 +151,14 @@ class TestValidation(unittest.TestCase):
 class TestUpdateValidation(unittest.TestCase):
     """An edit states only what changes, so every field has a half that stays."""
 
+    # Aware, unlike the bare fixtures above: every stored block went through the
+    # creation validator, which stamps the configured zone on both bounds, and
+    # an edit compares what it parses against what the block already holds.
+    START_TZ = START.replace(tzinfo=tz)
+    END_TZ = END.replace(tzinfo=tz)
+
     def _block(self, **kwargs) -> TimeBlock:
-        return TimeBlock(**{"start": START, "end": END, "id": 1, **kwargs})
+        return TimeBlock(**{"start": self.START_TZ, "end": self.END_TZ, "id": 1, **kwargs})
 
     def test_an_edit_naming_nothing_changes_nothing(self):
         self.assertEqual(validate_timeblock_update_data(self._block()), {})

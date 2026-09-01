@@ -273,7 +273,6 @@ class AutoSchedule(commands.Cog):
             block = validate_timeblock_creation_data(start_time, end_time, repeat, name, wd_list)
             provider.add_time_block(inter.author.id, block)
             await inter.edit_original_response(f"Timeblock added: {start_time} to {end_time}.")
-            self.bot.dispatch("schedule_update", inter.channel.id)
         except Exception as e:
             await inter.edit_original_response(f"Error: {e!s}")
 
@@ -315,7 +314,6 @@ class AutoSchedule(commands.Cog):
 
             provider.edit_time_block(inter.author.id, block_id, **updates)
             await inter.edit_original_response(f"Timeblock {block_id} updated.")
-            self.bot.dispatch("schedule_update", inter.channel.id)
         except ScheduleValidationError as e:
             await inter.edit_original_response(str(e))
         except Exception as e:
