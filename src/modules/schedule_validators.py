@@ -159,11 +159,11 @@ def parse_timeblock_bound(time_str: str, anchor: datetime.datetime) -> datetime.
 def resolve_block_bounds(
     start_dt: datetime.datetime, end_dt: datetime.datetime
 ) -> tuple[datetime.datetime, datetime.datetime]:
-    """A block's pair of bounds, with the one that crosses midnight moved onto the next day.
+    """A block's pair of bounds, with an end before its start moved onto the next day.
 
-    Only when both landed on the same date, which is what a bare 'HH:MM' pair
-    does -- once a date was stated, an end before the start is a mistake rather
-    than a night shift.
+    Only when the two landed on the same date, which is what a bare 'HH:MM'
+    pair does. Once they are on different days the end was aimed at a day that
+    has already passed, and that is a mistake rather than a night shift.
     """
     if end_dt <= start_dt:
         if start_dt.date() == end_dt.date():
