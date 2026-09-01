@@ -332,7 +332,6 @@ class AutoSchedule(commands.Cog):
             success = provider.remove_time_block(inter.author.id, block_id)
             if success:
                 await inter.edit_original_response(f"Timeblock {block_id} removed.")
-                self.bot.dispatch("schedule_update", inter.channel.id)
             else:
                 await inter.edit_original_response(f"Invalid timeblock ID: {block_id}.")
         except Exception as e:
