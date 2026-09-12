@@ -59,10 +59,10 @@ currency_update_seconds = 10
 active_cogs_update_seconds = 45
 usage_stats_update_seconds = 60
 
-# --- "Time since" embed (temporary, and disabled in `cogs_blacklist` above) ---
+# --- "Time since" embed (temporary) ---
 # Every configured date gets two counters: a running total in one unit (hours
 # until there is more than one day, days after that) and the calendar reading in
-# years, months and days. Its text is hardcoded Ukrainian, not in phrases.json.
+# years, months and days. Its text is hardcoded Ukrainian.
 # Labels are yours; the dates are ISO, with an optional time. Leave the mapping
 # empty and the embed never starts even when the cog is loaded.
 time_since_update_seconds = 240
