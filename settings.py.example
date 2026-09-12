@@ -67,8 +67,8 @@ usage_stats_update_seconds = 60
 # empty and the embed never starts even when the cog is loaded.
 time_since_update_seconds = 240
 time_since_dates = {
-    "O.L.I.V.E. first launch": "2024-01-15",
-    "Moved to the VPS": "2025-06-01 18:30",
+    "Event label": "2024-01-15",
+    "Another event": "2025-06-01 18:30",
 }
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
