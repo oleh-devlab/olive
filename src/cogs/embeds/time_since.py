@@ -13,17 +13,19 @@ from modules.elapsed_time import format_elapsed_breakdown, format_elapsed_total,
 logger = logging.getLogger(__name__)
 
 # The unit words, used when `phrases.json` carries no `time_since_embed` section
-# (a fresh checkout has no file at all). `[1, 2-4, 5-0]`, as `decline()` takes them.
+# (a fresh checkout has no file at all). Two forms each, singular and plural, as
+# `decline()` reads an English-shaped list; a deployment overrides all four from
+# `phrases.json`, where Ukrainian gives three forms instead.
 FALLBACK_FORMS: dict[str, list[str]] = {
-    "hour_forms": ["година", "години", "годин"],
-    "day_forms": ["день", "дні", "днів"],
-    "year_forms": ["рік", "роки", "років"],
-    "month_forms": ["місяць", "місяці", "місяців"],
+    "hour_forms": ["hour", "hours"],
+    "day_forms": ["day", "days"],
+    "year_forms": ["year", "years"],
+    "month_forms": ["month", "months"],
 }
 
-FALLBACK_ENTRY = "**{label}** *(з {date})*\n`{total}`\n`{breakdown}`"
+FALLBACK_ENTRY = "**{label}** *(since {date})*\n`{total}`\n`{breakdown}`"
 FALLBACK_DATE_FORMAT = "%d.%m.%Y"
-FALLBACK_OVERFLOW = "…та ще {count}"
+FALLBACK_OVERFLOW = "…and {count} more"
 
 # Discord's own ceiling on an embed description. The list is operator-written
 # rather than user-written, but a long one still has to lose its tail instead
@@ -45,7 +47,7 @@ class TimeSinceEmbed(BaseEmbedCog):
     settings_key = "time_since_update_seconds"
     default_seconds = 240
     fallback_embed: ClassVar[dict] = {
-        "title": ":hourglass: | Скільки часу минуло",
+        "title": ":hourglass: | Time Since",
         "description": "{entries}",
     }
 

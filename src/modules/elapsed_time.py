@@ -9,17 +9,17 @@ Two counters come out of one span, because they answer different questions.
 `format_elapsed_total()` is the running count in a single unit — hours until
 there is more than one day to show, days after that — and
 `format_elapsed_breakdown()` is the calendar reading: years, months and days.
-A span of a year and a half is "548 днів" to one and "1 рік 6 місяців 1 день"
-to the other, and neither number is the one the reader always means.
+A span of a year and a half is "548 days" to one and "1 year 6 months 1 day" to
+the other, and neither number is the one the reader always means.
 """
 
 import calendar
 from dataclasses import dataclass
 from datetime import date, datetime
 
-# Below this, the running counter stays in hours: "26 годин" is still the
-# answer a reader wants on the first day, and "1 день" throws away two thirds
-# of what they asked for.
+# Below this, the running counter stays in hours: "26 hours" is still the answer
+# a reader wants on the first day, and "1 day" throws away two thirds of what
+# they asked for.
 DAYS_BEFORE_COUNTING_IN_DAYS = 2
 
 ACCEPTED_DATE_FORMATS = (
@@ -116,13 +116,23 @@ def measure(start: datetime, now: datetime) -> Elapsed:
 
 def decline(number: int, forms: list[str] | tuple[str, ...]) -> str:
     """
-    Ukrainian declension of the word after a number: `[1, 2-4, 5-0]` forms.
+    Put the word after a number into the form that number takes.
 
-    A short or empty `forms` is padded from what it does have rather than
-    raising — the forms come from `phrases.json`, which an operator edits by
-    hand and may leave with two entries in it.
+    How many forms are given says which rule applies. Three are the Slavic
+    `[1, 2-4, 5-0]` set, selected by the last digits: "21 день", "22 дні",
+    "25 днів". Two are a language that only counts one against many, English
+    among them, where the singular belongs to exactly one — the Slavic rule
+    would read "21 day" there, which is why the count decides the rule rather
+    than the words doing it.
+
+    A single form, or none, is used for every number rather than raising: the
+    forms come from `phrases.json`, which an operator edits by hand.
     """
     usable = [str(form) for form in forms] or [""]
+
+    if len(usable) == 2:
+        return f"{number} {usable[0] if abs(number) == 1 else usable[1]}".strip()
+
     while len(usable) < 3:
         usable.append(usable[-1])
 
@@ -153,8 +163,8 @@ def format_elapsed_breakdown(elapsed: Elapsed, year_forms, month_forms, day_form
     """
     The calendar reading: years, months and days, with the empty units dropped.
 
-    Zeros are left out because they carry nothing — "2 роки 5 днів" says what
-    "2 роки 0 місяців 5 днів" says. A span with nothing in any unit still
+    Zeros are left out because they carry nothing — "2 years 5 days" says what
+    "2 years 0 months 5 days" says. A span with nothing in any unit still
     renders its days, so the line is never empty.
     """
     parts = []

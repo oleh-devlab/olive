@@ -65,8 +65,8 @@ usage_stats_update_seconds = 60
 # in years, months and days. Leave the list empty and the embed never starts.
 time_since_update_seconds = 240
 time_since_dates = [
-    {"label": "Перший запуск O.L.I.V.E.", "date": "2024-01-15"},
-    {"label": "Переїзд на VPS", "date": "2025-06-01 18:30"},
+    {"label": "O.L.I.V.E. first launch", "date": "2024-01-15"},
+    {"label": "Moved to the VPS", "date": "2025-06-01 18:30"},
 ]
 
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---

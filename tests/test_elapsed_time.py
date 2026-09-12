@@ -17,10 +17,16 @@ from modules.elapsed_time import (  # noqa: E402
     parse_date,
 )
 
-HOURS = ["година", "години", "годин"]
-DAYS = ["день", "дні", "днів"]
-YEARS = ["рік", "роки", "років"]
-MONTHS = ["місяць", "місяці", "місяців"]
+# Two forms each, the shape the cog falls back to when phrases.json has no
+# section of its own.
+HOURS = ["hour", "hours"]
+DAYS = ["day", "days"]
+YEARS = ["year", "years"]
+MONTHS = ["month", "months"]
+
+# Three forms are the other rule `decline()` carries, and Ukrainian is what it is
+# for; the formatters only join whichever words they are handed.
+UK_DAYS = ["день", "дні", "днів"]
 
 
 class TestParseDate(unittest.TestCase):
@@ -113,14 +119,21 @@ class TestMeasure(unittest.TestCase):
 
 
 class TestDecline(unittest.TestCase):
-    def test_picks_the_form_by_the_last_digits(self):
+    def test_three_forms_pick_by_the_last_digits(self):
         cases = {1: "день", 2: "дні", 4: "дні", 5: "днів", 11: "днів", 14: "днів", 21: "день", 112: "днів"}
 
         for number, word in cases.items():
-            self.assertEqual(decline(number, DAYS), f"{number} {word}")
+            self.assertEqual(decline(number, UK_DAYS), f"{number} {word}")
 
     def test_zero_takes_the_plural_form(self):
-        self.assertEqual(decline(0, DAYS), "0 днів")
+        self.assertEqual(decline(0, UK_DAYS), "0 днів")
+
+    def test_two_forms_keep_the_singular_for_exactly_one(self):
+        # The form count picks the rule: the last-digit one would read "21 day".
+        self.assertEqual(
+            [decline(n, DAYS) for n in (0, 1, 2, 5, 21, 111)],
+            ["0 days", "1 day", "2 days", "5 days", "21 days", "111 days"],
+        )
 
     def test_a_short_forms_list_is_padded_rather_than_raising(self):
         # The forms come from phrases.json, which an operator edits by hand.
@@ -132,16 +145,16 @@ class TestFormatElapsedTotal(unittest.TestCase):
     def test_counts_in_hours_on_the_first_day(self):
         elapsed = measure(datetime(2024, 1, 1, 0, 0), datetime(2024, 1, 2, 2, 0))
 
-        self.assertEqual(format_elapsed_total(elapsed, HOURS, DAYS), "26 годин")
+        self.assertEqual(format_elapsed_total(elapsed, HOURS, DAYS), "26 hours")
 
     def test_switches_to_days_once_there_is_more_than_one(self):
         elapsed = measure(datetime(2024, 1, 1), datetime(2024, 1, 3))
 
-        self.assertEqual(format_elapsed_total(elapsed, HOURS, DAYS), "2 дні")
+        self.assertEqual(format_elapsed_total(elapsed, HOURS, DAYS), "2 days")
 
     def test_a_fresh_date_still_renders(self):
         self.assertEqual(
-            format_elapsed_total(measure(datetime(2024, 1, 1), datetime(2024, 1, 1)), HOURS, DAYS), "0 годин"
+            format_elapsed_total(measure(datetime(2024, 1, 1), datetime(2024, 1, 1)), HOURS, DAYS), "0 hours"
         )
 
 
@@ -149,22 +162,22 @@ class TestFormatElapsedBreakdown(unittest.TestCase):
     def test_renders_all_three_units(self):
         elapsed = measure(datetime(2022, 3, 15), datetime(2024, 6, 20))
 
-        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "2 роки 3 місяці 5 днів")
+        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "2 years 3 months 5 days")
 
     def test_drops_the_empty_units(self):
         elapsed = measure(datetime(2022, 3, 15), datetime(2024, 3, 20))
 
-        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "2 роки 5 днів")
+        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "2 years 5 days")
 
     def test_keeps_the_days_when_everything_is_empty(self):
         elapsed = measure(datetime(2024, 1, 1), datetime(2024, 1, 1, 5))
 
-        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "0 днів")
+        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "0 days")
 
     def test_an_exact_anniversary_is_just_the_years(self):
         elapsed = measure(datetime(2020, 6, 1), datetime(2024, 6, 1))
 
-        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "4 роки")
+        self.assertEqual(format_elapsed_breakdown(elapsed, YEARS, MONTHS, DAYS), "4 years")
 
 
 if __name__ == "__main__":
