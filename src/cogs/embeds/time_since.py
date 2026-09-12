@@ -1,3 +1,4 @@
+import calendar
 import logging
 from datetime import datetime
 from typing import ClassVar
@@ -7,47 +8,67 @@ from disnake.ext import commands
 
 from core.embed_cog import BaseEmbedCog
 from core.time_utils import tz
-from core.utils import format_phrase, get_phrases
-from modules.elapsed_time import format_elapsed_breakdown, format_elapsed_total, measure, parse_date
 
 logger = logging.getLogger(__name__)
 
-# The unit words, used when `phrases.json` carries no `time_since_embed` section
-# (a fresh checkout has no file at all). Two forms each, singular and plural, as
-# `decline()` reads an English-shaped list; a deployment overrides all four from
-# `phrases.json`, where Ukrainian gives three forms instead.
-FALLBACK_FORMS: dict[str, list[str]] = {
-    "hour_forms": ["hour", "hours"],
-    "day_forms": ["day", "days"],
-    "year_forms": ["year", "years"],
-    "month_forms": ["month", "months"],
-}
+# Ukrainian `[1, 2-4, 5-0]` forms, hardcoded rather than looked up in
+# phrases.json: this embed is temporary, and a phrases section would outlive it.
+HOURS = ("година", "години", "годин")
+DAYS = ("день", "дні", "днів")
+MONTHS = ("місяць", "місяці", "місяців")
+YEARS = ("рік", "роки", "років")
 
-FALLBACK_ENTRY = "**{label}** *(since {date})*\n`{total}`\n`{breakdown}`"
-FALLBACK_DATE_FORMAT = "%d.%m.%Y"
-FALLBACK_OVERFLOW = "…and {count} more"
+# Below this the running counter stays in hours: "26 годин" is still the answer a
+# reader wants on the first day, and "1 день" throws away two thirds of it.
+DAYS_BEFORE_COUNTING_IN_DAYS = 2
 
-# Discord's own ceiling on an embed description. The list is operator-written
-# rather than user-written, but a long one still has to lose its tail instead
-# of losing the whole embed to a 400 from Discord.
-DESCRIPTION_LIMIT = 4096
+DATE_FORMAT = "%d.%m.%Y"
+
+
+def decline(number: int, forms: tuple[str, str, str]) -> str:
+    """Ukrainian declension of the word after a number."""
+    last_two, last = abs(number) % 100, abs(number) % 10
+
+    if 11 <= last_two <= 14:
+        form = forms[2]
+    elif last == 1:
+        form = forms[0]
+    elif 2 <= last <= 4:
+        form = forms[1]
+    else:
+        form = forms[2]
+
+    return f"{number} {form}"
+
+
+def add_months(moment: datetime, months: int) -> datetime:
+    """
+    Shift by whole months, clamping the day to the target month's length.
+
+    31 January plus one month is 28 February, the answer a calendar gives when
+    asked; spilling into 3 March would make the month count walk forward on its own.
+    """
+    year, month = divmod(moment.year * 12 + moment.month - 1 + months, 12)
+    month += 1
+
+    return moment.replace(year=year, month=month, day=min(moment.day, calendar.monthrange(year, month)[1]))
 
 
 class TimeSinceEmbed(BaseEmbedCog):
     """
-    One embed counting how long it has been since each configured date.
+    How long it has been since each date in `settings.time_since_dates`.
 
-    Each date gets two counters — a running total in one unit and the calendar
-    breakdown — because they answer different questions; `modules.elapsed_time`
-    measures them and this cog only dresses them in words.
+    Each date gets two readings of the same span, because they answer different
+    questions: a running total in one unit, and the calendar breakdown. A year
+    and a half is "548 днів" to one and "1 рік 6 місяців 1 день" to the other.
     """
 
     embed_key = "time_since"
-    phrases_section = "time_since_embed"
     settings_key = "time_since_update_seconds"
     default_seconds = 240
+    # No `phrases_section` on purpose — the text below is the whole of it.
     fallback_embed: ClassVar[dict] = {
-        "title": ":hourglass: | Time Since",
+        "title": ":hourglass: | Скільки часу минуло",
         "description": "{entries}",
     }
 
@@ -59,74 +80,66 @@ class TimeSinceEmbed(BaseEmbedCog):
     @staticmethod
     def _load_dates() -> list[tuple[str, datetime]]:
         """
-        Read `settings.time_since_dates` into label/date pairs, in order.
+        Read the configured `{label: date}` mapping, in order.
 
-        Three spellings are accepted because all three are ones an operator
-        reasonably writes: a `{label: date}` mapping, a list of
-        `{"label": ..., "date": ...}` entries, and a bare list of dates, which
-        label themselves. An unreadable date is dropped with a warning rather
-        than taking the cog's import down with it.
+        An unreadable date is dropped with a warning rather than taking the cog's
+        import down: `settings.py` is hand-written.
         """
-        configured = getattr(settings, "time_since_dates", None) or []
-        raw_entries = configured.items() if isinstance(configured, dict) else configured
-
         dates = []
-        for raw in raw_entries:
-            if isinstance(raw, dict):
-                label, value = raw.get("label"), raw.get("date")
-            elif isinstance(raw, (tuple, list)) and len(raw) == 2:
-                label, value = raw
-            else:
-                label, value = None, raw
-
-            start = parse_date(value)
-            if start is None:
-                logger.warning("time_since_dates: cannot read the date %r, skipping it.", value)
+        for label, value in (getattr(settings, "time_since_dates", None) or {}).items():
+            try:
+                start = datetime.fromisoformat(value)
+            except (TypeError, ValueError):
+                logger.warning("time_since_dates: cannot read the date %r under %r, skipping it.", value, label)
                 continue
 
-            dates.append((str(label) if label else str(value), start.replace(tzinfo=tz)))
+            dates.append((label, start.replace(tzinfo=tz)))
 
         return dates
 
     def should_start(self) -> bool:
-        # With nothing configured there is nothing to count, and publishing an
-        # empty embed would take up a slot in every statistic message.
+        # Nothing configured means nothing to count, and an empty embed would
+        # still take up a slot in every statistic message.
         return bool(self.dates)
 
     async def get_data(self):
-        section = get_phrases().get(self.phrases_section, {})
-        forms = {name: section.get(name, fallback) for name, fallback in FALLBACK_FORMS.items()}
-        date_format = section.get("date_format", FALLBACK_DATE_FORMAT)
         now = datetime.now(tz)
 
-        entries = []
-        for position, (label, start) in enumerate(self.dates):
-            elapsed = measure(start, now)
-            entry = format_phrase(
-                section,
-                "entry",
-                FALLBACK_ENTRY,
-                label=label,
-                date=start.strftime(date_format),
-                total=format_elapsed_total(elapsed, forms["hour_forms"], forms["day_forms"]),
-                breakdown=format_elapsed_breakdown(
-                    elapsed, forms["year_forms"], forms["month_forms"], forms["day_forms"]
-                ),
-            )
+        return {"entries": "\n\n".join(self._count(label, start, now) for label, start in self.dates)}
 
-            # The overflow note has to fit too, so the budget accounts for it while
-            # there are still entries that might not make it.
-            cut = len(self.dates) - position
-            note = format_phrase(section, "overflow", FALLBACK_OVERFLOW, count=cut)
-            budget = DESCRIPTION_LIMIT - (len(note) + 2 if cut > 1 else 0)
+    @staticmethod
+    def _count(label: str, start: datetime, now: datetime) -> str:
+        header = f"**{label}** *(з {start.strftime(DATE_FORMAT)})*"
+        if now <= start:
+            # A mistyped year reads as unstarted rather than as negative counts.
+            return f"{header}\n`ще не настало`"
 
-            if len("\n\n".join([*entries, entry])) > budget:
-                entries.append(note)
-                break
+        delta = now - start
 
-            entries.append(entry)
+        # Counted off in whole months rather than by subtracting the date fields:
+        # borrowing a day count from "the previous month" breaks at the ends of
+        # the month (31 January to 1 March has no 30 days of February to borrow).
+        months_total = (now.year - start.year) * 12 + (now.month - start.month)
+        if add_months(start, months_total) > now:
+            months_total -= 1
+        years, months = divmod(months_total, 12)
+        days = (now - add_months(start, months_total)).days
 
-        return {"entries": "\n\n".join(entries)}
+        total = (
+            decline(delta.days, DAYS)
+            if delta.days >= DAYS_BEFORE_COUNTING_IN_DAYS
+            else decline(int(delta.total_seconds() // 3600), HOURS)
+        )
+
+        # The empty units are dropped — "2 роки 5 днів" says what "2 роки
+        # 0 місяців 5 днів" says — but the days stay when there is nothing else.
+        parts = [decline(years, YEARS)] if years else []
+        if months:
+            parts.append(decline(months, MONTHS))
+        if days or not parts:
+            parts.append(decline(days, DAYS))
+
+        return f"{header}\n`{total}`\n`{' '.join(parts)}`"
 
 
 def setup(bot: commands.Bot) -> None:
