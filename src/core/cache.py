@@ -7,6 +7,7 @@ embeds_to_send = {
     "llm_limits": None,
     "llm_context": None,
     "usage_stats": None,
+    "time_since": None,
 }
 
 configLock = None
