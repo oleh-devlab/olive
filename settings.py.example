@@ -59,6 +59,16 @@ currency_update_seconds = 10
 active_cogs_update_seconds = 45
 usage_stats_update_seconds = 60
 
+# --- "Time since" embed ---
+# Every configured date gets two counters: a running total in one unit (hours
+# until there is more than one day, days after that) and the calendar reading
+# in years, months and days. Leave the list empty and the embed never starts.
+time_since_update_seconds = 240
+time_since_dates = [
+    {"label": "Перший запуск O.L.I.V.E.", "date": "2024-01-15"},
+    {"label": "Переїзд на VPS", "date": "2025-06-01 18:30"},
+]
+
 # --- Battery settings (You can skip this if you don't have a battery (Android hosting with Termux)) ---
 is_battery = 0 # Whether the device has a battery
 cost_kwh = 4.32 # Electricity cost per kWh
