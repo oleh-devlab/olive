@@ -242,8 +242,12 @@ class AutoSchedule(commands.Cog):
     async def timeblock_add(
         self,
         inter: disnake.ApplicationCommandInteraction,
-        start_time: str = commands.Param(description=phrases_cmd.get("param_start_time", "Start time (HH:MM)")),
-        end_time: str = commands.Param(description=phrases_cmd.get("param_end_time", "End time (HH:MM)")),
+        start_time: str = commands.Param(
+            description=phrases_cmd.get("param_start_time", "Start: HH:MM, or DD.MM.YYYY HH:MM for a given day")
+        ),
+        end_time: str = commands.Param(
+            description=phrases_cmd.get("param_end_time", "End: HH:MM, or DD.MM.YYYY HH:MM for a given day")
+        ),
         repeat: str = commands.Param(
             default=REPEAT_ONCE,
             choices=list(TIMEBLOCK_REPEATS),
@@ -285,9 +289,13 @@ class AutoSchedule(commands.Cog):
         inter: disnake.ApplicationCommandInteraction,
         block_id: int = commands.Param(description=phrases_cmd.get("param_timeblock_id", "ID of the timeblock")),
         start_time: str = commands.Param(
-            default=None, description=phrases_cmd.get("param_start_time", "Start time (HH:MM)")
+            default=None,
+            description=phrases_cmd.get("param_start_time", "Start: HH:MM, or DD.MM.YYYY HH:MM for a given day"),
         ),
-        end_time: str = commands.Param(default=None, description=phrases_cmd.get("param_end_time", "End time (HH:MM)")),
+        end_time: str = commands.Param(
+            default=None,
+            description=phrases_cmd.get("param_end_time", "End: HH:MM, or DD.MM.YYYY HH:MM for a given day"),
+        ),
         repeat: str = commands.Param(
             default=None,
             choices=list(TIMEBLOCK_REPEATS),

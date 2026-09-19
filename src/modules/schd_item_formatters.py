@@ -113,6 +113,32 @@ def format_task_info(task, style: Style = PLAIN) -> str:
     return "\n".join(lines)
 
 
+def _clock(bound) -> str:
+    return bound.strftime("%H:%M") if hasattr(bound, "strftime") else "???"
+
+
+def _block_bounds(blk, dated: bool) -> tuple[str, str]:
+    """A block's two ends, carrying their date only where the date is the answer.
+
+    A one-time block happens on one calendar day and nowhere else, so that day
+    is what a reader needs first: without it two one-off blocks read alike, and
+    one left spanning months reads like an hour. A daily or weekly block recurs
+    on a time of day and the date it was stored with is only a template, so
+    printing it would be noise. The end states its own date only when it falls
+    on another day than the start -- a block crossing midnight says so, and an
+    ordinary one is not made to repeat the same date twice.
+    """
+    start, end = blk.start, blk.end
+
+    if not dated or not hasattr(start, "date") or not hasattr(end, "date"):
+        return _clock(start), _clock(end)
+
+    if start.date() == end.date():
+        return start.strftime("%d.%m.%Y %H:%M"), _clock(end)
+
+    return start.strftime("%d.%m.%Y %H:%M"), end.strftime("%d.%m.%Y %H:%M")
+
+
 def format_timeblock_list(blocks, style: Style = PLAIN) -> str:
     if not blocks:
         return "No time blocks found."
@@ -123,8 +149,6 @@ def format_timeblock_list(blocks, style: Style = PLAIN) -> str:
         block_id = style.c(f"[ID: {getattr(blk, 'id', '?')}]")
 
         try:
-            start = blk.start.strftime("%H:%M") if hasattr(blk.start, "strftime") else "???"
-            end = blk.end.strftime("%H:%M") if hasattr(blk.end, "strftime") else "???"
             weekdays = getattr(blk, "weekdays", None)
             if weekdays:
                 repeat = f"Weekly on {weekdays}"
@@ -132,6 +156,8 @@ def format_timeblock_list(blocks, style: Style = PLAIN) -> str:
                 repeat = "Daily"
             else:
                 repeat = "One-time"
+
+            start, end = _block_bounds(blk, dated=repeat == "One-time")
             name = f" {style.b(blk.name)}" if getattr(blk, "name", None) else ""
             lines.append(f"{block_id}{name} {start} - {end} ({repeat})")
         except Exception:
