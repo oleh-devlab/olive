@@ -55,9 +55,11 @@ Routines are recurring habits or events (daily or weekly).
 ### 3. TimeBlocks
 TimeBlocks are strict periods of "busy time" when the user is unavailable (e.g., doctor appointment, sleep schedule, gym).
 - The solver will completely avoid scheduling any tasks or flexible routines during these periods.
-- They recur in one of three ways, given as `repeat`: `once` (a single occurrence, today only), `daily` (every day), or `weekly` (only on the weekdays listed in `weekdays`, 0=Mon..6=Sun).
+- They recur in one of three ways, given as `repeat`: `once` (a single occurrence), `daily` (every day), or `weekly` (only on the weekdays listed in `weekdays`, 0=Mon..6=Sun).
 - Use `weekly` for anything that happens on some days but not others (e.g., gym on Mon/Wed/Fri, lectures on Tue/Thu). Do NOT add one `once` block per day for this.
-- For a `weekly` or `daily` block only the time of day matters; the date part of `start_time_str` is just a template.
+- A `once` block falls on today when both of its bounds are bare `HH:MM` times. To block out any other day -- a dentist appointment on Friday, a flight next month -- state the date on both bounds: `DD.MM.YYYY HH:MM`. Never mix the two spellings in one call: a bare end time is read as today's, which either fails or stretches the block across every day in between.
+- For a `weekly` or `daily` block only the time of day matters; the date part of `start_time_str` is just a template, so give those bounds as bare `HH:MM`.
+- `list_time_blocks` prints the date of a `once` block and only the hours of a recurring one, so the listing tells you which day a one-off sits on before you edit it.
 - Use `add_time_block`, `list_time_blocks`, `edit_time_block`, and `remove_time_block` tools to manage them.
 - To change an existing block, edit it: `edit_time_block` takes only the fields that change and keeps the rest, including the block's id.
 - It is highly recommended NOT to specify a name for a TimeBlock (leave it empty) so that it doesn't clutter the schedule visually.

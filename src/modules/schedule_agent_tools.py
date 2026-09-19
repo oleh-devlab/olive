@@ -160,8 +160,8 @@ class ScheduleAgentTools:
         """
         Adds a strict time block (busy time) during which NO tasks can be scheduled.
         Args:
-            start_time_str: The start time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
-            end_time_str: The end time. Format 'HH:MM' (for a repeating TimeBlock) or 'DD.MM.YYYY HH:MM' (specific date).
+            start_time_str: The start, either 'HH:MM' or 'DD.MM.YYYY HH:MM'. A bare time puts a 'once' block on today and gives a 'daily'/'weekly' block its time of day; a stated date puts a 'once' block on that day and is ignored on a recurring one.
+            end_time_str: The end, in the same two formats. Spell it the same way as the start -- two bare times or two dated ones -- because a bare end is always read as today's.
             repeat: 'once' (a single occurrence), 'daily' (every day) or 'weekly' (on the given weekdays).
             name: Optional name for the block.
             weekdays: Required if repeat='weekly'. List of integers (0=Mon, 6=Sun).
@@ -192,8 +192,8 @@ class ScheduleAgentTools:
         Only provide the fields you want to change; omit any parameter you want to keep unchanged.
         Args:
             block_id: The ID of the time block.
-            start_time_str: New start time. Format 'HH:MM' or 'DD.MM.YYYY HH:MM'.
-            end_time_str: New end time. Format 'HH:MM' or 'DD.MM.YYYY HH:MM'.
+            start_time_str: New start, either 'HH:MM' or 'DD.MM.YYYY HH:MM'. A bare time keeps the block on the day it already sits on; a stated date moves it to that day.
+            end_time_str: New end, in the same two formats, read against the day the block's end already sits on.
             repeat: 'once', 'daily' or 'weekly'. Switching to 'once' or 'daily' drops the weekdays.
             name: New name for the block.
             weekdays: New list of weekdays (0=Mon, 6=Sun), which makes the block weekly.

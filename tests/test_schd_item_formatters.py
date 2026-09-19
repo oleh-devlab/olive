@@ -179,6 +179,40 @@ class TestTimeBlockList(unittest.TestCase):
         block = FakeBlock(daily=False, weekdays=[0, 2, 4])
         self.assertIn("(Weekly on [0, 2, 4])", format_timeblock_list([block], PLAIN))
 
+    def test_a_one_time_block_states_the_day_it_falls_on(self):
+        # Two one-off blocks at the same hour are only told apart by their date.
+        block = FakeBlock(
+            daily=False,
+            start=datetime.datetime(2026, 12, 25, 9, 0),
+            end=datetime.datetime(2026, 12, 25, 10, 0),
+        )
+
+        self.assertEqual(format_timeblock_list([block], PLAIN), "[ID: 7] Обід 25.12.2026 09:00 - 10:00 (One-time)")
+
+    def test_a_one_time_block_ending_on_another_day_dates_both_ends(self):
+        block = FakeBlock(
+            daily=False,
+            start=datetime.datetime(2026, 12, 25, 23, 0),
+            end=datetime.datetime(2026, 12, 26, 7, 0),
+        )
+
+        self.assertIn("25.12.2026 23:00 - 26.12.2026 07:00", format_timeblock_list([block], PLAIN))
+
+    def test_a_recurring_block_keeps_the_template_date_out_of_the_listing(self):
+        # Only the time of day means anything to the solver here, so the date the
+        # block happens to be stored with would be noise.
+        stored = dict(start=datetime.datetime(2026, 12, 25, 9, 0), end=datetime.datetime(2026, 12, 25, 10, 0))
+
+        daily = format_timeblock_list([FakeBlock(**stored)], PLAIN)
+        weekly = format_timeblock_list([FakeBlock(daily=False, weekdays=[0, 2], **stored)], PLAIN)
+
+        self.assertEqual(daily, "[ID: 7] Обід 09:00 - 10:00 (Daily)")
+        self.assertIn(" 09:00 - 10:00 (Weekly on [0, 2])", weekly)
+
+    def test_a_one_time_block_with_no_date_to_state_still_lists_its_hours(self):
+        # Bounds stored as bare times carry no day to print.
+        self.assertIn("13:00 - 14:00 (One-time)", format_timeblock_list([FakeBlock(daily=False)], PLAIN))
+
     def test_an_unnamed_block_is_listed_by_its_hours_alone(self):
         self.assertEqual(format_timeblock_list([FakeBlock(name=None)], PLAIN), "[ID: 7] 13:00 - 14:00 (Daily)")
 
