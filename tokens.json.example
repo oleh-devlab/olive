@@ -3,5 +3,10 @@
     "genai": {
         "default": "AIzaSy_DEFAULT_KEY_HERE",
         "private": ""
-    }
+    },
+    "discord_oauth": {
+        "client_id": "",
+        "client_secret": ""
+    },
+    "web_session_secret": ""
 }

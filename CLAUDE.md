@@ -23,9 +23,10 @@ cd src && python main.py
 | the `cogs` extension path | process CWD | `src/cogs/` |
 | `tokens.json` | `core/token_manager.py`'s own `__file__` | always `src/tokens.json` |
 | the providers' JSON (`data/…`) | `modules/*_provider.py`'s own `__file__` | always repo-root `data/` |
+| the web editor's page (`static/schedule/`) | `modules/schedule_web.py`'s own `__file__` | always `src/static/schedule/` |
 | `python -m unittest discover`, `ruff`, `black` | process CWD | repo root — running them from `src/` finds nothing |
 
-The last three rows are the ones worth remembering: the bottom two exceptions do not move when you `cd`, and the checks do.
+The last four rows are the ones worth remembering: the three `__file__`-anchored paths do not move when you `cd`, and the checks do.
 
 `src/settings.py`, `src/tokens.json`, `src/phrases.json`, `config.ini`, `data/` and `*.sqlite3` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) but `settings.py` is imported directly and its absence is fatal.
 
@@ -54,6 +55,7 @@ Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run 
 | `test_schedule_pagination` | – | – | – |
 | `test_schedule_stats` | – | – | – |
 | `test_schedule_timeline` | – | – | – |
+| `test_web_auth` | – | – | – |
 | `test_llm_context_manager` | – | – | ✓ |
 | `test_paged_message` | – | – | ✓ |
 | `test_personal_channels` | – | – | ✓ |
@@ -64,6 +66,7 @@ Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run 
 | `test_schedule_engine` | ✓ | ✓ | ✓ |
 | `test_schedule_timeblocks` | ✓ | ✓ | ✓ |
 | `test_schedule_ui` | ✓ | ✓ | ✓ |
+| `test_schedule_web` | ✓ | ✓ | ✓ |
 
 The dependencies are transitive, not written in the tests: anything reaching `inflation_provider` pulls in the vendored calculator and, through `core.personal_channels`, `disnake`; `schedule_engine` reaches `disnake` the same way, through `schedule_provider` → `core.personal_channels`. `ortools` travels further than it looks: the vendored scheduler's package `__init__` re-exports `Scheduler`, so importing `data_structs` through it — which `schedule_models` does, and everything above it with it — needs the solver installed even where nothing solves. Keeping a suite in the top block therefore means keeping the module under test away from those, which is why `test_schedule_stats` builds its temporary database with the real migrations rather than through a provider, and why `tests/inflation_fixtures.py` — the shared report/record/deposit builders and the fake provider — is deliberately free of `settings`. `llm_rate_limiter` is the easy end of that: it imports `dataclasses` and nothing else, and every method that reads the clock takes `now` as an argument, so its suite needs neither stubs nor a patched clock. `test_llm_client` is the other shape of the same problem: `llm_client` imports the Google GenAI SDK at module level, so the suite imports it when it is installed and substitutes a stub in `sys.modules` when it is not — a native dependency can abort that import with a `BaseException`, so the guard catches more than `ImportError`. It drives `get_interaction` against a fake API object and a hand-moved clock, never the network.
 
@@ -94,6 +97,10 @@ Most cogs are thin subclasses of one of these — prefer extending them over han
 ### Personal channel pairs
 
 `core/personal_channels.py` implements the pattern both the schedule and inflation subsystems use: each user gets a read-only channel holding an eternal webhook message plus a management channel for commands. `PersonalChannelRegistry` is a JSON registry that **preserves keys it does not recognise**, which is how modules stash per-owner settings (solver options, `view_mode`) next to the channel ids without a file of their own. This module is deliberately free of `settings` and phrases imports so it stays unit-testable — pass paths, limits and categories in.
+
+### Schedule web editor
+
+`cogs/schedule/web.py` runs an `aiohttp.web` server inside the bot's process, off unless `settings.schedule_web_base_url` is set and `tokens.json` carries `discord_oauth`. It is a second front door to the same data rather than a copy: `modules/schedule_web.py` writes through `ScheduleProvider` and reads every row through the `/task add` validator, and it runs on the bot's own event loop, so a provider call -- a synchronous read-modify-write of the user's JSON -- can never interleave with one from a slash command or the agent. That is the whole reason there is no sync to get wrong; do not move it into a process of its own without replacing that guarantee. After a write the cog dispatches `schedule_update` for the owner's display channel. Who may sign in is "has a schedule channel", checked on every request, not only at login. `core/web_auth.py` (Discord OAuth2 `identify` flow, HMAC-signed session cookie) is free of `settings` like `personal_channels`, and the page itself (`src/static/schedule/`) is plain HTML/JS/CSS with no build step and no third-party scripts, because the CSP allows none. A row is the whole task, so an edit is a full replacement -- that is what lets a cleared cell clear a field, which the partial `/task edit` validator cannot express. Operator setup is in `docs/UK/schedule-web.md`.
 
 ### Persistence
 

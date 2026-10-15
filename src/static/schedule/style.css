@@ -1,0 +1,335 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1c1f24;
+  --muted: #646b75;
+  --border: #d9dde3;
+  --accent: #5865f2;
+  --accent-text: #ffffff;
+  --danger: #c93c3c;
+  --ok: #2e7d4f;
+  --row-hover: #f0f2f6;
+  --editing: #eef0ff;
+  --radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1f22;
+    --surface: #2b2d31;
+    --text: #e3e5e8;
+    --muted: #9ba1a9;
+    --border: #3f4248;
+    --accent: #6d78f5;
+    --danger: #f07070;
+    --ok: #5fcf8f;
+    --row-hover: #33353b;
+    --editing: #33365a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.bar h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+main {
+  padding: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+#login-view {
+  max-width: 480px;
+  margin: 48px auto;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.hint {
+  margin-top: 0;
+  font-size: 14px;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.status {
+  min-height: 1.45em;
+  margin: 0 0 8px;
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* --- Buttons --- */
+
+button,
+.button {
+  display: inline-block;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button:hover,
+.button:hover {
+  background: var(--row-hover);
+}
+
+button.primary,
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+button.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+button.link {
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+button.link:hover {
+  background: none;
+}
+
+/* --- Table --- */
+
+.table-wrap {
+  /* Positioned so that the hidden "actions" heading is clipped with the rest
+     of the table instead of widening the page on a phone. */
+  position: relative;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+th {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+th[title] {
+  cursor: help;
+}
+
+tbody tr:hover {
+  background: var(--row-hover);
+}
+
+tr.editing,
+tr.editing:hover {
+  background: var(--editing);
+}
+
+tr.saving {
+  opacity: 0.6;
+}
+
+tfoot tr.new td {
+  border-bottom: none;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.id {
+  color: var(--muted);
+}
+
+.name {
+  font-weight: 600;
+  white-space: normal;
+  min-width: 140px;
+}
+
+.description {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.overdue {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.actions {
+  text-align: right;
+}
+
+.actions button {
+  padding: 4px 8px;
+}
+
+.actions button + button {
+  margin-left: 4px;
+}
+
+/* --- Inputs --- */
+
+input {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  width: 100%;
+}
+
+input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+input[type="number"] {
+  width: 64px;
+  text-align: right;
+}
+
+.in-name {
+  min-width: 150px;
+}
+
+.in-deadline {
+  width: auto;
+}
+
+.in-depends_on {
+  width: 72px;
+}
+
+.in-description {
+  min-width: 160px;
+}
+
+/* --- History and dialog --- */
+
+#history {
+  margin-top: 16px;
+}
+
+#history summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+#history ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  max-width: min(400px, calc(100vw - 32px));
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+dialog input {
+  width: 120px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

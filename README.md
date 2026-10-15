@@ -106,4 +106,5 @@ This project relies on the following Git submodules to extend its core functiona
 
 ## Notes
 
+- **Schedule web editor.** Optional: a page where users edit their schedule's tasks as a table, signed in with Discord. Off until configured — see [schedule web editor](/docs/EN/schedule-web.md) | [Ukrainian](/docs/UK/schedule-web.md).
 - **Reloading cogs.** `/reload_cogs` restarts a cog, but it does **not** pick up changes made in `src/core/` or `src/modules/` — those need a full bot restart. See [cog hot reloading](/docs/EN/cog_hot_reloading.md) | [Ukrainian](/docs/UK/cog_hot_reloading.md).

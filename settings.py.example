@@ -100,6 +100,19 @@ schedule_max_routines_per_user = 20
 schedule_max_timeblocks_per_user = 50
 schedule_max_channels_per_guild = 5
 
+# --- Schedule web editor ---
+# A page where the owner of a schedule channel edits their tasks as a table,
+# signed in with Discord. The bot serves it itself on host:port; `base_url` is
+# the address the browser sees (normally a reverse proxy or a tunnel in front of
+# that port), and `<base_url>/oauth/callback` has to be registered as a redirect
+# of the bot's application in the Discord developer portal. It also needs
+# `discord_oauth` in tokens.json. Leave `base_url` empty and the server never starts.
+# See docs/UK/schedule-web.md.
+schedule_web_base_url = ""
+schedule_web_host = "127.0.0.1"
+schedule_web_port = 8080
+schedule_web_session_days = 30
+
 # --- Inflation Settings ---
 # <integer_server_id>: <category_id> — where personal inflation channels are created.
 inflation_categories = {

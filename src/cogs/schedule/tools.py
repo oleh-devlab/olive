@@ -788,6 +788,34 @@ class AutoSchedule(commands.Cog):
                 "You don't have a schedule channel yet. Please use `/schedule_channel create` first."
             )
 
+    @schedule_channel.sub_command(
+        name="web",
+        description=phrases_cmd.get("cmd_schedule_channel_web_desc", "Link to edit your tasks in a browser"),
+    )
+    async def schedule_channel_web(self, inter: disnake.ApplicationCommandInteraction):
+        await inter.response.defer(ephemeral=True)
+        phrases = utils.get_phrases(inter.guild.id if inter.guild else None).get("schedule", {})
+
+        base_url = getattr(settings, "schedule_web_base_url", "")
+        if not base_url:
+            await inter.edit_original_response(
+                phrases.get("web_disabled", "The web editor is not enabled on this bot.")
+            )
+            return
+
+        if provider.channels.get(inter.author.id) is None:
+            await inter.edit_original_response(
+                phrases.get(
+                    "web_no_channel",
+                    "The web editor opens your schedule, so create one first with `/schedule_channel create`.",
+                )
+            )
+            return
+
+        await inter.edit_original_response(
+            utils.format_phrase(phrases, "web_link", "Edit your tasks here: {url}", url=base_url.rstrip("/") + "/")
+        )
+
 
 def setup(bot):
     bot.add_cog(AutoSchedule(bot))

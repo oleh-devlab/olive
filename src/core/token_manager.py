@@ -14,6 +14,8 @@ class TokenRegistry:
 
         self._discord_token: str | None = None
         self._genai_tokens: dict[str, str] = {}
+        self._discord_oauth: dict[str, str] = {}
+        self._web_session_secret: str | None = None
 
         self._load_tokens()
 
@@ -40,6 +42,15 @@ class TokenRegistry:
             if isinstance(genai_data, dict):
                 self._genai_tokens = {str(k): str(v).strip() for k, v in genai_data.items() if v}
 
+            # The OAuth2 application the schedule's web editor signs users in with
+            oauth_data = data.get("discord_oauth", {})
+            if isinstance(oauth_data, dict):
+                self._discord_oauth = {str(k): str(v).strip() for k, v in oauth_data.items() if v}
+
+            session_secret = data.get("web_session_secret", "")
+            if session_secret and isinstance(session_secret, str):
+                self._web_session_secret = session_secret.strip()
+
             logger.info("Loaded tokens from %s", self.config_path)
         except Exception as e:
             logger.error("Error loading tokens from %s: %s", self.config_path, e)
@@ -61,6 +72,18 @@ class TokenRegistry:
                 return default_token
 
         return os.environ.get("GENAI_API_KEY")
+
+    def get_discord_oauth(self) -> tuple[str, str] | None:
+        """The `(client_id, client_secret)` pair of the bot's OAuth2 application, if both are set."""
+        client_id = self._discord_oauth.get("client_id")
+        client_secret = self._discord_oauth.get("client_secret")
+        if client_id and client_secret:
+            return client_id, client_secret
+        return None
+
+    def get_web_session_secret(self) -> str | None:
+        """The key web sessions are signed with. Without one, they last only until a restart."""
+        return self._web_session_secret
 
 
 # Global singleton
