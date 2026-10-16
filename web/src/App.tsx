@@ -22,7 +22,7 @@ const TABS = [
   { id: "time-blocks", label: "Time blocks" },
 ];
 
-// The timer's panel: beside the calendar on a wide screen, above it on a
+// The timer's panel: to the right of the calendar on a wide screen, above it on a
 // narrow one (the stylesheet's breakpoint is the same), folded to a strip or not.
 const STACKED_BELOW_PX = 760;
 const PANEL_PX = 280;
@@ -209,8 +209,8 @@ export default function App({ loginError }: { loginError?: string }) {
         {view.kind === "app" && (
           <section id="app-view">
             <div className={panelOpen ? "workspace" : "workspace panel-closed"}>
-              <TimerPanel schedule={solved} tasks={tasks} open={panelOpen} onToggle={togglePanel} onLog={spend} />
               <Schedule version={scheduleVersion} fail={fail} initialSpan={daysShown} onSolved={setSolved} />
+              <TimerPanel schedule={solved} tasks={tasks} open={panelOpen} onToggle={togglePanel} onLog={spend} />
             </div>
 
             <nav className="tabs" role="tablist">

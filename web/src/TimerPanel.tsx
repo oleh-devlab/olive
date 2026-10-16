@@ -48,7 +48,7 @@ function focusOf(schedule: SolvedSchedule | null, now: number): { entry: Schedul
 const duration = (minutes: number): string =>
   minutes >= 60 ? `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}` : `${minutes} min`;
 
-// A timer for the task being worked on, in a panel beside the calendar -- as
+// A timer for the task being worked on, in a panel to the right of the calendar -- as
 // tall as the calendar, its contents staying in sight as that scrolls -- that
 // folds down to a strip. It logs what it counted against the task -- only when
 // asked, and never more than it was set to -- the way `/task spend` does.
@@ -151,7 +151,7 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
       <aside className="panel closed" aria-label="Timer">
         <div className="panel-body">
           <button type="button" className="panel-toggle" title="Show the timer" aria-label="Show the timer" onClick={onToggle}>
-            »
+            «
           </button>
           {timer && (running || finished || hasCounted(timer, now)) && (
             <span className={`panel-strip-time${running ? " running" : ""}`} title={timer.name}>
@@ -176,7 +176,7 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
         <div className="panel-head">
           <h2>Timer</h2>
           <button type="button" className="panel-toggle" title="Hide the timer" aria-label="Hide the timer" onClick={onToggle}>
-            «
+            »
           </button>
         </div>
 
