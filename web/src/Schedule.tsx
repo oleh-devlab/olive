@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { api } from "./api";
 import {
@@ -6,6 +6,7 @@ import {
   clip,
   clock,
   dayOf,
+  hourHeight,
   hourRange,
   minuteOf,
   plannedDays,
@@ -100,7 +101,6 @@ export function Schedule({ version, fail }: Props) {
   const shown = days.slice(start, start + span);
   const segments = shown.flatMap((day) => byDay.get(day) ?? []);
   const [fromHour, toHour] = hourRange(segments);
-  const range = { from: fromHour * 60, to: toHour * 60 };
 
   const label =
     shown.length === 1
@@ -155,41 +155,7 @@ export function Schedule({ version, fail }: Props) {
         </div>
       </div>
 
-      <div className="calendar" style={{ "--days": shown.length, "--hours": toHour - fromHour } as CSSProperties}>
-        <div className="calendar-head">
-          <span />
-          {shown.map((day) => (
-            <span key={day} className={day === present.day ? "today" : undefined}>
-              {weekdayOf(day)} {shortDate(day)}
-            </span>
-          ))}
-        </div>
-
-        <div className="calendar-body">
-          <div className="calendar-hours" aria-hidden="true">
-            {Array.from({ length: toHour - fromHour }, (_, index) => (
-              <span key={index}>{clock((fromHour + index) * 60)}</span>
-            ))}
-          </div>
-          {shown.map((day) => (
-            <div key={day} className="calendar-day">
-              {/* What is already past today: the schedule only plans from the moment it was solved. */}
-              {day === present.day && present.minute > range.from && (
-                <div
-                  className="calendar-past"
-                  style={{ height: share(Math.min(present.minute, range.to) - range.from, range) }}
-                />
-              )}
-              {(byDay.get(day) ?? []).map((segment, index) => (
-                <Entry key={index} segment={segment} range={range} />
-              ))}
-              {day === present.day && present.minute >= range.from && present.minute <= range.to && (
-                <div className="calendar-now" style={{ top: percent(present.minute, range) }} title="Now" />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      <CalendarGrid days={shown} byDay={byDay} hours={[fromHour, toHour]} present={present} />
 
       <Notes schedule={schedule} />
     </section>
@@ -197,6 +163,77 @@ export function Schedule({ version, fail }: Props) {
 }
 
 type Range = { from: number; to: number };
+
+interface GridProps {
+  days: string[];
+  byDay: Map<string, Segment[]>;
+  hours: [number, number];
+  present: { day: string; minute: number };
+}
+
+// The days side by side over the hours shown. It scrolls on its own, under the
+// days' names, when its hours need more height than the screen has.
+function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridProps) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const range = { from: fromHour * 60, to: toHour * 60 };
+  const segments = days.flatMap((day) => byDay.get(day) ?? []);
+
+  // Brings the present moment into view whenever other days or hours are
+  // shown -- not each minute as the line moves, nor on every new solve.
+  const shownKey = `${days.join()} ${fromHour}-${toHour}`;
+  useEffect(() => {
+    const box = scroller.current;
+    if (!box) return;
+    const now = box.querySelector(".calendar-now");
+    box.scrollTop = now
+      ? now.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - box.clientHeight / 4
+      : 0;
+  }, [shownKey]);
+
+  const style = {
+    "--days": days.length,
+    "--hours": toHour - fromHour,
+    "--hour-px": `${hourHeight(segments, range)}px`,
+  } as CSSProperties;
+
+  return (
+    <div className="calendar" ref={scroller} style={style}>
+      <div className="calendar-head">
+        <span />
+        {days.map((day) => (
+          <span key={day} className={day === present.day ? "today" : undefined}>
+            {weekdayOf(day)} {shortDate(day)}
+          </span>
+        ))}
+      </div>
+
+      <div className="calendar-body">
+        <div className="calendar-hours" aria-hidden="true">
+          {Array.from({ length: toHour - fromHour }, (_, index) => (
+            <span key={index}>{clock((fromHour + index) * 60)}</span>
+          ))}
+        </div>
+        {days.map((day) => (
+          <div key={day} className="calendar-day">
+            {/* What is already past today: the schedule only plans from the moment it was solved. */}
+            {day === present.day && present.minute > range.from && (
+              <div
+                className="calendar-past"
+                style={{ height: share(Math.min(present.minute, range.to) - range.from, range) }}
+              />
+            )}
+            {(byDay.get(day) ?? []).map((segment, index) => (
+              <Entry key={index} segment={segment} range={range} />
+            ))}
+            {day === present.day && present.minute >= range.from && present.minute <= range.to && (
+              <div className="calendar-now" style={{ top: percent(present.minute, range) }} title="Now" />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // How far down the day a moment is, and how much of it a stretch of minutes takes.
 const percent = (minute: number, range: Range): string => share(minute - range.from, range);

@@ -451,10 +451,25 @@ dialog input {
   cursor: default;
 }
 
+.calendar {
+  /* The room the calendar may take: the screen less the bars above it. What
+     its hours need beyond that scrolls inside it, under the days' names. */
+  --room: max(320px, calc(100dvh - 170px));
+  max-height: var(--room);
+  overflow-y: auto;
+}
+
 .calendar-head,
 .calendar-body {
   display: grid;
   grid-template-columns: 44px repeat(var(--days), minmax(0, 1fr));
+}
+
+.calendar-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  background: var(--surface);
 }
 
 .calendar-head span {
@@ -471,9 +486,9 @@ dialog input {
 }
 
 .calendar-body {
-  /* The hours shown share what the screen has room for, rather than each
-     taking a fixed height: a short day is drawn as large as a long one. */
-  height: clamp(360px, calc(100vh - 220px), 960px);
+  /* Each hour as tall as the shortest entry in view needs (--hour-px, worked
+     out from the data), and taller when that leaves the screen half empty. */
+  height: max(calc(var(--hours) * var(--hour-px)), calc(var(--room) - 30px));
   border-top: 1px solid var(--border);
 }
 
