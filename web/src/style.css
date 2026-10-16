@@ -688,19 +688,19 @@ dialog input {
 
 /* --- Timer panel and the page around it --- */
 
-/* The panel to the right of the calendar, folded down to a strip or not; the tables
+/* The panel beside the calendar, folded down to a strip or not; the tables
    go below both, across the whole width. The panel is as tall as the calendar
    and its contents stay in sight while the page scrolls past it. Narrower than
    the breakpoint (App.tsx has the same one) it goes above the calendar instead. */
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 16px;
   margin-bottom: 16px;
 }
 
 .workspace.panel-closed {
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: 36px minmax(0, 1fr);
 }
 
 .workspace .schedule {
@@ -837,11 +837,6 @@ dialog input {
   .workspace,
   .workspace.panel-closed {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* Above the calendar, though it comes after it in the page. */
-  .panel {
-    order: -1;
   }
 
   .panel-body {
