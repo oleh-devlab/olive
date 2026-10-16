@@ -21,7 +21,7 @@ from disnake.ext import commands
 from core.token_manager import token_registry
 from core.web_auth import DiscordOAuth, SessionSigner
 from modules.schedule_provider import ScheduleProvider, channels_registry
-from modules.schedule_web import ScheduleWebApp, oauth_redirect_uri
+from modules.schedule_web import ScheduleWebApp, oauth_redirect_uri, page_is_built
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,10 @@ class ScheduleWebServer(commands.Cog):
         base_url = getattr(settings, "schedule_web_base_url", "")
         if not base_url:
             logger.info("Schedule web editor is off: schedule_web_base_url is not set.")
+            return
+
+        if not page_is_built():
+            logger.error("Schedule web editor is off: its page is not built. Run scripts/build-web.sh.")
             return
 
         credentials = token_registry.get_discord_oauth()

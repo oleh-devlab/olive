@@ -35,6 +35,7 @@ import cogs.schedule.web as web_cog  # noqa: E402
 from core.time_utils import tz  # noqa: E402
 from core.web_auth import OAuthError, SessionSigner  # noqa: E402
 from modules import schedule_provider  # noqa: E402
+from modules import schedule_web  # noqa: E402
 from modules.schedule_web import SESSION_COOKIE, STATE_COOKIE, ScheduleWebApp  # noqa: E402
 
 USER = 123456789012345678
@@ -76,6 +77,16 @@ def row(**overrides) -> dict:
     return data
 
 
+def stand_in_page(directory: Path) -> Path:
+    """
+    A page where the built one would be: the real page is built from web/ and
+    is not in git, and what these tests check is how the server hands it out.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "index.html").write_text("<!doctype html><title>Schedule</title><div id=root></div>")
+    return directory
+
+
 class WebTestCase(unittest.IsolatedAsyncioTestCase):
     base_url = BASE_URL
 
@@ -98,6 +109,7 @@ class WebTestCase(unittest.IsolatedAsyncioTestCase):
             base_url=self.base_url,
             is_allowed=lambda user_id: user_id in self.allowed,
             on_change=self.redrawn.append,
+            static_dir=stand_in_page(Path(tmp.name) / "page"),
         ).make_app()
 
         self.client = TestClient(TestServer(app))
@@ -121,7 +133,7 @@ class TestSignIn(WebTestCase):
     async def test_the_page_is_served_with_a_strict_policy(self):
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)
-        self.assertIn("<table", await response.text())
+        self.assertIn("<div id=root>", await response.text())
         self.assertIn("script-src 'self'", response.headers["Content-Security-Policy"])
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
 
@@ -660,6 +672,13 @@ class TestCog(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.page = Path(tmp.name)
+        patcher = mock.patch.object(schedule_web, "STATIC_DIR", stand_in_page(self.page))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     async def test_without_a_base_url_nothing_listens(self):
         with mock.patch.object(settings, "schedule_web_base_url", "", create=True):
             await self.cog.cog_load()
@@ -673,6 +692,17 @@ class TestCog(unittest.IsolatedAsyncioTestCase):
         ):
             await self.cog.cog_load()
         self.assertIsNone(self.cog.runner)
+
+    async def test_an_unbuilt_page_is_not_served_and_says_how_to_build_it(self):
+        (self.page / "index.html").unlink()
+        with (
+            mock.patch.object(settings, "schedule_web_base_url", BASE_URL, create=True),
+            self.assertLogs(web_cog.logger, "ERROR") as logs,
+        ):
+            await self.cog.cog_load()
+
+        self.assertIsNone(self.cog.runner)
+        self.assertIn("scripts/build-web.sh", logs.output[0])
 
     async def test_once_configured_the_page_is_served_until_the_cog_unloads(self):
         port = unused_port()

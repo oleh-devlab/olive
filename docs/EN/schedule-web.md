@@ -31,7 +31,11 @@ Only users who have a schedule channel (`/schedule_channel create`) can sign in.
 4. **Reaching it from outside.** The bot listens on `host:port` over plain HTTP. Put HTTPS in front of it: a reverse proxy (Caddy, nginx) or a tunnel (Cloudflare Tunnel, Tailscale Funnel) that forwards `schedule_web_base_url` to `127.0.0.1:8080`. This also works on Termux, which has no public address.
    - When `base_url` starts with `https://`, cookies are marked `Secure` and the browser will not send them over HTTP.
    - Do not expose the port to the internet directly without HTTPS: the session cookie would travel in clear text.
-5. Restart the bot. Users get the link with `/schedule_channel web`.
+5. **Build the page**: `scripts/build-web.sh`. The page is written in React and TypeScript under `web/`, and what the bot serves from `src/static/schedule/` is built from it rather than kept in git.
+   - The build runs in a Node container, so the host needs no Node: podman if it is running, otherwise docker. With neither, the script uses the host's npm (Node 22 or newer). `CONTAINER_RUNTIME=podman`, `docker` or `none` picks one.
+   - The result does not depend on which one built it, and the files belong to whoever ran the script, whether the runtime is rootless or not.
+   - Run it again after every `git pull` that changes `web/`. Without a built page the server does not start, and the log says so.
+6. Restart the bot. Users get the link with `/schedule_channel web`.
 
 ## What the page does
 
@@ -45,6 +49,18 @@ Three tabs — Tasks, Routines, Time blocks — with the same kind of table:
 - Time blocks: a one-off block takes a date and time, a daily or weekly one only a time of day. An end before the start means the block runs past midnight.
 
 A row is checked by the same validators as `/task add`, `/routine add_*` and `/timeblock add`, and the limits on how many items there may be are kept by the provider itself, the same for the commands, the agent and the page. Saving a row replaces the whole item, so a cleared cell (description, deadline, dependencies) really is cleared.
+
+## Changing the page
+
+```bash
+cd web
+npm ci
+npm run watch   # rebuilds into src/static/schedule/ on every save; reload the browser
+npm run lint
+npm run build   # typecheck, then build
+```
+
+The bot has to be running with the web editor on for the page to have an API to talk to. The `Schedule Web Page` workflow runs the lint and the build on every push that touches `web/`, and checks that npm, docker and podman build the very same page.
 
 ## Security
 

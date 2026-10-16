@@ -14,6 +14,7 @@ The bot runs from inside `src/`; the checks run from the repo root. Which direct
 git submodule update --init --recursive   # tests for inflation need these present
 pip install -r requirements.txt
 cp settings.py.example src/settings.py    # plus tokens.json
+scripts/build-web.sh                      # the web editor's page, only if it is turned on
 cd src && python main.py
 ```
 
@@ -23,12 +24,12 @@ cd src && python main.py
 | the `cogs` extension path | process CWD | `src/cogs/` |
 | `tokens.json` | `core/token_manager.py`'s own `__file__` | always `src/tokens.json` |
 | the providers' JSON (`data/…`) | `modules/*_provider.py`'s own `__file__` | always repo-root `data/` |
-| the web editor's page (`static/schedule/`) | `modules/schedule_web.py`'s own `__file__` | always `src/static/schedule/` |
+| the web editor's page (`static/schedule/`) | `modules/schedule_web.py`'s own `__file__` | always `src/static/schedule/`, where `scripts/build-web.sh` builds it from `web/` |
 | `python -m unittest discover`, `ruff`, `black` | process CWD | repo root — running them from `src/` finds nothing |
 
 The last four rows are the ones worth remembering: the three `__file__`-anchored paths do not move when you `cd`, and the checks do.
 
-`src/settings.py`, `src/tokens.json`, `src/phrases.json`, `config.ini`, `data/` and `*.sqlite3` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) but `settings.py` is imported directly and its absence is fatal.
+`src/settings.py`, `src/tokens.json`, `src/phrases.json`, `config.ini`, `data/`, `*.sqlite3` and the built page in `src/static/schedule/` are all gitignored and absent from a fresh checkout. Code must tolerate a missing `phrases.json` (every lookup carries a fallback string) but `settings.py` is imported directly and its absence is fatal.
 
 ```bash
 python -m unittest discover                 # from repo root; CI runs exactly this
@@ -36,11 +37,12 @@ python -m unittest tests.test_inflation_report                       # one modul
 python -m unittest tests.test_migrations.TestMigrations.test_name    # one test
 ruff check .                                # CI pins ruff==0.16.2
 black .                                     # line-length 120, auto-applied by CI
+cd web && npm ci && npm run lint && npm run build   # the web editor's page
 ```
 
 Both submodule directories are excluded from ruff and black — never reformat or lint-fix inside them.
 
-The three workflows do not cover the same branches: `unittest.yml` runs on every branch and PR (Python 3.14, `pip install -r requirements.txt`, submodules checked out), while `code_check.yml` (ruff, 3.12) and `black-formatter.yml` (opens an auto-format PR) only fire on `main` and `mk*`. So a feature branch gets tests but no lint feedback until it targets one of those — run `ruff check .` locally.
+The workflows do not cover the same branches: `unittest.yml` runs on every branch and PR (Python 3.14, `pip install -r requirements.txt`, submodules checked out), while `code_check.yml` (ruff, 3.12) and `black-formatter.yml` (opens an auto-format PR) only fire on `main` and `mk*`. So a feature branch gets tests but no lint feedback until it targets one of those — run `ruff check .` locally. `web.yml` runs on every branch too, but only when `web/`, the build script or itself changed: ESLint, `tsc` and the Vite build, then `scripts/build-web.sh` with npm, docker and podman in turn, failing if the three pages differ by a byte or leave a file owned by anyone but the runner.
 
 Tests insert `src/` into `sys.path` themselves and stub `settings`, so they run without a config. What they do need is uneven — a module either imports cleanly on a bare checkout or fails at import time, so half the suite is unrunnable until the submodules are initialized:
 
@@ -102,7 +104,9 @@ Most cogs are thin subclasses of one of these — prefer extending them over han
 
 ### Schedule web editor
 
-`cogs/schedule/web.py` runs an `aiohttp.web` server inside the bot's process, off unless `settings.schedule_web_base_url` is set and `tokens.json` carries `discord_oauth`. It is a second front door to the same data rather than a copy: `modules/schedule_web.py` serves tasks, routines and time blocks the same way: it writes through `ScheduleProvider`, reads every row through the validator of the matching `add` command, and hands an item out in the shape it is stored in (`schedule_provider.task_to_dict`, `routine_to_dict`, `timeblock_to_dict`), taking the same shape back -- so there is no API format of its own to keep in step with the file. One `ItemKind` per kind says how a row is read and which provider calls store it, and create, update and delete are written once for all three; a routine's skip is not part of its row (`kept_on_edit`), it has its own endpoint the way it has its own command. It runs on the bot's own event loop, so a provider call -- a synchronous read-modify-write of the user's JSON -- can never interleave with one from a slash command or the agent. That is the whole reason there is no sync to get wrong; do not move it into a process of its own without replacing that guarantee. After a write the cog dispatches `schedule_update` for the owner's display channel. Who may sign in is "has a schedule channel", checked on every request, not only at login. `core/web_auth.py` (Discord OAuth2 `identify` flow, HMAC-signed session cookie) is free of `settings` like `personal_channels`, and the page itself (`src/static/schedule/`) is plain HTML/JS/CSS with no build step and no third-party scripts, because the CSP allows none. A row is the whole item, so an edit is a full replacement -- that is what lets a cleared cell clear a field, which the partial `/task edit` validator cannot express. Operator setup is in `docs/UK/schedule-web.md`.
+`cogs/schedule/web.py` runs an `aiohttp.web` server inside the bot's process, off unless `settings.schedule_web_base_url` is set and `tokens.json` carries `discord_oauth`. It is a second front door to the same data rather than a copy: `modules/schedule_web.py` serves tasks, routines and time blocks the same way: it writes through `ScheduleProvider`, reads every row through the validator of the matching `add` command, and hands an item out in the shape it is stored in (`schedule_provider.task_to_dict`, `routine_to_dict`, `timeblock_to_dict`), taking the same shape back -- so there is no API format of its own to keep in step with the file. One `ItemKind` per kind says how a row is read and which provider calls store it, and create, update and delete are written once for all three; a routine's skip is not part of its row (`kept_on_edit`), it has its own endpoint the way it has its own command. It runs on the bot's own event loop, so a provider call -- a synchronous read-modify-write of the user's JSON -- can never interleave with one from a slash command or the agent. That is the whole reason there is no sync to get wrong; do not move it into a process of its own without replacing that guarantee. After a write the cog dispatches `schedule_update` for the owner's display channel. Who may sign in is "has a schedule channel", checked on every request, not only at login. `core/web_auth.py` (Discord OAuth2 `identify` flow, HMAC-signed session cookie) is free of `settings` like `personal_channels`. A row is the whole item, so an edit is a full replacement -- that is what lets a cleared cell clear a field, which the partial `/task edit` validator cannot express. Operator setup is in `docs/UK/schedule-web.md`.
+
+The page is React and TypeScript in `web/`, built by Vite into `src/static/schedule/`, which is not in git: the server hands out `index.html` at `/` and everything else under `/static/`, hence Vite's `base`. The build emits no inline script and nothing comes from a third party, so the CSP stays at `'self'`. An operator builds it with `scripts/build-web.sh`, which needs no Node on the host: it runs in `node:<web/.node-version>-alpine` under podman, else docker, else falls back to the host's npm (`CONTAINER_RUNTIME` overrides). A rootless runtime's container root already is the user, so it gets no user flag; a rootful one gets `--user uid:gid`; `label=disable` rather than `:z`, so an SELinux host's tree is not relabelled. Without a built page `cog_load` logs how to build it and does not start the server; the Python suite never builds it, `test_schedule_web` serves a stand-in `index.html`. `Table.tsx` is the one table, `tables.tsx` declares the three as lists of columns (`columns.tsx`), each knowing how to show, draft, edit and read its cell. ESLint runs `react-hooks` with the React Compiler rules, which forbid setting state from an effect's body and reading a ref outside a handler — why a table reloads on a `version` prop the page bumps, and why the dialogs own their refs.
 
 ### Persistence
 

@@ -30,3 +30,7 @@ webhooks_config.json
 *_api
 
 probes/
+# The schedule web editor: built from web/ by scripts/build-web.sh, and what that installs
+src/static/schedule/
+web/node_modules/
+web/.npm/

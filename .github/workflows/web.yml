@@ -1,0 +1,80 @@
+name: Schedule Web Page
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'web/**'
+      - 'scripts/build-web.sh'
+      - '.github/workflows/web.yml'
+  pull_request:
+    branches:
+      - '**'
+    paths:
+      - 'web/**'
+      - 'scripts/build-web.sh'
+      - '.github/workflows/web.yml'
+
+jobs:
+  check:
+    name: Lint, typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.node-version
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck and build
+        run: npm run build
+
+  same-everywhere:
+    # scripts/build-web.sh picks whichever of these the host has; the page it
+    # leaves behind must not depend on which one that was, nor belong to anyone
+    # but whoever ran it. The runner has all three: npm, docker running as
+    # root, and podman without it.
+    name: Same page from npm, docker and podman
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.node-version
+
+      - name: Build with each
+        shell: bash
+        run: |
+          for runtime in none docker podman; do
+            echo "::group::$runtime"
+            rm -rf src/static/schedule web/node_modules web/.npm
+            CONTAINER_RUNTIME=$runtime scripts/build-web.sh
+            (cd src/static/schedule && find . -type f -print0 | sort -z | xargs -0 sha256sum) | tee "$RUNNER_TEMP/$runtime.sha256"
+            foreign="$(find src/static/schedule web -not -user "$(id -u)" -print -quit)"
+            if [[ -n "$foreign" ]]; then
+              echo "::error::Building with $runtime left $foreign owned by someone else"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+          diff "$RUNNER_TEMP/none.sha256" "$RUNNER_TEMP/docker.sha256"
+          diff "$RUNNER_TEMP/none.sha256" "$RUNNER_TEMP/podman.sha256"

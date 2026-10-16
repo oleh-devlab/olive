@@ -50,6 +50,7 @@ from modules.schedule_validators import (
 
 logger = logging.getLogger(__name__)
 
+# Where scripts/build-web.sh puts the page built from web/; not in git.
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static" / "schedule"
 
 SESSION_COOKIE = "olive_session"
@@ -68,6 +69,11 @@ CONTENT_SECURITY_POLICY = (
 )
 
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def page_is_built() -> bool:
+    """Whether the page has been built where it is served from."""
+    return (STATIC_DIR / "index.html").is_file()
 
 
 def oauth_redirect_uri(base_url: str) -> str:
@@ -299,7 +305,7 @@ class ScheduleWebApp:
         base_url: str,
         is_allowed: Callable[[int], bool],
         on_change: Callable[[int], None],
-        static_dir: Path = STATIC_DIR,
+        static_dir: Path | None = None,
     ):
         self.provider = provider
         self.oauth = oauth
@@ -309,7 +315,7 @@ class ScheduleWebApp:
         self.secure_cookies = self.base_url.startswith("https://")
         self.is_allowed = is_allowed
         self.on_change = on_change
-        self.static_dir = static_dir
+        self.static_dir = static_dir or STATIC_DIR
 
         # Keyed by the path each kind is served under.
         self.kinds = {
