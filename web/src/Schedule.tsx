@@ -170,6 +170,15 @@ export function Schedule({ version, fail }: Props) {
 
 type Range = { from: number; to: number };
 
+// The room the calendar may take before it scrolls inside itself: the screen
+// less the bars above it, the day names' row included in the calendar's height.
+const ROOM_MARGIN_PX = 170;
+const MIN_ROOM_PX = 320;
+const HEAD_PX = 30;
+// A calendar up to this much taller than its room grows instead, the page
+// scrolling for it: a scrollbar of its own would only move it a few pixels.
+const GROWTH = 1.25;
+
 interface GridProps {
   days: string[];
   byDay: Map<string, Segment[]>;
@@ -186,8 +195,18 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   const axis = buildAxis(segments, range);
   const nowShown = present.minute >= range.from && present.minute <= range.to;
 
+  const [screen, setScreen] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const onResize = () => setScreen(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const room = Math.max(MIN_ROOM_PX, screen - ROOM_MARGIN_PX);
+  const scrolls = axis.height + HEAD_PX > room * GROWTH;
+
   // Brings the present moment into view whenever other days or hours are
-  // shown -- not each minute as the line moves, nor on every new solve.
+  // shown -- not each minute as the line moves, nor on every new solve. Only
+  // a calendar scrolling inside itself has anything to do here.
   const shownKey = `${days.join()} ${fromHour}-${toHour}`;
   useEffect(() => {
     const box = scroller.current;
@@ -199,7 +218,11 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   }, [shownKey]);
 
   return (
-    <div className="calendar" ref={scroller} style={{ "--days": days.length } as CSSProperties}>
+    <div
+      className={scrolls ? "calendar scrolls" : "calendar"}
+      ref={scroller}
+      style={{ "--days": days.length, maxHeight: scrolls ? room : undefined } as CSSProperties}
+    >
       <div className="calendar-head">
         <span />
         {days.map((day) => (

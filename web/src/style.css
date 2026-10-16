@@ -451,11 +451,10 @@ dialog input {
   cursor: default;
 }
 
-.calendar {
-  /* The room the calendar may take: the screen less the bars above it. What
-     its hours need beyond that scrolls inside it, under the days' names. */
-  --room: max(320px, calc(100dvh - 170px));
-  max-height: var(--room);
+/* Set on a calendar much taller than the screen, which then scrolls inside
+   itself (Schedule.tsx works out when); one only a little taller grows, and
+   the page scrolls instead. Either way the day names stay in sight. */
+.calendar.scrolls {
   overflow-y: auto;
 }
 
