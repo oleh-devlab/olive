@@ -8,14 +8,17 @@ import { WEEKDAYS } from "./dates";
 import type { ScheduleEntry, SolvedSchedule } from "./types";
 
 export const DAY_MINUTES = 24 * 60;
-// So that one short item does not fill the whole height.
-const MIN_HOURS = 8;
-const QUIET_DAY: [number, number] = [8, 20];
 // What one line of an entry's text takes, border and padding included, and
 // the least and most an hour may be given to make room for it.
 const LINE_PX = 22;
 const MIN_HOUR_PX = 40;
 const MAX_HOUR_PX = 90;
+// What a collapsed stretch is drawn as: a thin band when it is empty, and one
+// line when a time block is in it, so that the block still shows its name.
+const GAP_PX = 10;
+const BLOCKED_PX = LINE_PX;
+// How far below the last hour's label the next one has to be to fit.
+const LABEL_PX = 13;
 
 const isPlanned = (segment: Segment): boolean => segment.entry.type !== "time_block";
 
@@ -120,22 +123,16 @@ export function plannedDays(schedule: SolvedSchedule, segments: Map<string, Segm
   return days;
 }
 
-// The hours worth showing for these days: from the earliest task or routine in
-// them to the latest. Time blocks are drawn but do not stretch it -- hours that
-// hold nothing but a block, such as a night's sleep, have nothing planned in
-// them. Never fewer than MIN_HOURS, made up evenly above and below.
-export function hourRange(segments: Segment[]): [number, number] {
+// The hours worth showing for these days: from the hour of the earliest task
+// or routine in them to that of the latest. Time blocks are drawn but do not
+// stretch it -- hours that hold nothing but a block, such as a night's sleep,
+// have nothing planned in them. Null when nothing is planned on these days.
+export function hourRange(segments: Segment[]): [number, number] | null {
   const planned = segments.filter(isPlanned);
-  if (!planned.length) return QUIET_DAY;
+  if (!planned.length) return null;
 
-  let from = Math.floor(Math.min(...planned.map((segment) => segment.from)) / 60);
-  let to = Math.ceil(Math.max(...planned.map((segment) => segment.to)) / 60);
-  const missing = MIN_HOURS - (to - from);
-  if (missing > 0) {
-    from = Math.max(0, from - Math.floor(missing / 2));
-    to = Math.min(24, from + MIN_HOURS);
-    from = Math.max(0, to - MIN_HOURS);
-  }
+  const from = Math.floor(Math.min(...planned.map((segment) => segment.from)) / 60);
+  const to = Math.ceil(Math.max(...planned.map((segment) => segment.to)) / 60);
   return [from, to];
 }
 
@@ -164,4 +161,86 @@ export function hourHeight(segments: Segment[], range: { from: number; to: numbe
   if (!minutes.length) return MIN_HOUR_PX;
 
   return Math.min(MAX_HOUR_PX, Math.max(MIN_HOUR_PX, Math.ceil((LINE_PX * 60) / Math.min(...minutes))));
+}
+
+// A stretch of the hours shown, as it is drawn: from `y` down, `height` tall.
+// One that is `collapsed` is drawn shorter than its minutes would be.
+export interface Piece {
+  from: number;
+  to: number;
+  kind: "planned" | "blocked" | "empty";
+  y: number;
+  height: number;
+  collapsed: boolean;
+}
+
+export interface Axis {
+  pieces: Piece[];
+  height: number;
+  // Where a moment of the day is drawn, in pixels from the top.
+  y: (minute: number) => number;
+  // The hours that get a line: not those inside a collapsed stretch.
+  hours: number[];
+  // Those of them that also get a label: not the last, nor one that would
+  // crowd the one above -- the two edges of a collapsed hour, say.
+  labels: number[];
+}
+
+// How the hours shown are laid out from top to bottom. A stretch with a task
+// or a routine in it on any of the days shown is drawn to scale, `hourPx` an
+// hour. One with nothing in it on any of them -- a break, free time -- is
+// collapsed to a thin band, and one with only time blocks in it to a single
+// line: their length is in the times of what comes before and after.
+export function buildAxis(segments: Segment[], range: { from: number; to: number }, hourPx: number): Axis {
+  const shown = segments.flatMap((segment) => {
+    const part = clip(segment, range);
+    return part ? [{ planned: isPlanned(segment), from: part.from, to: part.to }] : [];
+  });
+  const edges = [...new Set([range.from, range.to, ...shown.flatMap((part) => [part.from, part.to])])].sort(
+    (a, b) => a - b,
+  );
+
+  // Every stretch between two edges is one kind all through; neighbours of a
+  // kind are joined, so a collapsed stretch is one band however many edges it spans.
+  const kinds: { from: number; to: number; kind: Piece["kind"] }[] = [];
+  for (let index = 0; index + 1 < edges.length; index++) {
+    const [from, to] = [edges[index], edges[index + 1]];
+    const covering = shown.filter((part) => part.from < to && part.to > from);
+    const kind = covering.some((part) => part.planned) ? "planned" : covering.length ? "blocked" : "empty";
+    const last = kinds[kinds.length - 1];
+    if (last?.kind === kind) last.to = to;
+    else kinds.push({ from, to, kind });
+  }
+
+  const pieces: Piece[] = [];
+  let y = 0;
+  for (const { from, to, kind } of kinds) {
+    const natural = ((to - from) * hourPx) / 60;
+    const height = kind === "planned" ? natural : Math.min(natural, kind === "blocked" ? BLOCKED_PX : GAP_PX);
+    pieces.push({ from, to, kind, y, height, collapsed: height < natural });
+    y += height;
+  }
+
+  const yOf = (minute: number): number => {
+    const piece = pieces.find((candidate) => minute <= candidate.to) ?? pieces[pieces.length - 1];
+    if (!piece) return 0;
+    const share = Math.min(1, Math.max(0, (minute - piece.from) / (piece.to - piece.from)));
+    return piece.y + share * piece.height;
+  };
+
+  const hours: number[] = [];
+  for (let hour = Math.ceil(range.from / 60); hour * 60 <= range.to; hour++) {
+    const minute = hour * 60;
+    if (!pieces.some((piece) => piece.collapsed && piece.from < minute && minute < piece.to)) hours.push(hour);
+  }
+
+  const labels: number[] = [];
+  for (const hour of hours) {
+    const previous = labels[labels.length - 1];
+    if (hour * 60 < range.to && (previous === undefined || yOf(hour * 60) - yOf(previous * 60) >= LABEL_PX)) {
+      labels.push(hour);
+    }
+  }
+
+  return { pieces, height: y, y: yOf, hours, labels };
 }

@@ -486,32 +486,50 @@ dialog input {
 }
 
 .calendar-body {
-  /* Each hour as tall as the shortest entry in view needs (--hour-px, worked
-     out from the data), and taller when that leaves the screen half empty. */
-  height: max(calc(var(--hours) * var(--hour-px)), calc(var(--room) - 30px));
+  /* Its height, and where everything in it goes, are worked out from the
+     schedule (calendar.ts, buildAxis): not a share of the screen. */
   border-top: 1px solid var(--border);
 }
 
 .calendar-hours {
-  display: grid;
-  grid-template-rows: repeat(var(--hours), 1fr);
+  position: relative;
 }
 
 .calendar-hours span {
-  padding: 2px 6px 0 0;
+  position: absolute;
+  right: 6px;
+  padding-top: 2px;
   font-size: 11px;
   line-height: 1;
   color: var(--muted);
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .calendar-day {
   position: relative;
   border-left: 1px solid var(--border);
-  /* A line at the top of every hour. */
-  background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px);
-  background-size: 100% calc(100% / var(--hours));
+}
+
+.calendar-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* A stretch with nothing in it on any day shown, drawn as a thin band. */
+.calendar-gap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-block: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--muted) 6%, transparent);
+}
+
+.calendar-empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
 }
 
 .entry {

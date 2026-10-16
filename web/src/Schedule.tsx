@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { api } from "./api";
 import {
   botClock,
+  buildAxis,
   clip,
   clock,
   dayOf,
@@ -100,7 +101,7 @@ export function Schedule({ version, fail }: Props) {
   const start = Math.min(first, Math.max(days.length - span, 0));
   const shown = days.slice(start, start + span);
   const segments = shown.flatMap((day) => byDay.get(day) ?? []);
-  const [fromHour, toHour] = hourRange(segments);
+  const hours = hourRange(segments);
 
   const label =
     shown.length === 1
@@ -155,7 +156,13 @@ export function Schedule({ version, fail }: Props) {
         </div>
       </div>
 
-      <CalendarGrid days={shown} byDay={byDay} hours={[fromHour, toHour]} present={present} />
+      {hours ? (
+        <CalendarGrid days={shown} byDay={byDay} hours={hours} present={present} />
+      ) : (
+        <p className="calendar-empty muted">
+          Nothing is planned on {shown.length === 1 ? "this day" : "these days"}.
+        </p>
+      )}
 
       <Notes schedule={schedule} />
     </section>
@@ -172,11 +179,13 @@ interface GridProps {
 }
 
 // The days side by side over the hours shown. It scrolls on its own, under the
-// days' names, when its hours need more height than the screen has.
+// days' names, when it is taller than the screen has room for.
 function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const range = { from: fromHour * 60, to: toHour * 60 };
   const segments = days.flatMap((day) => byDay.get(day) ?? []);
+  const axis = buildAxis(segments, range, hourHeight(segments, range));
+  const nowShown = present.minute >= range.from && present.minute <= range.to;
 
   // Brings the present moment into view whenever other days or hours are
   // shown -- not each minute as the line moves, nor on every new solve.
@@ -190,14 +199,8 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
       : 0;
   }, [shownKey]);
 
-  const style = {
-    "--days": days.length,
-    "--hours": toHour - fromHour,
-    "--hour-px": `${hourHeight(segments, range)}px`,
-  } as CSSProperties;
-
   return (
-    <div className="calendar" ref={scroller} style={style}>
+    <div className="calendar" ref={scroller} style={{ "--days": days.length } as CSSProperties}>
       <div className="calendar-head">
         <span />
         {days.map((day) => (
@@ -207,26 +210,38 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
         ))}
       </div>
 
-      <div className="calendar-body">
+      <div className="calendar-body" style={{ height: axis.height }}>
         <div className="calendar-hours" aria-hidden="true">
-          {Array.from({ length: toHour - fromHour }, (_, index) => (
-            <span key={index}>{clock((fromHour + index) * 60)}</span>
+          {axis.labels.map((hour) => (
+            <span key={hour} style={{ top: axis.y(hour * 60) }}>
+              {clock(hour * 60)}
+            </span>
           ))}
         </div>
         {days.map((day) => (
           <div key={day} className="calendar-day">
+            {axis.hours.map((hour) => (
+              <div key={hour} className="calendar-line" style={{ top: axis.y(hour * 60) }} />
+            ))}
+            {axis.pieces
+              .filter((piece) => piece.collapsed && piece.kind === "empty")
+              .map((piece) => (
+                <div
+                  key={piece.from}
+                  className="calendar-gap"
+                  style={{ top: piece.y, height: piece.height }}
+                  title={`Nothing planned ${clock(piece.from)}–${clock(piece.to)}`}
+                />
+              ))}
             {/* What is already past today: the schedule only plans from the moment it was solved. */}
             {day === present.day && present.minute > range.from && (
-              <div
-                className="calendar-past"
-                style={{ height: share(Math.min(present.minute, range.to) - range.from, range) }}
-              />
+              <div className="calendar-past" style={{ height: axis.y(Math.min(present.minute, range.to)) }} />
             )}
             {(byDay.get(day) ?? []).map((segment, index) => (
-              <Entry key={index} segment={segment} range={range} />
+              <Entry key={index} segment={segment} range={range} y={axis.y} />
             ))}
-            {day === present.day && present.minute >= range.from && present.minute <= range.to && (
-              <div className="calendar-now" style={{ top: percent(present.minute, range) }} title="Now" />
+            {day === present.day && nowShown && (
+              <div className="calendar-now" style={{ top: axis.y(present.minute) }} title="Now" />
             )}
           </div>
         ))}
@@ -235,17 +250,12 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   );
 }
 
-// How far down the day a moment is, and how much of it a stretch of minutes takes.
-const percent = (minute: number, range: Range): string => share(minute - range.from, range);
-const share = (minutes: number, range: Range): string => `${(minutes / (range.to - range.from)) * 100}%`;
-
-function Entry({ segment, range }: { segment: Segment; range: Range }) {
+function Entry({ segment, range, y }: { segment: Segment; range: Range; y: (minute: number) => number }) {
   // A block can reach past the hours shown; only what is inside them is drawn.
   const shown = clip(segment, range);
   if (!shown) return null;
 
   const { entry } = segment;
-  const { from, to } = shown;
   const continued = segment.continued || shown.cutAbove;
   const continues = segment.continues || shown.cutBelow;
   const name = entry.name || KINDS[entry.type];
@@ -258,8 +268,8 @@ function Entry({ segment, range }: { segment: Segment; range: Range }) {
     <div
       className={`entry entry-${entry.type}${continued ? " continued" : ""}${continues ? " continues" : ""}`}
       style={{
-        top: percent(from, range),
-        height: share(to - from, range),
+        top: y(shown.from),
+        height: y(shown.to) - y(shown.from),
         left: `${(segment.lane / segment.lanes) * 100}%`,
         width: `${100 / segment.lanes}%`,
       }}
