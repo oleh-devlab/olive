@@ -344,9 +344,6 @@ class ScheduleAgentTools:
             task_id: The ID of the task.
             minutes: Number of minutes spent working on the task.
         """
-        if minutes <= 0:
-            raise ValueError("minutes must be > 0.")
-
         is_completed, remaining = self.provider.spend_task_time(self.user_id, task_id, minutes)
         if is_completed:
             return f"Subtracted {minutes} min. Task fully completed and moved to history!"

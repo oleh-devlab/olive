@@ -66,11 +66,6 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            tasks = provider.list_tasks(inter.author.id)
-            max_tasks = getattr(settings, "schedule_max_tasks_per_user", 200)
-            if len(tasks) >= max_tasks:
-                return await inter.edit_original_response(f"You have reached the maximum limit of {max_tasks} tasks.")
-
             new_task = validate_task_creation_data(
                 name=name,
                 duration_min=duration_min,
@@ -123,8 +118,6 @@ class AutoSchedule(commands.Cog):
         minutes: int = commands.Param(description=phrases_cmd.get("param_spend_minutes", "Minutes spent")),
     ):
         await inter.response.defer(ephemeral=True)
-        if minutes <= 0:
-            return await inter.edit_original_response("Error: minutes must be > 0.")
         try:
             is_completed, remaining = provider.spend_task_time(inter.author.id, task_id, minutes)
             if is_completed:

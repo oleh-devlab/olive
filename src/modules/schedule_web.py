@@ -26,9 +26,9 @@ from aiohttp import web
 
 from core.time_utils import tz
 from core.web_auth import DiscordOAuth, OAuthError, SessionSigner, new_state
-from modules.schedule_exceptions import ScheduleValidationError
+from modules.schedule_exceptions import ScheduleLimitError, ScheduleValidationError
 from modules.schedule_models import Task
-from modules.schedule_provider import ScheduleProvider, task_to_dict
+from modules.schedule_provider import ScheduleProvider, max_tasks_per_user, task_to_dict
 from modules.schedule_validators import parse_depends_on, validate_task_creation_data
 
 logger = logging.getLogger(__name__)
@@ -374,7 +374,7 @@ class ScheduleWebApp:
                 "tasks": [task_to_dict(t) for t in self.provider.list_tasks(user_id)],
                 "completed": [task_to_dict(t) for t in self.provider.list_completed_tasks(user_id)],
                 "limits": {
-                    "max_tasks": getattr(settings, "schedule_max_tasks_per_user", 100),
+                    "max_tasks": max_tasks_per_user(),
                     "name_length": MAX_NAME_LENGTH,
                     "description_length": MAX_DESCRIPTION_LENGTH,
                 },
@@ -390,13 +390,11 @@ class ScheduleWebApp:
         user_id = self._user_id(request)
         row = await self._json_body(request)
 
-        max_tasks = getattr(settings, "schedule_max_tasks_per_user", 100)
-        if len(self.provider.list_tasks(user_id)) >= max_tasks:
-            raise _error(web.HTTPConflict, f"You have reached the maximum limit of {max_tasks} tasks.")
-
         try:
             task = task_from_json(row, user_id)
             self.provider.add_task(user_id, task)
+        except ScheduleLimitError as e:
+            raise _error(web.HTTPConflict, str(e)) from None
         except (ScheduleValidationError, ValueError) as e:
             raise _error(web.HTTPBadRequest, str(e)) from None
 
@@ -447,13 +445,16 @@ class ScheduleWebApp:
         body = await self._json_body(request)
 
         minutes = body.get("minutes") if isinstance(body, dict) else None
-        if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes <= 0:
-            raise _error(web.HTTPBadRequest, "'minutes' must be a whole number above 0.")
+        if isinstance(minutes, bool) or not isinstance(minutes, int):
+            raise _error(web.HTTPBadRequest, "'minutes' must be a whole number.")
 
         if self.provider.get_task(user_id, task_id) is None:
             raise _error(web.HTTPNotFound, f"Task {task_id} not found.")
 
-        completed, remaining = self.provider.spend_task_time(user_id, task_id, minutes)
+        try:
+            completed, remaining = self.provider.spend_task_time(user_id, task_id, minutes)
+        except ValueError as e:
+            raise _error(web.HTTPBadRequest, str(e)) from None
 
         self._changed(user_id)
         return web.json_response({"completed": completed, "remaining_min": remaining})

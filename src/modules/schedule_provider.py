@@ -5,6 +5,7 @@ from pathlib import Path
 import settings
 
 from core.personal_channels import PersonalChannelRegistry
+from modules.schedule_exceptions import ScheduleLimitError
 from modules.schedule_models import (
     REPEAT_DAILY,
     REPEAT_ONCE,
@@ -25,6 +26,11 @@ def get_data_dir() -> Path:
 
 def get_schedule_file(user_id: int) -> Path:
     return get_data_dir() / f"{user_id}_schedule.json"
+
+
+def max_tasks_per_user() -> int:
+    """How many unfinished tasks one user may have; completed ones do not count."""
+    return getattr(settings, "schedule_max_tasks_per_user", 100)
 
 
 def get_schedule_channels_file() -> Path:
@@ -338,6 +344,12 @@ class ScheduleProvider:
         self._validate_task(task)
         data = self._load_data(user_id)
 
+        # Held here rather than by each caller: `/task add`, the agent and the
+        # web editor all add through this, and the agent used to skip it.
+        max_tasks = max_tasks_per_user()
+        if len(data["tasks"]) >= max_tasks:
+            raise ScheduleLimitError(f"You have reached the maximum limit of {max_tasks} tasks.")
+
         max_id = 0
         for t in data["tasks"] + data["completed_tasks"]:
             if t.get("id", 0) > max_id:
@@ -385,6 +397,9 @@ class ScheduleProvider:
         return count
 
     def spend_task_time(self, user_id: int, task_id: int, minutes: int) -> tuple[bool, int]:
+        if minutes <= 0:
+            raise ValueError("minutes must be > 0.")
+
         data = self._load_data(user_id)
         target_idx = -1
         for i, t in enumerate(data["tasks"]):
