@@ -1,37 +1,37 @@
 <!doctype html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>O.L.I.V.E. — задачі</title>
+  <title>O.L.I.V.E. — tasks</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <header class="bar">
-    <h1>Задачі</h1>
+    <h1>Tasks</h1>
     <div id="who" class="who" hidden>
       <span id="who-name"></span>
-      <button id="logout" type="button" class="link">Вийти</button>
+      <button id="logout" type="button" class="link">Log out</button>
     </div>
   </header>
 
   <main>
-    <p id="loading" class="muted">Завантаження…</p>
+    <p id="loading" class="muted">Loading…</p>
 
     <section id="login-view" class="card" hidden>
-      <p>Тут можна редагувати задачі свого розкладу таблицею. Увійди тим самим Discord-акаунтом, з яким користуєшся ботом.</p>
+      <p>Edit the tasks of your schedule as a table. Sign in with the Discord account you use with the bot.</p>
       <p id="login-error" class="error" hidden></p>
-      <a class="button primary" href="/login">Увійти через Discord</a>
+      <a class="button primary" href="/login">Sign in with Discord</a>
     </section>
 
     <section id="app-view" hidden>
       <p class="muted hint">
-        Розклад у Discord перерахується одразу після збереження.
-        Тривалість — скільки ще лишилось; «Сесія» порожня — задача не ділиться на частини,
-        «Мін.» порожня — бот підбере сам.
+        Your schedule in Discord is recalculated as soon as you save.
+        Duration is the time still left; leave Session empty to keep a task in one piece,
+        and Min. empty to let the bot choose.
       </p>
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
@@ -40,26 +40,26 @@
           <thead>
             <tr>
               <th scope="col" class="num">ID</th>
-              <th scope="col">Назва</th>
-              <th scope="col" class="num" title="Скільки ще лишилось, хв">Тривалість</th>
-              <th scope="col" class="num" title="0 — куди завгодно, 1–10 — чим вище, тим раніше">Пріоритет</th>
-              <th scope="col">Дедлайн</th>
-              <th scope="col" class="num" title="Найдовша сесія, хв">Сесія</th>
-              <th scope="col" class="num" title="Найкоротша сесія, хв">Мін.</th>
-              <th scope="col" class="num" title="Перерва після сесії, хв">Перерва</th>
-              <th scope="col" title="ID задач, після яких іде ця">Після</th>
-              <th scope="col">Опис</th>
-              <th scope="col"><span class="sr-only">Дії</span></th>
+              <th scope="col">Name</th>
+              <th scope="col" class="num" title="Minutes still left">Duration</th>
+              <th scope="col" class="num" title="0 — anywhere; 1–10 — the higher, the earlier">Priority</th>
+              <th scope="col">Deadline</th>
+              <th scope="col" class="num" title="Longest session, min">Session</th>
+              <th scope="col" class="num" title="Shortest session, min">Min.</th>
+              <th scope="col" class="num" title="Break after each session, min">Break</th>
+              <th scope="col" title="IDs of the tasks this one comes after">After</th>
+              <th scope="col">Description</th>
+              <th scope="col"><span class="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody id="task-rows"></tbody>
           <tfoot id="new-row"></tfoot>
         </table>
       </div>
-      <p id="empty" class="muted" hidden>Задач поки немає — додай першу в рядку вище.</p>
+      <p id="empty" class="muted" hidden>No tasks yet. Add the first one in the row above.</p>
 
       <details id="history" class="card">
-        <summary>Виконані (<span id="history-count">0</span>)</summary>
+        <summary>Completed (<span id="history-count">0</span>)</summary>
         <ul id="history-list"></ul>
       </details>
     </section>
@@ -67,11 +67,11 @@
 
   <dialog id="spend-dialog">
     <form method="dialog" id="spend-form">
-      <p>Скільки хвилин витрачено на «<span id="spend-name"></span>»?</p>
+      <p>How many minutes did you spend on “<span id="spend-name"></span>”?</p>
       <input id="spend-minutes" type="number" min="1" step="1" inputmode="numeric" required>
       <div class="dialog-actions">
-        <button type="submit" value="cancel" formnovalidate>Скасувати</button>
-        <button type="submit" value="ok" class="primary">Записати</button>
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="submit" value="ok" class="primary">Save</button>
       </div>
     </form>
   </dialog>

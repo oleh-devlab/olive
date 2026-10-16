@@ -2,23 +2,23 @@
 
 // What `/oauth/callback` sends back in `?error=` when signing in did not work.
 const LOGIN_ERRORS = {
-  denied: "Вхід скасовано.",
-  state: "Спроба входу застаріла — спробуй ще раз.",
-  discord: "Discord не відповів — спробуй ще раз трохи пізніше.",
-  no_channel: "У цього акаунта немає каналу розкладу. Спершу створи його в Discord командою /schedule_channel create.",
+  denied: "Sign-in was cancelled.",
+  state: "That sign-in attempt has expired. Please try again.",
+  discord: "Discord did not respond. Please try again a little later.",
+  no_channel: "This account has no schedule channel. Please create one in Discord first with /schedule_channel create.",
 };
 
 // The editable columns, in table order. `blank` is what an empty cell means.
 const FIELDS = [
-  { key: "name", label: "Назва", type: "text" },
-  { key: "duration", label: "Тривалість", type: "number", min: 1 },
-  { key: "priority", label: "Пріоритет", type: "number", min: 0, max: 10 },
-  { key: "deadline", label: "Дедлайн", type: "deadline" },
-  { key: "max_chunk_duration", label: "Сесія", type: "number", min: 1, blank: "ціла" },
-  { key: "min_chunk_duration", label: "Мін.", type: "number", min: 0, blank: "авто" },
-  { key: "break_duration", label: "Перерва", type: "number", min: 0 },
-  { key: "depends_on", label: "Після", type: "ids" },
-  { key: "description", label: "Опис", type: "text" },
+  { key: "name", label: "Name", type: "text" },
+  { key: "duration", label: "Duration", type: "number", min: 1 },
+  { key: "priority", label: "Priority", type: "number", min: 0, max: 10 },
+  { key: "deadline", label: "Deadline", type: "deadline" },
+  { key: "max_chunk_duration", label: "Session", type: "number", min: 1, blank: "whole" },
+  { key: "min_chunk_duration", label: "Min.", type: "number", min: 0, blank: "auto" },
+  { key: "break_duration", label: "Break", type: "number", min: 0 },
+  { key: "depends_on", label: "After", type: "ids" },
+  { key: "description", label: "Description", type: "text" },
 ];
 
 const state = {
@@ -51,13 +51,13 @@ async function api(method, path, body) {
   try {
     response = await fetch(path, options);
   } catch {
-    throw new ApiError("Сервер не відповідає.", 0);
+    throw new ApiError("The server is not responding.", 0);
   }
 
   if (response.status === 204) return null;
 
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(data.error || `Помилка ${response.status}`, response.status);
+  if (!response.ok) throw new ApiError(data.error || `Error ${response.status}`, response.status);
   return data;
 }
 
@@ -86,7 +86,7 @@ function setStatus(text, kind = "ok") {
 }
 
 function fail(error) {
-  if (error.status === 401) return showLogin("Сесія закінчилась — увійди ще раз.");
+  if (error.status === 401) return showLogin("Your session has ended. Please sign in again.");
   if (error.status === 403 && !(error.message || "").startsWith("Cross-origin")) {
     return showLogin(LOGIN_ERRORS.no_channel);
   }
@@ -133,7 +133,7 @@ function button(text, title, onClick, className = "") {
 
 function nameOf(id) {
   const task = state.tasks.find((t) => t.id === id);
-  return task ? task.name : "(немає такої задачі)";
+  return task ? task.name : "(no such task)";
 }
 
 function viewRow(task) {
@@ -144,11 +144,11 @@ function viewRow(task) {
   const deadline = cell(displayDeadline(task.deadline), "deadline");
   if (isOverdue(task.deadline)) {
     deadline.classList.add("overdue");
-    deadline.title = "Дедлайн минув";
+    deadline.title = "The deadline has passed";
   }
   tr.append(deadline);
 
-  tr.append(cell(task.max_chunk_duration ?? "ціла", "num"), cell(task.min_chunk_duration ?? "—", "num"));
+  tr.append(cell(task.max_chunk_duration ?? "whole", "num"), cell(task.min_chunk_duration ?? "—", "num"));
   tr.append(cell(task.break_duration, "num"));
 
   const deps = cell(task.depends_on.map((id) => `#${id}`).join(", ") || "—", "deps");
@@ -162,9 +162,9 @@ function viewRow(task) {
   const actions = document.createElement("td");
   actions.className = "actions";
   actions.append(
-    button("✎", "Змінити", () => startEdit(task.id)),
-    button("⏱", "Записати витрачений час", () => openSpend(task)),
-    button("✕", "Видалити", () => removeTask(task), "danger"),
+    button("✎", "Edit", () => startEdit(task.id)),
+    button("⏱", "Log time spent", () => openSpend(task)),
+    button("✕", "Delete", () => removeTask(task), "danger"),
   );
   tr.append(actions);
 
@@ -201,7 +201,7 @@ function inputFor(field, task) {
     input.value = value ?? "";
     if (field.key === "name") {
       input.maxLength = state.limits.name_length || 100;
-      input.placeholder = "Нова задача";
+      input.placeholder = "New task";
     } else {
       input.maxLength = state.limits.description_length || 1000;
     }
@@ -225,9 +225,9 @@ function editorRow(task) {
   const actions = document.createElement("td");
   actions.className = "actions";
   if (isNew) {
-    actions.append(button("Додати", "Додати задачу", save, "primary"));
+    actions.append(button("Add", "Add task", save, "primary"));
   } else {
-    actions.append(button("✓", "Зберегти", save, "primary"), button("↺", "Скасувати", cancelEdit));
+    actions.append(button("✓", "Save", save, "primary"), button("↺", "Cancel", cancelEdit));
   }
   tr.append(actions);
 
@@ -249,12 +249,12 @@ function readRow(tr) {
     const value = text(key);
     if (value === "") return null;
     const n = Number(value);
-    if (!Number.isInteger(n)) throw new ApiError(`«${label(key)}» — це ціле число хвилин.`);
+    if (!Number.isInteger(n)) throw new ApiError(`“${label(key)}” must be a whole number.`);
     return n;
   };
 
   const ids = text("depends_on").split(/[\s,;#]+/).filter(Boolean).map(Number);
-  if (ids.some((n) => !Number.isInteger(n))) throw new ApiError("«Після» — це номери задач через кому.");
+  if (ids.some((n) => !Number.isInteger(n))) throw new ApiError("“After” takes task IDs separated by commas.");
 
   return {
     name: text("name"),
@@ -283,7 +283,7 @@ function renderNewRow() {
   const footer = byId("new-row");
   if (state.tasks.length >= (state.limits.max_tasks || Infinity)) {
     const tr = document.createElement("tr");
-    const td = cell(`Досягнуто ліміту в ${state.limits.max_tasks} задач.`, "muted");
+    const td = cell(`You have reached the limit of ${state.limits.max_tasks} tasks.`, "muted");
     td.colSpan = FIELDS.length + 2;
     tr.append(td);
     footer.replaceChildren(tr);
@@ -346,13 +346,13 @@ async function saveRow(tr, id) {
       const created = await api("POST", "/api/tasks", payload);
       await reload();
       renderNewRow();
-      setStatus(`Додано задачу #${created.id}.`);
+      setStatus(`Task #${created.id} added.`);
       byId("new-row").querySelector(".in-name")?.focus();
     } else {
       await api("PUT", `/api/tasks/${id}`, payload);
       state.editingId = null;
       await reload();
-      setStatus(`Задачу #${id} збережено.`);
+      setStatus(`Task #${id} saved.`);
     }
   } catch (error) {
     fail(error);
@@ -363,12 +363,12 @@ async function saveRow(tr, id) {
 }
 
 async function removeTask(task) {
-  if (!window.confirm(`Видалити задачу #${task.id} «${task.name}»?`)) return;
+  if (!window.confirm(`Delete task #${task.id} “${task.name}”?`)) return;
   try {
     await api("DELETE", `/api/tasks/${task.id}`);
     await reload();
     renderNewRow();
-    setStatus(`Задачу #${task.id} видалено.`);
+    setStatus(`Task #${task.id} deleted.`);
   } catch (error) {
     fail(error);
   }
@@ -394,8 +394,8 @@ async function onSpendClosed() {
     renderNewRow();
     setStatus(
       result.completed
-        ? `«${task.name}» виконано — задача в історії.`
-        : `Записано ${minutes} хв. Лишилось ${result.remaining_min} хв.`,
+        ? `“${task.name}” is done and moved to the history.`
+        : `Logged ${minutes} min. ${result.remaining_min} min left.`,
     );
   } catch (error) {
     fail(error);
