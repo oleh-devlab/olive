@@ -81,7 +81,13 @@ export function Table<T extends Item>({
       setLimits(ctx.limits);
       setDefaults(ctx.defaults);
       setLoaded(true);
-      setEditing((current) => (current && list.some((item) => item.id === current.id) ? current : null));
+      // A row being edited starts again from what the server now holds: what
+      // was typed into it may no longer fit, such as a dependency on an item
+      // just deleted.
+      setEditing((current) => {
+        const item = current && list.find((candidate) => candidate.id === current.id);
+        return item ? { id: item.id, draft: initDraft(item, ctx) } : null;
+      });
       setNewDraft((current) => (renew || !current ? initDraft(null, ctx) : current));
       onLoaded?.(data);
       return ctx;

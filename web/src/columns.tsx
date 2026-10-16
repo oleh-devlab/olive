@@ -225,7 +225,10 @@ export function repeatColumn<T extends { repeat: string; weekdays?: number[] | n
 // One end of a time block: a date and time when it happens once, a time of day
 // when it repeats. A repeating block's date is only a template, so both ends of
 // it are sent on the same one -- the block's own start date, or today for a new
-// block -- and the server moves an end before the start onto the next day.
+// block -- and the server moves an end before the start onto the next day. An
+// end retimed while the block repeats goes back onto the start's date for the
+// same reason, so that making the block one-off then does not keep the next
+// day an earlier end time had put it on.
 export function boundColumn(key: "start" | "end", label: string): Column<TimeBlock> {
   const dateKey = `${key}Date`;
   const timeKey = `${key}Time`;
@@ -262,7 +265,7 @@ export function boundColumn(key: "start" | "end", label: string): Column<TimeBlo
           type="time"
           className="in-datetime"
           value={time}
-          onChange={(e) => set({ [timeKey]: e.target.value })}
+          onChange={(e) => set({ [timeKey]: e.target.value, [dateKey]: text(draft, "startDate") })}
         />
       );
     },

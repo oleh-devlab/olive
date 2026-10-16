@@ -69,7 +69,15 @@ build_in_container() {
 
 build_on_host() {
     if ! command -v npm >/dev/null; then
-        echo "Neither podman nor docker is running and there is no npm: install one of them to build the page." >&2
+        local installed=""
+        for runtime in podman docker; do
+            if command -v "$runtime" >/dev/null; then installed="$runtime"; fi
+        done
+        if [[ -n "$installed" ]]; then
+            echo "$installed is installed but '$installed info' fails for $(id -un): start it, or let this user use it, and run this again." >&2
+        else
+            echo "Neither podman nor docker is installed, and there is no npm: install one of them to build the page." >&2
+        fi
         exit 1
     fi
     local major
