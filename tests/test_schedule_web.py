@@ -345,6 +345,7 @@ class TestTaskTable(WebTestCase):
         response = await self.client.put("/api/tasks/7", json=row())
         self.assertEqual(response.status, 404)
         self.assertEqual(self.provider.list_tasks(USER), [])
+        self.assertEqual(self.redrawn, [])
 
     async def test_removing_a_task_also_drops_it_from_what_waited_for_it(self):
         first = await (await self.client.post("/api/tasks", json=row(name="First"))).json()

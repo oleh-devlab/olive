@@ -389,9 +389,6 @@ class ScheduleWebApp:
         task_id = int(request.match_info["task_id"])
         row = await self._json_body(request)
 
-        if self.provider.get_task(user_id, task_id) is None:
-            raise _error(web.HTTPNotFound, f"Task {task_id} not found.")
-
         try:
             task = task_from_json(row, user_id, task_id=task_id)
             fields = {
@@ -405,9 +402,12 @@ class ScheduleWebApp:
                 "break_duration": task.break_duration,
                 "depends_on": task.depends_on,
             }
-            self.provider.edit_task(user_id, task_id, **fields)
+            found = self.provider.edit_task(user_id, task_id, **fields)
         except (ScheduleValidationError, ValueError) as e:
             raise _error(web.HTTPBadRequest, str(e)) from None
+
+        if not found:
+            raise _error(web.HTTPNotFound, f"Task {task_id} not found.")
 
         self._changed(user_id)
         return web.json_response(task_to_dict(self.provider.get_task(user_id, task_id)))
