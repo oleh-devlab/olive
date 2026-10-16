@@ -5,7 +5,7 @@ from pathlib import Path
 import settings
 
 from core.personal_channels import PersonalChannelRegistry
-from modules.schedule_exceptions import ScheduleLimitError
+from modules.schedule_exceptions import ScheduleItemNotFoundError, ScheduleLimitError
 from modules.schedule_models import (
     REPEAT_DAILY,
     REPEAT_ONCE,
@@ -271,6 +271,11 @@ class ScheduleProvider:
     def save_channels(self, data: dict):
         channels_registry.save(data)
 
+    def get_schedule_channel_id(self, user_id: int) -> int | None:
+        """The channel holding the user's schedule message -- where an update has to be aimed."""
+        entry = self.channels.get(user_id)
+        return self.channels.display_channel_id(entry) if entry else None
+
     def get_settings(self, user_id: int) -> dict:
         """Per-user solver settings, stored alongside the channel ids."""
         return channels_registry.get(user_id) or {}
@@ -408,7 +413,7 @@ class ScheduleProvider:
                 break
 
         if target_idx == -1:
-            raise ValueError("Task not found")
+            raise ScheduleItemNotFoundError("Task not found")
 
         task_dict = data["tasks"][target_idx]
         current_dur_min = task_dict.get("duration", 0)

@@ -772,8 +772,7 @@ class AutoSchedule(commands.Cog):
 
             # The command is used in the tasks channel; the message lives in the
             # schedule one, so the update has to be aimed there.
-            entry = provider.channels.get(inter.author.id)
-            schedule_channel_id = provider.channels.display_channel_id(entry) if entry else None
+            schedule_channel_id = provider.get_schedule_channel_id(inter.author.id)
             if schedule_channel_id:
                 self.bot.dispatch("schedule_update", schedule_channel_id)
         else:

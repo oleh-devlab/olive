@@ -28,7 +28,7 @@ import settings  # noqa: E402
 
 from modules import schedule_provider  # noqa: E402
 from modules.schedule_agent_tools import ScheduleAgentTools  # noqa: E402
-from modules.schedule_exceptions import ScheduleLimitError  # noqa: E402
+from modules.schedule_exceptions import ScheduleItemNotFoundError, ScheduleLimitError  # noqa: E402
 from modules.schedule_models import Task  # noqa: E402
 
 USER = 42
@@ -105,6 +105,13 @@ class TestSpendTaskTime(ProviderTestCase):
         # id it was typed against.
         with self.assertRaisesRegex(ValueError, "minutes must be > 0"):
             self.provider.spend_task_time(USER, 999, 0)
+
+    def test_a_task_that_is_not_there_says_so_in_its_own_type(self):
+        # Its own type, so the web editor can answer 404 without looking the
+        # task up first; still a ValueError, which is what callers caught before.
+        with self.assertRaises(ScheduleItemNotFoundError) as caught:
+            self.provider.spend_task_time(USER, 999, 10)
+        self.assertIsInstance(caught.exception, ValueError)
 
     def test_the_agent_gets_the_same_answer(self):
         task_id = self.provider.add_task(USER, task(minutes=60))

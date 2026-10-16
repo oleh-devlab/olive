@@ -36,6 +36,7 @@ def has_schedule_channel(user_id: int) -> bool:
 class ScheduleWebServer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.provider = ScheduleProvider()
         self.runner: web.AppRunner | None = None
         self.cleanup_task: asyncio.Task | None = None
 
@@ -58,7 +59,7 @@ class ScheduleWebServer(commands.Cog):
         client_id, client_secret = credentials
         session_days = getattr(settings, "schedule_web_session_days", 30)
         app = ScheduleWebApp(
-            provider=ScheduleProvider(),
+            provider=self.provider,
             oauth=DiscordOAuth(client_id, client_secret, oauth_redirect_uri(base_url)),
             signer=SessionSigner(secret, max_age_seconds=int(session_days * 24 * 3600)),
             base_url=base_url,
@@ -94,8 +95,7 @@ class ScheduleWebServer(commands.Cog):
             self.runner = None
 
     def redraw_schedule(self, user_id: int):
-        entry = channels_registry.get(user_id)
-        channel_id = channels_registry.display_channel_id(entry) if entry else None
+        channel_id = self.provider.get_schedule_channel_id(user_id)
         if channel_id:
             self.bot.dispatch("schedule_update", channel_id)
 

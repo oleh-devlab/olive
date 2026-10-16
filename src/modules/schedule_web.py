@@ -12,7 +12,7 @@ and comes back in the same one, so a row read from the API saves back as it
 is: durations in whole minutes, the deadline as an ISO timestamp.
 """
 
-import datetime
+import inspect
 import json
 import logging
 import secrets
@@ -21,12 +21,10 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import aiohttp
-import settings
 from aiohttp import web
 
-from core.time_utils import tz
 from core.web_auth import DiscordOAuth, OAuthError, SessionSigner, new_state
-from modules.schedule_exceptions import ScheduleLimitError, ScheduleValidationError
+from modules.schedule_exceptions import ScheduleItemNotFoundError, ScheduleLimitError, ScheduleValidationError
 from modules.schedule_models import Task
 from modules.schedule_provider import ScheduleProvider, max_tasks_per_user, task_to_dict
 from modules.schedule_validators import parse_depends_on, validate_task_creation_data
@@ -39,8 +37,6 @@ SESSION_COOKIE = "olive_session"
 STATE_COOKIE = "olive_oauth_state"
 STATE_MAX_AGE = 600
 
-# What the `/task add` validator reads a deadline from.
-VALIDATOR_DEADLINE_FORMAT = "%d.%m.%Y %H:%M"
 MAX_NAME_LENGTH = 100
 MAX_DESCRIPTION_LENGTH = 1000
 
@@ -65,9 +61,9 @@ def _origin_of(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}".lower()
 
 
-def _whole_number(row: dict, key: str, default: int | None = None) -> int | None:
-    """A field that is either absent (the default), null, or an integer -- never a bool or a string."""
-    value = row.get(key, default)
+def _whole_number(row: dict, key: str) -> int | None:
+    """A field that is either absent, null, or an integer -- never a bool or a string."""
+    value = row.get(key)
     if value is None:
         return None
 
@@ -77,28 +73,18 @@ def _whole_number(row: dict, key: str, default: int | None = None) -> int | None
     return value
 
 
-def _deadline_for_validator(value: object) -> str | None:
+def creation_defaults() -> dict:
     """
-    An ISO deadline, respelled the way the `/task add` validator reads one.
-
-    Bare (`2026-10-25T18:00`, what a datetime input gives) means the bot's own
-    timezone, the way a typed deadline always has; with an offset (what
-    `task_to_dict` writes) it is moved into that timezone first.
+    What a row gets for each field it leaves out -- read off the validator's own
+    signature rather than from `settings` again, so the page prefills exactly
+    what the server would fill in, and `/task add` falls back on the same.
     """
-    if value is None or (isinstance(value, str) and not value.strip()):
-        return None
-    if not isinstance(value, str):
-        raise ScheduleValidationError("'deadline' must be an ISO date and time, or null.")
-
-    try:
-        deadline = datetime.datetime.fromisoformat(value.strip())
-    except ValueError:
-        raise ScheduleValidationError("'deadline' must be an ISO date and time, e.g. 2026-10-25T18:00.") from None
-
-    if deadline.tzinfo is not None:
-        deadline = deadline.astimezone(tz)
-
-    return deadline.strftime(VALIDATOR_DEADLINE_FORMAT)
+    parameters = inspect.signature(validate_task_creation_data).parameters
+    return {
+        "priority": parameters["priority"].default,
+        "max_chunk_duration": parameters["max_chunk_duration_min"].default,
+        "break_duration": parameters["break_duration_min"].default,
+    }
 
 
 def task_from_json(row: object, user_id: int, task_id: int | None = None) -> Task:
@@ -124,7 +110,9 @@ def task_from_json(row: object, user_id: int, task_id: int | None = None) -> Tas
     if len(description) > MAX_DESCRIPTION_LENGTH:
         raise ScheduleValidationError(f"Description is limited to {MAX_DESCRIPTION_LENGTH} characters.")
 
-    deadline = _deadline_for_validator(row.get("deadline"))
+    deadline = row.get("deadline")
+    if deadline is not None and not isinstance(deadline, str):
+        raise ScheduleValidationError("'deadline' must be an ISO date and time, or null.")
 
     depends_on = row.get("depends_on") or []
     if not isinstance(depends_on, list) or any(isinstance(d, bool) or not isinstance(d, int) for d in depends_on):
@@ -134,22 +122,24 @@ def task_from_json(row: object, user_id: int, task_id: int | None = None) -> Tas
     if duration_min is None:
         raise ScheduleValidationError("'duration' is required.")
 
-    priority = _whole_number(row, "priority", getattr(settings, "schedule_default_priority", 1))
-    break_min = _whole_number(row, "break_duration", getattr(settings, "schedule_default_break_min", 15))
+    # A field the row leaves out takes the validator's own default. Null is a
+    # value of its own where it can be one: a session with no cap, no break.
+    optional = {}
+    if (priority := _whole_number(row, "priority")) is not None:
+        optional["priority"] = priority
+    if "max_chunk_duration" in row:
+        optional["max_chunk_duration_min"] = _whole_number(row, "max_chunk_duration")
+    if "break_duration" in row:
+        optional["break_duration_min"] = _whole_number(row, "break_duration") or 0
 
     task = validate_task_creation_data(
         name=name,
         duration_min=duration_min,
         description=description,
-        priority=getattr(settings, "schedule_default_priority", 1) if priority is None else priority,
-        # Null means "never split", so it is not replaced with the default.
-        max_chunk_duration_min=_whole_number(
-            row, "max_chunk_duration", getattr(settings, "schedule_default_max_chunk_min", 45)
-        ),
-        break_duration_min=break_min or 0,
         min_chunk_duration_min=_whole_number(row, "min_chunk_duration"),
         deadline=deadline,
         user_id=user_id,
+        **optional,
     )
 
     # Read here rather than by the creation validator, which has no task of its
@@ -157,9 +147,6 @@ def task_from_json(row: object, user_id: int, task_id: int | None = None) -> Tas
     task.depends_on = parse_depends_on(
         ", ".join(str(d) for d in depends_on), user_id=user_id, self_id=task_id, item_type="task"
     )
-
-    if task.break_duration.total_seconds() < 0:
-        raise ScheduleValidationError("Break duration cannot be negative.")
 
     return task
 
@@ -378,11 +365,7 @@ class ScheduleWebApp:
                     "name_length": MAX_NAME_LENGTH,
                     "description_length": MAX_DESCRIPTION_LENGTH,
                 },
-                "defaults": {
-                    "priority": getattr(settings, "schedule_default_priority", 1),
-                    "max_chunk_duration": getattr(settings, "schedule_default_max_chunk_min", 45),
-                    "break_duration": getattr(settings, "schedule_default_break_min", 15),
-                },
+                "defaults": creation_defaults(),
             }
         )
 
@@ -448,11 +431,10 @@ class ScheduleWebApp:
         if isinstance(minutes, bool) or not isinstance(minutes, int):
             raise _error(web.HTTPBadRequest, "'minutes' must be a whole number.")
 
-        if self.provider.get_task(user_id, task_id) is None:
-            raise _error(web.HTTPNotFound, f"Task {task_id} not found.")
-
         try:
             completed, remaining = self.provider.spend_task_time(user_id, task_id, minutes)
+        except ScheduleItemNotFoundError:
+            raise _error(web.HTTPNotFound, f"Task {task_id} not found.") from None
         except ValueError as e:
             raise _error(web.HTTPBadRequest, str(e)) from None
 

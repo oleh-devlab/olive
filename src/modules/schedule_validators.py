@@ -44,13 +44,22 @@ def parse_date(date_str: str | None) -> datetime.date | None:
 
 
 def parse_deadline(deadline_str: str | None) -> datetime.datetime | None:
+    """
+    A deadline as typed (`DD.MM.YYYY HH:MM`) or as stored (ISO, which is what
+    the web editor sends back). Without an offset either one is in the bot's own
+    timezone; with one, it is moved into it.
+    """
     if not deadline_str or str(deadline_str).lower() == "none":
         return None
     try:
         dt = datetime.datetime.strptime(deadline_str, "%d.%m.%Y %H:%M")
-        return dt.replace(tzinfo=tz)
     except ValueError:
-        raise ScheduleValidationError("Invalid deadline format. Use 'DD.MM.YYYY HH:MM' or 'none'.")
+        try:
+            dt = datetime.datetime.fromisoformat(deadline_str)
+        except ValueError:
+            raise ScheduleValidationError("Invalid deadline format. Use 'DD.MM.YYYY HH:MM' or 'none'.") from None
+
+    return dt.astimezone(tz) if dt.tzinfo is not None else dt.replace(tzinfo=tz)
 
 
 def parse_depends_on(

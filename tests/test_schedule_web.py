@@ -263,7 +263,6 @@ class TestTaskTable(WebTestCase):
             "duration as a bool": row(duration=True),
             "fractional duration": row(duration=1.5),
             "priority above ten": row(priority=11),
-            "deadline as typed in Discord": row(deadline="20.10.2026 18:00"),
             "deadline that is not a date": row(deadline="tomorrow"),
             "deadline as a number": row(deadline=1_800_000_000),
             "shortest session above the longest": row(min_chunk_duration=60, max_chunk_duration=30),
@@ -285,6 +284,23 @@ class TestTaskTable(WebTestCase):
     async def test_a_body_that_is_not_json_is_refused(self):
         response = await self.client.post("/api/tasks", data="name=x", headers={"Content-Type": "text/plain"})
         self.assertEqual(response.status, 415)
+
+    async def test_a_row_that_leaves_fields_out_gets_what_the_page_prefills(self):
+        defaults = (await (await self.client.get("/api/tasks")).json())["defaults"]
+        bare = {"name": "Bare", "duration": 120}
+        created = await (await self.client.post("/api/tasks", json=bare)).json()
+
+        self.assertEqual({key: created[key] for key in defaults}, defaults)
+
+    async def test_null_means_no_cap_and_no_break_rather_than_the_default(self):
+        created = await (
+            await self.client.post("/api/tasks", json=row(max_chunk_duration=None, break_duration=None, priority=None))
+        ).json()
+        defaults = (await (await self.client.get("/api/tasks")).json())["defaults"]
+
+        self.assertIsNone(created["max_chunk_duration"])
+        self.assertEqual(created["break_duration"], 0)
+        self.assertEqual(created["priority"], defaults["priority"])
 
     async def test_the_task_limit_holds(self):
         with mock.patch.object(settings, "schedule_max_tasks_per_user", 1, create=True):
@@ -353,6 +369,11 @@ class TestTaskTable(WebTestCase):
         self.assertEqual(listing["tasks"], [])
         self.assertEqual([t["name"] for t in listing["completed"]], ["Write report"])
 
+    async def test_spending_on_a_task_that_is_gone_is_not_found(self):
+        response = await self.client.post("/api/tasks/7/spend", json={"minutes": 10})
+        self.assertEqual(response.status, 404)
+        self.assertEqual(self.redrawn, [])
+
     async def test_spending_needs_a_positive_whole_number(self):
         created = await (await self.client.post("/api/tasks", json=row())).json()
         for minutes in (0, -5, "10", 2.5, None):
@@ -390,9 +411,11 @@ class TestCog(unittest.IsolatedAsyncioTestCase):
         self.bot = mock.Mock()
         self.cog = web_cog.ScheduleWebServer(self.bot)
         registry = FakeRegistry({USER: {"channel_id": 555, "tasks_channel_id": 556}})
-        patcher = mock.patch.object(web_cog, "channels_registry", registry)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # Who may sign in is read off the registry, where a write lands off the provider.
+        for target, attribute in ((web_cog, "channels_registry"), (schedule_provider.ScheduleProvider, "channels")):
+            patcher = mock.patch.object(target, attribute, registry)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     async def test_without_a_base_url_nothing_listens(self):
         with mock.patch.object(settings, "schedule_web_base_url", "", create=True):
