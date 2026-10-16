@@ -11,6 +11,12 @@
   --row-hover: #f0f2f6;
   --editing: #eef0ff;
   --radius: 8px;
+  /* What the calendar draws each kind of entry in. */
+  --task: var(--accent);
+  --fixed: #b8730a;
+  --flexible: #1b8f80;
+  --block: #8a919c;
+  --now: #e5484d;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +31,10 @@
     --ok: #5fcf8f;
     --row-hover: #33353b;
     --editing: #33365a;
+    --fixed: #e2a23c;
+    --flexible: #3cc4b1;
+    --block: #7c838d;
+    --now: #ff6369;
   }
 }
 
@@ -395,4 +405,252 @@ dialog input {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* --- Schedule --- */
+
+.schedule {
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.schedule-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+
+.schedule-nav,
+.schedule-span,
+.schedule-solve {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedule-range {
+  margin-left: 6px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-span button[aria-pressed="true"] {
+  background: var(--editing);
+  border-color: var(--accent);
+}
+
+.schedule-solve .muted {
+  font-size: 13px;
+}
+
+.schedule button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.calendar-head,
+.calendar-body {
+  display: grid;
+  grid-template-columns: 44px repeat(var(--days), minmax(0, 1fr));
+}
+
+.calendar-head span {
+  padding: 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.calendar-head .today {
+  color: var(--accent);
+}
+
+.calendar-body {
+  /* The hours shown share what the screen has room for, rather than each
+     taking a fixed height: a short day is drawn as large as a long one. */
+  height: clamp(360px, calc(100vh - 220px), 960px);
+  border-top: 1px solid var(--border);
+}
+
+.calendar-hours {
+  display: grid;
+  grid-template-rows: repeat(var(--hours), 1fr);
+}
+
+.calendar-hours span {
+  padding: 2px 6px 0 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-day {
+  position: relative;
+  border-left: 1px solid var(--border);
+  /* A line at the top of every hour. */
+  background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 100% calc(100% / var(--hours));
+}
+
+.entry {
+  position: absolute;
+  overflow: hidden;
+  padding: 1px 5px;
+  border: 1px solid var(--surface);
+  border-left: 3px solid var(--kind);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--kind) 16%, var(--surface));
+  font-size: 12px;
+  line-height: 1.3;
+  /* Its own height decides what it has room to say, below. */
+  container-type: size;
+}
+
+/* The legend's sample of each kind; the kinds below colour it like an entry. */
+.swatch {
+  width: 14px;
+  height: 12px;
+  border-left: 3px solid var(--kind);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--kind) 16%, var(--surface));
+}
+
+.entry-task {
+  --kind: var(--task);
+}
+
+.entry-fixed_routine {
+  --kind: var(--fixed);
+}
+
+.entry-flexible_routine {
+  --kind: var(--flexible);
+}
+
+.entry-time_block {
+  --kind: var(--block);
+  color: var(--muted);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--block) 20%, var(--surface)) 0 6px,
+    color-mix(in srgb, var(--block) 8%, var(--surface)) 6px 12px
+  );
+}
+
+/* A piece of something that started the day before, or goes on into the next. */
+.entry.continued {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.entry.continues {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.entry-name,
+.entry-time {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.entry-name {
+  font-weight: 600;
+}
+
+.entry-id,
+.entry-session,
+.entry-time {
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An entry too short to say everything says less, rather than showing half a
+   line; its tooltip still says it all. The heights are of what is inside the
+   border and padding: two lines of text, one, and one at a smaller size. */
+@container (height < 31px) {
+  .entry-time {
+    display: none;
+  }
+}
+
+@container (height < 16px) {
+  .entry-name {
+    font-size: 10px;
+    line-height: 1;
+  }
+}
+
+@container (height < 10px) {
+  .entry-name {
+    display: none;
+  }
+}
+
+.calendar-past {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  pointer-events: none;
+}
+
+.calendar-now {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  border-top: 2px solid var(--now);
+  pointer-events: none;
+}
+
+.calendar-now::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--now);
+}
+
+.calendar-notes {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.calendar-notes p {
+  margin: 6px 0 0;
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+}
+
+.calendar-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.warning {
+  color: var(--danger);
 }

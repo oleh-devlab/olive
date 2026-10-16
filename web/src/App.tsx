@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, api } from "./api";
 import { SkipDialog, SpendDialog } from "./dialogs";
+import { Schedule } from "./Schedule";
 import { Button, Table } from "./Table";
 import { ROUTINES, TASKS, TIME_BLOCKS } from "./tables";
 import type { Listing, Me, Routine, Task } from "./types";
@@ -37,6 +38,7 @@ export default function App({ loginError }: { loginError?: string }) {
   const [skipping, setSkipping] = useState<Routine | null>(null);
   const [tasksVersion, setTasksVersion] = useState(0);
   const [routinesVersion, setRoutinesVersion] = useState(0);
+  const [scheduleVersion, setScheduleVersion] = useState(0);
 
   const notify = useCallback((text: string) => setStatus({ text, kind: "ok" }), []);
 
@@ -50,6 +52,8 @@ export default function App({ loginError }: { loginError?: string }) {
   }, []);
 
   const onTasksLoaded = useCallback((data: Listing) => setCompleted(data.completed as Task[]), []);
+  // Anything the page writes changes what the schedule above the tables shows.
+  const dataChanged = useCallback(() => setScheduleVersion((version) => version + 1), []);
 
   // A message about something that went right fades; an error stays until the next one.
   useEffect(() => {
@@ -93,6 +97,7 @@ export default function App({ loginError }: { loginError?: string }) {
         minutes,
       });
       setTasksVersion((version) => version + 1);
+      dataChanged();
       notify(
         result.completed
           ? `“${task.name}” is done and moved to the history.`
@@ -107,6 +112,7 @@ export default function App({ loginError }: { loginError?: string }) {
     try {
       await api("POST", `/api/routines/${routine.id}/skip`, { resume_after: resumeAfter });
       setRoutinesVersion((version) => version + 1);
+      dataChanged();
       notify(`Routine #${routine.id} is skipped up to and including ${resumeAfter}.`);
     } catch (error) {
       fail(error);
@@ -151,6 +157,8 @@ export default function App({ loginError }: { loginError?: string }) {
 
         {view.kind === "app" && (
           <section id="app-view">
+            <Schedule version={scheduleVersion} fail={fail} />
+
             <nav className="tabs" role="tablist">
               {TABS.map((item) => (
                 <button
@@ -171,14 +179,15 @@ export default function App({ loginError }: { loginError?: string }) {
 
             <div id="tab-tasks" role="tabpanel" hidden={tab !== "tasks"}>
               <p className="muted hint">
-                Your schedule in Discord is recalculated as soon as you save. Duration is the time still left; leave
-                Session empty to keep a task in one piece, and Min. empty to let the bot choose.
+                The schedule above and the one in Discord are recalculated as soon as you save. Duration is the time
+                still left; leave Session empty to keep a task in one piece, and Min. empty to let the bot choose.
               </p>
               <Table
                 config={TASKS}
                 notify={notify}
                 fail={fail}
                 onLoaded={onTasksLoaded}
+                onChange={dataChanged}
                 version={tasksVersion}
                 renewOnVersion
                 actions={(task) => <Button text="⏱" title="Log time spent" onClick={() => setSpending(task)} />}
@@ -206,6 +215,7 @@ export default function App({ loginError }: { loginError?: string }) {
                 config={ROUTINES}
                 notify={notify}
                 fail={fail}
+                onChange={dataChanged}
                 version={routinesVersion}
                 actions={(routine) => <Button text="⏸" title="Skip" onClick={() => setSkipping(routine)} />}
               />
@@ -215,7 +225,7 @@ export default function App({ loginError }: { loginError?: string }) {
               <p className="muted hint">
                 Time you are busy: nothing is scheduled into it. Daily and weekly blocks only use the time of day.
               </p>
-              <Table config={TIME_BLOCKS} notify={notify} fail={fail} />
+              <Table config={TIME_BLOCKS} notify={notify} fail={fail} onChange={dataChanged} />
             </div>
           </section>
         )}

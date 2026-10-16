@@ -55,3 +55,26 @@ export interface Me {
   id: string;
   name: string;
 }
+
+// What GET /api/schedule hands out: the engine's last solve (schedule_web.schedule_to_json).
+export type EntryType = "task" | "fixed_routine" | "flexible_routine" | "time_block";
+
+export interface ScheduleEntry {
+  type: EntryType;
+  id: number | string | null;
+  name: string;
+  start: string;
+  end: string;
+  session: number;
+  sessions: number;
+}
+
+export interface SolvedSchedule {
+  computed_at: string | null;
+  status: string;
+  solve_time: number;
+  planning_days: number;
+  items: ScheduleEntry[];
+  skipped_task_ids: number[];
+  skipped_routines: string[];
+}

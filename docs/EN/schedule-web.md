@@ -39,7 +39,11 @@ Only users who have a schedule channel (`/schedule_channel create`) can sign in.
 
 ## What the page does
 
-Three tabs — Tasks, Routines, Time blocks — with the same kind of table:
+At the top is the schedule itself, as a calendar: one, three or seven days side by side, only the hours that have something in them, and a line at the present moment. Each kind of entry has its own colour, time blocks are hatched, and under the calendar is what did not fit. Hovering over an entry shows all of it, which a short one has no room to.
+
+The page shows the schedule the bot calculated last — the same one the Discord message shows — and calculates it again only when your data has changed since. So it takes no button to see a change: the schedule is read again when the page opens, after every change made on it, and when you come back to the tab. A schedule starts at the moment it was calculated, though, and the bot recalculates it on its own only every `schedule_loop_update_seconds`; **Recalculate** asks for one from now, and the Discord message then shows that one too.
+
+Below the calendar are three tabs — Tasks, Routines, Time blocks — with the same kind of table:
 
 - Double-click a row or press ✎ to turn it into inputs. Enter saves, Esc cancels.
 - The "+" row at the bottom adds a new item, prefilled with the same defaults as the matching command.

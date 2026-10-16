@@ -20,6 +20,8 @@ interface Props<T extends Item> {
   fail: (error: unknown) => void;
   actions?: (item: T) => ReactNode;
   onLoaded?: (data: Listing) => void;
+  // Told after the table has changed its items, which changes the schedule.
+  onChange?: () => void;
   // Bumped by the page when something outside the table changed its items.
   version?: number;
   // Whether that also starts the new row afresh, as adding or deleting does.
@@ -48,6 +50,7 @@ export function Table<T extends Item>({
   fail,
   actions,
   onLoaded,
+  onChange,
   version = 0,
   renewOnVersion = false,
 }: Props<T>) {
@@ -129,11 +132,13 @@ export function Table<T extends Item>({
         const created = await api<T>("POST", endpoint, row);
         await load(true);
         setAdded((count) => count + 1);
+        onChange?.();
         notify(`${noun} #${created.id} added.`);
       } else {
         await api("PUT", `${endpoint}/${id}`, row);
         setEditing(null);
         await load();
+        onChange?.();
         notify(`${noun} #${id} saved.`);
       }
     } catch (error) {
@@ -149,6 +154,7 @@ export function Table<T extends Item>({
     try {
       await api("DELETE", `${endpoint}/${item.id}`);
       await load(true);
+      onChange?.();
       notify(`${noun} #${item.id} deleted.`);
     } catch (error) {
       fail(error);
