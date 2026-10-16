@@ -5,7 +5,6 @@ import {
   MAX_MIN,
   MIN_MIN,
   STEP_MIN,
-  counted,
   formatClock,
   hasCounted,
   isFinished,
@@ -52,7 +51,9 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
   // In this page's memory only: a reload or a closed tab drops it.
   const [stored, setStored] = useState<TimerState | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [draft, setDraft] = useState<string | null>(null);
+  // The minutes to log when set by hand, for the timer they were set for;
+  // until then the field follows what the timer has counted.
+  const [logSet, setLogSet] = useState<{ taskId: number; session: number; minutes: number } | null>(null);
   const [logging, setLogging] = useState(false);
 
   const running = stored !== null && isRunning(stored);
@@ -86,7 +87,9 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
 
   const left = timer ? remaining(timer, now) : 0;
   const finished = timer !== null && isFinished(timer, now);
-  const loggable = timer ? minutesToLog(timer, now) : 0;
+  const ownLog =
+    logSet && timer && logSet.taskId === timer.taskId && logSet.session === timer.session ? logSet.minutes : null;
+  const toLog = ownLog ?? (timer ? minutesToLog(timer, now) : 0);
   const ownSession = timer !== null && focus !== null && timer.taskId === Number(focus.entry.id);
   const task = timer ? tasks.find((candidate) => candidate.id === timer.taskId) : undefined;
 
@@ -103,23 +106,31 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
     if (timer) setStored(setMinutes(timer, minutes, Date.now()));
   }
 
-  function commitDraft() {
-    if (draft !== null && draft.trim() !== "" && Number.isFinite(Number(draft))) change(Number(draft));
-    setDraft(null);
+  function setLog(minutes: number) {
+    if (timer) setLogSet({ taskId: timer.taskId, session: timer.session, minutes: Math.min(MAX_MIN, Math.max(0, minutes)) });
   }
 
   function reset() {
-    if (timer && counted(timer, Date.now()) >= 60_000 && !window.confirm(`Discard the ${loggable} min counted?`)) return;
+    const discarded = timer ? minutesToLog(timer, Date.now()) : 0;
+    if (discarded >= 1 && !window.confirm(`Discard the ${discarded} min counted?`)) return;
     setStored(null);
+    setLogSet(null);
   }
 
+  // Logs what the field says -- what the timer counted, or what was set by
+  // hand -- and starts afresh once it is logged; the timer stops either way.
   async function log() {
-    if (!timer || loggable < 1 || logging) return;
+    if (!timer || logging) return;
     const stopped = pause(timer, Date.now());
+    const minutes = ownLog ?? minutesToLog(stopped, Date.now());
+    if (minutes < 1) return;
     setStored(stopped);
     setLogging(true);
     try {
-      if (await onLog({ id: timer.taskId, name: timer.name }, minutesToLog(stopped, Date.now()))) setStored(null);
+      if (await onLog({ id: timer.taskId, name: timer.name }, minutes)) {
+        setStored(null);
+        setLogSet(null);
+      }
     } finally {
       setLogging(false);
     }
@@ -183,31 +194,7 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
               {finished ? "Time's up" : formatClock(left)}
             </p>
 
-            <div className="panel-set" role="group" aria-label="Timer length">
-              <button type="button" title={`${STEP_MIN} min less`} onClick={() => change(timer.minutes - STEP_MIN)}>
-                −{STEP_MIN}
-              </button>
-              <label>
-                <input
-                  type="number"
-                  min={MIN_MIN}
-                  max={MAX_MIN}
-                  inputMode="numeric"
-                  aria-label="Minutes"
-                  value={draft ?? String(timer.minutes)}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onBlur={commitDraft}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") commitDraft();
-                    if (event.key === "Escape") setDraft(null);
-                  }}
-                />{" "}
-                min
-              </label>
-              <button type="button" title={`${STEP_MIN} min more`} onClick={() => change(timer.minutes + STEP_MIN)}>
-                +{STEP_MIN}
-              </button>
-            </div>
+            <MinutesField label="Length" value={timer.minutes} min={MIN_MIN} onChange={change} />
 
             <div className="panel-actions">
               {running ? (
@@ -219,22 +206,78 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
                   {hasCounted(timer, now) ? "Resume" : "Start"}
                 </button>
               )}
-              <button
-                type="button"
-                className="primary"
-                disabled={loggable < 1 || logging}
-                title={`Log the time counted against #${timer.taskId}, as /task spend does`}
-                onClick={() => void log()}
-              >
-                Log {loggable} min
-              </button>
               <button type="button" className="link" disabled={!hasCounted(timer, now) && !running} onClick={reset}>
                 Reset
               </button>
+            </div>
+
+            <div className="panel-log">
+              <MinutesField label="To log" value={toLog} min={0} onChange={setLog} />
+              <div className="panel-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={toLog < 1 || logging}
+                  title={`Log this time against #${timer.taskId}, as /task spend does`}
+                  onClick={() => void log()}
+                >
+                  Log {toLog} min
+                </button>
+              </div>
             </div>
           </>
         )}
       </div>
     </aside>
+  );
+}
+
+// A number of minutes, set by the 5-minute buttons or typed in. What is typed
+// counts once Enter is pressed or the field is left; Escape drops it.
+function MinutesField({
+  label,
+  value,
+  min,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  onChange: (minutes: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  function commit() {
+    if (draft !== null && draft.trim() !== "" && Number.isFinite(Number(draft))) onChange(Math.round(Number(draft)));
+    setDraft(null);
+  }
+
+  return (
+    <div className="panel-set" role="group" aria-label={label}>
+      <span className="panel-set-label">{label}</span>
+      <button type="button" title={`${STEP_MIN} min less`} onClick={() => onChange(Math.max(min, value - STEP_MIN))}>
+        −{STEP_MIN}
+      </button>
+      <label>
+        <input
+          type="number"
+          min={min}
+          max={MAX_MIN}
+          inputMode="numeric"
+          aria-label={`${label}, minutes`}
+          value={draft ?? String(value)}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit();
+            if (event.key === "Escape") setDraft(null);
+          }}
+        />{" "}
+        min
+      </label>
+      <button type="button" title={`${STEP_MIN} min more`} onClick={() => onChange(Math.min(MAX_MIN, value + STEP_MIN))}>
+        +{STEP_MIN}
+      </button>
+    </div>
   );
 }
