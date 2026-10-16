@@ -8,11 +8,13 @@ import { WEEKDAYS } from "./dates";
 import type { ScheduleEntry, SolvedSchedule } from "./types";
 
 export const DAY_MINUTES = 24 * 60;
-// What one line of an entry's text takes, border and padding included, and
-// the least and most an hour may be given to make room for it.
+// What an entry's text takes, border and padding included: one line, and the
+// two -- its name, then its times -- of a task or a routine.
 const LINE_PX = 22;
-const MIN_HOUR_PX = 40;
-const MAX_HOUR_PX = 90;
+const ENTRY_PX = 36;
+// What an hour adds to the height on top of that, so that a long entry still
+// looks longer than a short one.
+const HOUR_PX = 24;
 // What a collapsed stretch is drawn as: a thin band when it is empty, and one
 // line when a time block is in it, so that the block still shows its name.
 const GAP_PX = 10;
@@ -148,21 +150,6 @@ export function clip(
   return { from, to, cutAbove: segment.from < range.from, cutBelow: segment.to > range.to };
 }
 
-// How tall an hour is drawn: tall enough for the shortest task or routine in
-// view to show its name on one line, within MIN_HOUR_PX and MAX_HOUR_PX -- an
-// entry of a few minutes would otherwise stretch the day out of all proportion,
-// and it still has its tooltip. The screen's own height is the stylesheet's
-// business: a day that needs less than the screen is stretched to fill it.
-export function hourHeight(segments: Segment[], range: { from: number; to: number }): number {
-  const minutes = segments
-    .filter(isPlanned)
-    .map((segment) => clip(segment, range))
-    .flatMap((shown) => (shown ? [shown.to - shown.from] : []));
-  if (!minutes.length) return MIN_HOUR_PX;
-
-  return Math.min(MAX_HOUR_PX, Math.max(MIN_HOUR_PX, Math.ceil((LINE_PX * 60) / Math.min(...minutes))));
-}
-
 // A stretch of the hours shown, as it is drawn: from `y` down, `height` tall.
 // One that is `collapsed` is drawn shorter than its minutes would be.
 export interface Piece {
@@ -186,12 +173,13 @@ export interface Axis {
   labels: number[];
 }
 
-// How the hours shown are laid out from top to bottom. A stretch with a task
-// or a routine in it on any of the days shown is drawn to scale, `hourPx` an
-// hour. One with nothing in it on any of them -- a break, free time -- is
-// collapsed to a thin band, and one with only time blocks in it to a single
-// line: their length is in the times of what comes before and after.
-export function buildAxis(segments: Segment[], range: { from: number; to: number }, hourPx: number): Axis {
+// How the hours shown are laid out from top to bottom. Each entry is as tall
+// as its text needs -- a task or routine its name and times, a time block its
+// name -- plus HOUR_PX an hour, so length still shows. A stretch with nothing
+// in it on any of the days shown -- a break, free time -- collapses to a thin
+// band, and one with only time blocks in it to a single line. The times are on
+// the entries, which is what lets the axis be uneven.
+export function buildAxis(segments: Segment[], range: { from: number; to: number }): Axis {
   const shown = segments.flatMap((segment) => {
     const part = clip(segment, range);
     return part ? [{ planned: isPlanned(segment), from: part.from, to: part.to }] : [];
@@ -200,25 +188,45 @@ export function buildAxis(segments: Segment[], range: { from: number; to: number
     (a, b) => a - b,
   );
 
-  // Every stretch between two edges is one kind all through; neighbours of a
-  // kind are joined, so a collapsed stretch is one band however many edges it spans.
-  const kinds: { from: number; to: number; kind: Piece["kind"] }[] = [];
+  // Every stretch between two edges is one kind all through. Neighbours of a
+  // kind are joined into one band when collapsed; planned ones are kept apart,
+  // since an entry's height is spread over exactly the stretches it covers.
+  const pieces: Piece[] = [];
   for (let index = 0; index + 1 < edges.length; index++) {
     const [from, to] = [edges[index], edges[index + 1]];
     const covering = shown.filter((part) => part.from < to && part.to > from);
     const kind = covering.some((part) => part.planned) ? "planned" : covering.length ? "blocked" : "empty";
-    const last = kinds[kinds.length - 1];
-    if (last?.kind === kind) last.to = to;
-    else kinds.push({ from, to, kind });
+    const last = pieces[pieces.length - 1];
+    if (kind !== "planned" && last?.kind === kind) last.to = to;
+    else pieces.push({ from, to, kind, y: 0, height: 0, collapsed: false });
   }
 
-  const pieces: Piece[] = [];
+  const scaled = (piece: Piece): number => ((piece.to - piece.from) * HOUR_PX) / 60;
+  for (const piece of pieces) {
+    const cap = piece.kind === "empty" ? GAP_PX : piece.kind === "blocked" ? BLOCKED_PX : Infinity;
+    piece.height = Math.min(scaled(piece), cap);
+    piece.collapsed = piece.height < scaled(piece);
+  }
+
+  // Then every entry gets the room its text needs, spread over the stretches
+  // it covers. One it covers only part of -- a band joining two time blocks --
+  // passes on only that part of what it is given, and so is given more. Room
+  // given only adds, so an entry that had enough keeps it whatever comes after.
+  const length = (piece: Piece): number => piece.to - piece.from;
+  for (const part of shown) {
+    const minutes = part.to - part.from;
+    const covered = pieces.filter((piece) => piece.from < part.to && piece.to > part.from);
+    const overlap = (piece: Piece): number => Math.min(piece.to, part.to) - Math.max(piece.from, part.from);
+    const height = covered.reduce((sum, piece) => sum + (piece.height * overlap(piece)) / length(piece), 0);
+    const short = (part.planned ? ENTRY_PX : LINE_PX) - height;
+    if (short <= 0) continue;
+    for (const piece of covered) piece.height += (short * length(piece)) / minutes;
+  }
+
   let y = 0;
-  for (const { from, to, kind } of kinds) {
-    const natural = ((to - from) * hourPx) / 60;
-    const height = kind === "planned" ? natural : Math.min(natural, kind === "blocked" ? BLOCKED_PX : GAP_PX);
-    pieces.push({ from, to, kind, y, height, collapsed: height < natural });
-    y += height;
+  for (const piece of pieces) {
+    piece.y = y;
+    y += piece.height;
   }
 
   const yOf = (minute: number): number => {

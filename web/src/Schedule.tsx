@@ -7,7 +7,6 @@ import {
   clip,
   clock,
   dayOf,
-  hourHeight,
   hourRange,
   minuteOf,
   plannedDays,
@@ -184,7 +183,7 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   const scroller = useRef<HTMLDivElement>(null);
   const range = { from: fromHour * 60, to: toHour * 60 };
   const segments = days.flatMap((day) => byDay.get(day) ?? []);
-  const axis = buildAxis(segments, range, hourHeight(segments, range));
+  const axis = buildAxis(segments, range);
   const nowShown = present.minute >= range.from && present.minute <= range.to;
 
   // Brings the present moment into view whenever other days or hours are
