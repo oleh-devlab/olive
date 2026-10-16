@@ -113,18 +113,33 @@ export function plannedDays(schedule: SolvedSchedule, segments: Map<string, Segm
   return days;
 }
 
-// The hours worth showing for these days: from the earliest thing in them to
-// the latest, the present moment included, and never fewer than MIN_HOURS.
-export function hourRange(segments: Segment[], now: number | null): [number, number] {
-  const minutes = segments.flatMap((segment) => [segment.from, segment.to]);
-  if (now !== null) minutes.push(now);
-  if (!minutes.length) return QUIET_DAY;
+// The hours worth showing for these days: from the earliest task or routine in
+// them to the latest. Time blocks are drawn but do not stretch it -- hours that
+// hold nothing but a block, such as a night's sleep, have nothing planned in
+// them. Never fewer than MIN_HOURS, made up evenly above and below.
+export function hourRange(segments: Segment[]): [number, number] {
+  const planned = segments.filter((segment) => segment.entry.type !== "time_block");
+  if (!planned.length) return QUIET_DAY;
 
-  let from = Math.floor(Math.min(...minutes) / 60);
-  let to = Math.max(Math.ceil(Math.max(...minutes) / 60), from + 1);
-  if (to - from < MIN_HOURS) {
+  let from = Math.floor(Math.min(...planned.map((segment) => segment.from)) / 60);
+  let to = Math.ceil(Math.max(...planned.map((segment) => segment.to)) / 60);
+  const missing = MIN_HOURS - (to - from);
+  if (missing > 0) {
+    from = Math.max(0, from - Math.floor(missing / 2));
     to = Math.min(24, from + MIN_HOURS);
     from = Math.max(0, to - MIN_HOURS);
   }
   return [from, to];
+}
+
+// The part of a segment inside the hours shown, and whether it was cut at
+// either edge -- or null when none of it is inside.
+export function clip(
+  segment: Segment,
+  range: { from: number; to: number },
+): { from: number; to: number; cutAbove: boolean; cutBelow: boolean } | null {
+  const from = Math.max(segment.from, range.from);
+  const to = Math.min(segment.to, range.to);
+  if (to <= from) return null;
+  return { from, to, cutAbove: segment.from < range.from, cutBelow: segment.to > range.to };
 }

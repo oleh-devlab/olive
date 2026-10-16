@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { api } from "./api";
 import {
   botClock,
+  clip,
   clock,
   dayOf,
   hourRange,
@@ -98,7 +99,7 @@ export function Schedule({ version, fail }: Props) {
   const start = Math.min(first, Math.max(days.length - span, 0));
   const shown = days.slice(start, start + span);
   const segments = shown.flatMap((day) => byDay.get(day) ?? []);
-  const [fromHour, toHour] = hourRange(segments, shown.includes(present.day) ? present.minute : null);
+  const [fromHour, toHour] = hourRange(segments);
   const range = { from: fromHour * 60, to: toHour * 60 };
 
   const label =
@@ -202,7 +203,14 @@ const percent = (minute: number, range: Range): string => share(minute - range.f
 const share = (minutes: number, range: Range): string => `${(minutes / (range.to - range.from)) * 100}%`;
 
 function Entry({ segment, range }: { segment: Segment; range: Range }) {
-  const { entry, from, to } = segment;
+  // A block can reach past the hours shown; only what is inside them is drawn.
+  const shown = clip(segment, range);
+  if (!shown) return null;
+
+  const { entry } = segment;
+  const { from, to } = shown;
+  const continued = segment.continued || shown.cutAbove;
+  const continues = segment.continues || shown.cutBelow;
   const name = entry.name || KINDS[entry.type];
   // An entry's own times, not the segment's: a block from 22:00 to 01:00 says so on both days.
   const times = `${clock(minuteOf(entry.start))}–${clock(minuteOf(entry.end))}`;
@@ -211,7 +219,7 @@ function Entry({ segment, range }: { segment: Segment; range: Range }) {
 
   return (
     <div
-      className={`entry entry-${entry.type}${segment.continued ? " continued" : ""}${segment.continues ? " continues" : ""}`}
+      className={`entry entry-${entry.type}${continued ? " continued" : ""}${continues ? " continues" : ""}`}
       style={{
         top: percent(from, range),
         height: share(to - from, range),
