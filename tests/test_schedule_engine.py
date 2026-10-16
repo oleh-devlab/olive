@@ -1,13 +1,16 @@
-"""Tests for what the engine makes of the solver's output before anyone sees it.
+"""Tests for what the engine makes of the solver's output before anyone sees it,
+and for when it solves at all.
 
 Unlike the other schedule suites this one imports `schedule_engine`, so it needs
 the vendored scheduler and `ortools` present.
 """
 
+import asyncio
 import datetime
 import sqlite3
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -23,9 +26,9 @@ sys.modules.setdefault("settings", types.ModuleType("settings"))
 
 import modules.schedule_engine as engine  # noqa: E402
 from database.migrations import MigrationRunner  # noqa: E402
-from modules import schedule_stats  # noqa: E402
+from modules import schedule_provider, schedule_stats  # noqa: E402
 from modules.schedule_engine import format_skipped_routines, items_from_result  # noqa: E402
-from modules.schedule_models import SolvedSchedule  # noqa: E402
+from modules.schedule_models import SolvedSchedule, Task  # noqa: E402
 from tests.test_schedule_stats import FakeDatabase  # noqa: E402
 
 
@@ -183,15 +186,25 @@ class TestFormatSkippedRoutines(unittest.TestCase):
         self.assertEqual(format_skipped_routines([]), [])
 
 
+def forget_every_solve(test: unittest.TestCase):
+    """Start the test with no solve kept, none running and no data written."""
+    for state in (engine._last_solves, engine._running, schedule_provider._revisions):
+        patcher = mock.patch.dict(state, clear=True)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
 class TestTheRecordingHook(unittest.IsolatedAsyncioTestCase):
     """Every solve is counted, with everything but the solver itself real.
 
-    Nothing else calls `solve_schedule()` — the cog's suite replaces it — so
-    without this the hook could stop matching what the engine returns and no
+    Nothing else calls `get_solved_schedule()` — the cog's suite replaces it —
+    so without this the hook could stop matching what the engine returns and no
     test would notice.
     """
 
     def setUp(self):
+        forget_every_solve(self)
+
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
 
@@ -206,7 +219,7 @@ class TestTheRecordingHook(unittest.IsolatedAsyncioTestCase):
         solved = SolvedSchedule(solve_time=1.25, planning_days=7, status="OPTIMAL")
 
         with mock.patch.object(engine, "_solve_sync", return_value=solved):
-            returned = await engine.solve_schedule(4242)
+            returned = await engine.get_solved_schedule(4242)
 
         self.assertEqual(returned.solve_time, 1.25)
         self.assertEqual(schedule_stats.totals(), (1.25, 1))
@@ -214,9 +227,197 @@ class TestTheRecordingHook(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_solve_that_never_ran_leaves_no_trace(self):
         with mock.patch.object(engine, "_solve_sync", return_value=SolvedSchedule(status="NO_DATA")):
-            await engine.solve_schedule(4242)
+            await engine.get_solved_schedule(4242)
 
         self.assertEqual(schedule_stats.totals(), (0.0, 0))
+
+    async def test_a_schedule_answered_from_the_last_solve_is_not_counted_again(self):
+        solved = SolvedSchedule(solve_time=1.25, planning_days=7, status="OPTIMAL")
+
+        with mock.patch.object(engine, "_solve_sync", return_value=solved):
+            await engine.get_solved_schedule(4242)
+            await engine.get_solved_schedule(4242)
+
+        self.assertEqual(schedule_stats.totals(), (1.25, 1))
+
+
+USER = 4242
+OTHER_USER = 4343
+
+
+class FakeSolver:
+    """Stands in for `_solve_sync`, which the engine runs in a thread.
+
+    Each solve is numbered in its status. `hold()` keeps every solve waiting
+    until `let_go()`, which is how a test gets something done while a solve has
+    read the data and not yet finished.
+    """
+
+    def __init__(self):
+        self.calls = 0
+        self.started = threading.Event()
+        self.released = threading.Event()
+        self.released.set()
+        self.fail_next: Exception | None = None
+        self.on_call = lambda: None
+
+    def __call__(self, client_ID: int) -> SolvedSchedule:
+        self.calls += 1
+        number = self.calls
+        self.on_call()
+        self.started.set()
+        self.released.wait(5)
+
+        if self.fail_next is not None:
+            error, self.fail_next = self.fail_next, None
+            raise error
+        return SolvedSchedule(status=f"solve {number}")
+
+    def hold(self):
+        self.released.clear()
+
+    def let_go(self):
+        self.released.set()
+
+    async def wait_until_started(self):
+        if not await asyncio.to_thread(self.started.wait, 5):
+            raise AssertionError("The solve never started.")
+
+
+class TestTheLastSolve(unittest.IsolatedAsyncioTestCase):
+    """A schedule is solved again when the data or the clock calls for it, and only then."""
+
+    async def asyncSetUp(self):
+        forget_every_solve(self)
+
+        self.solver = FakeSolver()
+        self.patch(engine, "_solve_sync", self.solver)
+        # A lock belongs to the event loop it first waited on, and every test
+        # here runs on a loop of its own.
+        self.patch(engine, "_solver_lock", asyncio.Lock())
+        # Counting solves is the recording hook's business, and its database is
+        # not this suite's.
+        self.patch(engine.schedule_stats, "record", mock.Mock())
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.patch(schedule_provider, "get_data_dir", mock.Mock(return_value=Path(directory.name)))
+        self.provider = schedule_provider.ScheduleProvider()
+
+    def patch(self, target, name, value):
+        patcher = mock.patch.object(target, name, value)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write(self, user_id: int = USER):
+        """Change the user's data the way every caller does: through the provider."""
+        self.provider.add_task(user_id, Task(name="Read", duration=datetime.timedelta(minutes=30)))
+
+    async def test_unchanged_data_is_answered_from_the_last_solve(self):
+        first = await engine.get_solved_schedule(USER)
+        second = await engine.get_solved_schedule(USER)
+
+        self.assertEqual(self.solver.calls, 1)
+        self.assertIs(second, first)
+
+    async def test_a_write_makes_the_next_call_solve_again(self):
+        await engine.get_solved_schedule(USER)
+        self.write()
+
+        schedule = await engine.get_solved_schedule(USER)
+
+        self.assertEqual(self.solver.calls, 2)
+        self.assertEqual(schedule.status, "solve 2")
+
+    async def test_a_forced_call_solves_although_nothing_changed(self):
+        await engine.get_solved_schedule(USER)
+
+        schedule = await engine.get_solved_schedule(USER, force=True)
+
+        self.assertEqual(self.solver.calls, 2)
+        self.assertEqual(schedule.status, "solve 2")
+
+    async def test_each_user_has_a_last_solve_of_their_own(self):
+        await engine.get_solved_schedule(USER)
+        await engine.get_solved_schedule(OTHER_USER)
+        self.write(OTHER_USER)
+        await engine.get_solved_schedule(USER)
+
+        self.assertEqual(self.solver.calls, 2)
+
+    async def test_callers_at_once_share_one_solve_forced_or_not(self):
+        self.solver.hold()
+        callers = [
+            asyncio.create_task(engine.get_solved_schedule(USER)),
+            asyncio.create_task(engine.get_solved_schedule(USER)),
+            asyncio.create_task(engine.get_solved_schedule(USER, force=True)),
+        ]
+        await self.solver.wait_until_started()
+        self.solver.let_go()
+
+        schedules = await asyncio.gather(*callers)
+
+        self.assertEqual(self.solver.calls, 1)
+        self.assertEqual({schedule.status for schedule in schedules}, {"solve 1"})
+
+    async def test_a_write_during_a_solve_is_not_lost(self):
+        # What the Discord message used to do: a change made while the schedule
+        # was being solved waited for the next tick, up to ten minutes.
+        self.solver.hold()
+        caller = asyncio.create_task(engine.get_solved_schedule(USER))
+        await self.solver.wait_until_started()
+
+        self.write()
+        self.solver.let_go()
+        schedule = await caller
+
+        self.assertEqual(self.solver.calls, 2)
+        self.assertEqual(schedule.status, "solve 2")
+
+    async def test_data_that_never_stops_changing_still_gets_an_answer(self):
+        self.solver.on_call = lambda: schedule_provider._data_changed(USER)
+
+        schedule = await engine.get_solved_schedule(USER)
+
+        self.assertEqual(self.solver.calls, engine.MAX_SOLVES_PER_CALL)
+        self.assertEqual(schedule.status, f"solve {engine.MAX_SOLVES_PER_CALL}")
+
+    async def test_a_caller_giving_up_does_not_cancel_the_solve_for_the_others(self):
+        self.solver.hold()
+        impatient = asyncio.create_task(engine.get_solved_schedule(USER))
+        await self.solver.wait_until_started()
+        impatient.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await impatient
+
+        patient = asyncio.create_task(engine.get_solved_schedule(USER))
+        self.solver.let_go()
+        schedule = await patient
+
+        self.assertEqual(self.solver.calls, 1)
+        self.assertEqual(schedule.status, "solve 1")
+
+    async def test_a_failed_solve_is_not_kept(self):
+        self.solver.fail_next = TimeoutError("CP-SAT solver timed out")
+        with self.assertRaises(TimeoutError):
+            await engine.get_solved_schedule(USER)
+
+        schedule = await engine.get_solved_schedule(USER)
+
+        self.assertEqual(self.solver.calls, 2)
+        self.assertEqual(schedule.status, "solve 2")
+
+    async def test_every_caller_waiting_on_a_failed_solve_hears_of_it(self):
+        self.solver.hold()
+        self.solver.fail_next = TimeoutError("CP-SAT solver timed out")
+        callers = [asyncio.create_task(engine.get_solved_schedule(USER)) for _ in range(2)]
+        await self.solver.wait_until_started()
+        self.solver.let_go()
+
+        results = await asyncio.gather(*callers, return_exceptions=True)
+
+        self.assertEqual(self.solver.calls, 1)
+        self.assertTrue(all(isinstance(result, TimeoutError) for result in results))
 
 
 if __name__ == "__main__":

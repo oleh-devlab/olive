@@ -101,8 +101,14 @@ class PageSource:
     # is then posted without any pager, like the statistic message.
     paginated: bool = True
 
-    async def build_pages(self, user_id: int, guild_id: int | None) -> list[Page]:
-        """Build every page. An empty list falls back to the welcome text."""
+    async def build_pages(self, user_id: int, guild_id: int | None, force: bool = False) -> list[Page]:
+        """
+        Build every page. An empty list falls back to the welcome text.
+
+        `force` is set when the reader pressed refresh, or when time rather than
+        the data has moved on: a source that keeps what it computed must not
+        answer from it then.
+        """
         raise NotImplementedError
 
     def welcome_text(self, guild_id: int | None) -> str:
@@ -324,8 +330,10 @@ class PagedChannelMessage:
 
         return True
 
-    async def refresh(self, rebuild: bool = True, interaction: disnake.MessageInteraction | None = None):
-        """Rebuild if asked, then publish the current page if it changed."""
+    async def refresh(
+        self, rebuild: bool = True, interaction: disnake.MessageInteraction | None = None, force: bool = False
+    ):
+        """Rebuild if asked — from fresh data if forced — then publish the current page if it changed."""
         channel = self.bot.get_channel(self.channel_id)
         if not channel:
             # The channel is gone; drop the controller so nothing keeps editing it.
@@ -335,7 +343,7 @@ class PagedChannelMessage:
         guild_id = channel.guild.id if channel.guild else None
 
         if rebuild or not self.built:
-            await self._rebuild_pages(guild_id)
+            await self._rebuild_pages(guild_id, force)
 
         if not self.built:
             # A build is in flight and this is the first one — nothing to show yet.
@@ -355,14 +363,14 @@ class PagedChannelMessage:
 
         await self._publish(page, view, state, guild_id, interaction)
 
-    async def _rebuild_pages(self, guild_id: int | None):
+    async def _rebuild_pages(self, guild_id: int | None, force: bool = False):
         """Ask the source for fresh pages, unless a build is already running."""
         if self.rebuilding:
             return
 
         self.rebuilding = True
         try:
-            self.pages = await self.source.build_pages(self.user_id, guild_id)
+            self.pages = await self.source.build_pages(self.user_id, guild_id, force=force)
         except Exception as e:
             logger.error(f"Error building pages for channel {self.channel_id}: {e}")
             self.pages = [self.source.error_page(guild_id, e)]
@@ -447,5 +455,7 @@ class PagedChannelMessage:
         elif action == "last":
             self.current_page = max(self.max_pages - 1, 0)
 
-        # Only the refresh button goes back to the data source.
-        await self.refresh(rebuild=action == "refresh", interaction=interaction)
+        # Only the refresh button goes back to the data source, and it asks for
+        # fresh data: the reader pressing it wants more than what is kept.
+        refreshing = action == "refresh"
+        await self.refresh(rebuild=refreshing, interaction=interaction, force=refreshing)

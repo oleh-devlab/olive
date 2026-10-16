@@ -16,7 +16,10 @@ class ScheduleMessageLoop(PersonalChannelLoopCog):
 
     registry = channels_registry
     init_event = "schedule_init"
-    update_event = "schedule_update"
+    # Not `schedule_update`, which says the user's data changed: a tick says
+    # only that time has passed, and so has to force a new solve where a data
+    # change can be answered from the last one when nothing actually changed.
+    update_event = "schedule_tick"
     interval_setting = "schedule_loop_update_seconds"
     default_interval = 600
 

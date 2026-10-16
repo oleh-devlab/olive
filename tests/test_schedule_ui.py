@@ -1,4 +1,5 @@
-"""Tests for the buttons under the schedule, which the cog builds per page.
+"""Tests for the schedule message the cog builds: its pages, the buttons under
+them, and when it asks the engine for a new solve.
 
 This suite drives the cog, so it needs `disnake`, the vendored scheduler and
 `ortools` — `cogs.schedule.ui` reaches the engine through its own imports.
@@ -15,9 +16,13 @@ from unittest import mock
 src_root = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_root))
 
-# The cog imports the operator's `settings` module, absent from a checkout.
-sys.modules.setdefault("settings", types.ModuleType("settings"))
+# The cog imports the operator's `settings` module, absent from a checkout. The
+# loop's error handler takes `channels` from it at import.
+settings = sys.modules.setdefault("settings", types.ModuleType("settings"))
+if not hasattr(settings, "channels"):
+    settings.channels = {}
 
+import cogs.schedule.loop as loop  # noqa: E402
 import cogs.schedule.ui as ui  # noqa: E402
 from core.paged_message import BLANK_LABEL, PaginationView  # noqa: E402
 from modules.schedule_models import ScheduleItem, SolvedSchedule  # noqa: E402
@@ -42,14 +47,13 @@ def item(kind: str, name: str, day_offset: int, hour: int, item_id: int) -> Sche
     )
 
 
-async def build(items: list[ScheduleItem]):
+async def build(items: list[ScheduleItem], **solved_fields):
     """The pages the cog would publish for this solve."""
     source = ui.SchedulePageSource()
     source.phrases = lambda guild_id: {}
-    solved = SolvedSchedule(items=items, solve_time=0.1, planning_days=7, status="OPTIMAL")
+    solved = SolvedSchedule(items=items, solve_time=0.1, planning_days=7, status="OPTIMAL", **solved_fields)
 
-    with mock.patch.object(ui, "solve_schedule", return_value=solved) as solve:
-        solve.return_value = solved
+    with mock.patch.object(ui, "get_solved_schedule", return_value=solved):
         pages = await source.build_pages(1, None)
 
     return source, pages
@@ -131,3 +135,47 @@ class TestSkipButtons(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWhenItSolves(unittest.IsolatedAsyncioTestCase):
+    """A data change may be answered from the last solve; a tick or the refresh button may not."""
+
+    async def test_a_forced_build_asks_the_engine_for_a_new_solve(self):
+        source = ui.SchedulePageSource()
+        source.phrases = lambda guild_id: {}
+
+        with mock.patch.object(ui, "get_solved_schedule", return_value=SolvedSchedule()) as solve:
+            await source.build_pages(1, None)
+            await source.build_pages(1, None, force=True)
+
+        self.assertEqual(solve.call_args_list, [mock.call(1, force=False), mock.call(1, force=True)])
+
+    async def asyncSetUp(self):
+        self.controller = mock.AsyncMock()
+        patcher = mock.patch.dict(ui.cache.channel_states, {555: self.controller})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cog = ui.ScheduleUI(mock.Mock())
+
+    async def test_a_data_change_rebuilds_without_forcing(self):
+        await self.cog.handle_schedule_update(555)
+
+        self.controller.refresh.assert_awaited_once_with(rebuild=True, force=False)
+
+    async def test_a_tick_forces_a_new_solve(self):
+        await self.cog.handle_schedule_tick(555)
+
+        self.controller.refresh.assert_awaited_once_with(rebuild=True, force=True)
+
+    async def test_the_loop_ticks_with_the_event_that_forces(self):
+        listened = {name for name, _ in ui.ScheduleUI.__cog_listeners__}
+
+        self.assertEqual(loop.ScheduleMessageLoop.update_event, "schedule_tick")
+        self.assertIn("on_schedule_tick", listened)
+
+    async def test_the_page_says_when_the_schedule_was_solved_not_when_it_was_shown(self):
+        solved_at = datetime.datetime(2026, 8, 26, 9, 30, 15)
+
+        _, pages = await build([item("task", "Report", 0, 10, 1)], computed_at=solved_at)
+
+        self.assertIn("26.08.2026 09:30:15", pages[0].content)

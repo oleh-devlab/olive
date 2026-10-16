@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import disnake
 
@@ -114,6 +115,56 @@ class TestUnpaginatedSource(unittest.IsolatedAsyncioTestCase):
         payload = PagedChannelMessage._with_view({"content": "body"}, view)
 
         self.assertIs(payload["view"], view)
+
+
+class TestRebuilding(unittest.IsolatedAsyncioTestCase):
+    """When the controller goes back to the source, and whether it asks for fresh data."""
+
+    def controller(self) -> PagedChannelMessage:
+        self.builds: list[bool] = []
+        builds = self.builds
+
+        class Source(PageSource):
+            view_prefix = "test"
+
+            async def build_pages(self, user_id, guild_id, force=False):
+                builds.append(force)
+                return [Page(content="one"), Page(content="two")]
+
+        controller = PagedChannelMessage.__new__(PagedChannelMessage)
+        controller.bot = mock.Mock()
+        controller.bot.get_channel.return_value = mock.Mock(guild=None)
+        controller.channel_id, controller.user_id = 1, 2
+        controller.source = Source()
+        controller.pages, controller.current_page = [], 0
+        controller.built, controller.rebuilding, controller.last_state = False, False, None
+        controller._publish = mock.AsyncMock()
+        return controller
+
+    async def test_the_refresh_button_asks_for_fresh_data(self):
+        controller = self.controller()
+
+        await controller.handle_button("refresh", mock.AsyncMock())
+
+        self.assertEqual(self.builds, [True])
+
+    async def test_turning_the_page_goes_back_to_nothing(self):
+        controller = self.controller()
+        await controller.refresh()
+        self.builds.clear()
+
+        await controller.handle_button("next", mock.AsyncMock())
+
+        self.assertEqual(self.builds, [])
+        self.assertEqual(controller.current_page, 1)
+
+    async def test_a_rebuild_is_not_forced_unless_asked(self):
+        controller = self.controller()
+
+        await controller.refresh(rebuild=True)
+        await controller.refresh(rebuild=True, force=True)
+
+        self.assertEqual(self.builds, [False, True])
 
 
 class TestBlankButtons(unittest.IsolatedAsyncioTestCase):

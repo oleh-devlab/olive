@@ -10,7 +10,7 @@ from core import cache
 from core.paged_message import Page, PageSource, PaginationView, blank_buttons, ensure_controller
 from core.time_utils import tz
 from core.utils import get_phrases
-from modules.schedule_engine import solve_schedule
+from modules.schedule_engine import get_solved_schedule
 from modules.schedule_models import SolvedSchedule
 from modules.schedule_pagination import (
     MESSAGE_LIMIT,
@@ -52,8 +52,9 @@ class SchedulePageSource(PageSource):
     """
     Pages of one user's computed schedule.
 
-    Building a page means running the CP-SAT solver, which is why the controller
-    refuses to start a second build while one is in flight.
+    Building a page can mean running the CP-SAT solver — whenever the user's
+    data has changed since the last solve, or a solve is forced — which is why
+    the controller refuses to start a second build while one is in flight.
     """
 
     # Both strings are load-bearing: `message_type` finds the existing message in
@@ -65,8 +66,8 @@ class SchedulePageSource(PageSource):
     def phrases(self, guild_id: int | None) -> dict:
         return get_phrases(guild_id).get(self.phrases_section, {})
 
-    async def build_pages(self, user_id: int, guild_id: int | None) -> list[Page]:
-        schedule = await solve_schedule(user_id)
+    async def build_pages(self, user_id: int, guild_id: int | None, force: bool = False) -> list[Page]:
+        schedule = await get_solved_schedule(user_id, force=force)
         phrases = self.phrases(guild_id)
 
         # What a page can hold is what Discord's limit leaves once the frame
@@ -108,8 +109,12 @@ class SchedulePageSource(PageSource):
         """One page's message text. Called with an empty body to price the frame."""
         update_seconds = getattr(settings, "schedule_loop_update_seconds", None)
 
+        # The time the schedule was solved, not shown: a page built from the last
+        # solve would otherwise claim to be newer than it is.
+        computed_at = schedule.computed_at or datetime.now(tz)
+
         content = phrases.get("schedule_page_format", DEFAULT_PAGE_FORMAT).format(
-            formatted_time=datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S"),
+            formatted_time=computed_at.strftime("%d.%m.%Y %H:%M:%S"),
             current_page=current_page,
             max_pages=max_pages,
             page_content=body,
@@ -265,12 +270,21 @@ class ScheduleUI(commands.Cog):
 
     @commands.Cog.listener("on_schedule_update")
     async def handle_schedule_update(self, channel_id: int):
+        """The user's data changed: the next build solves again only if it has to."""
+        await self.rebuild(channel_id, force=False)
+
+    @commands.Cog.listener("on_schedule_tick")
+    async def handle_schedule_tick(self, channel_id: int):
+        """Time has moved on, which the data cannot show: solve again regardless."""
+        await self.rebuild(channel_id, force=True)
+
+    async def rebuild(self, channel_id: int, force: bool):
         controller = cache.channel_states.get(channel_id)
         if not controller:
             logger.debug("No controller for channel %s yet; skipping update.", channel_id)
             return
 
-        await controller.refresh(rebuild=True)
+        await controller.refresh(rebuild=True, force=force)
 
     @commands.Cog.listener("on_schedule_init")
     async def handle_schedule_init(self, channel: disnake.TextChannel, user_id: int):

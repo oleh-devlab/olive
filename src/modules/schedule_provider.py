@@ -1,3 +1,4 @@
+import collections
 import datetime
 import json
 from pathlib import Path
@@ -16,6 +17,21 @@ from modules.schedule_models import (
     TimeBlock,
     block_repeat,
 )
+
+# How many times each user's schedule data has been written since the bot
+# started. It only has to tell a solve of the current data from a solve of
+# older data, and both are gone after a restart -- so it lives in memory and
+# never on disk.
+_revisions: collections.Counter[int] = collections.Counter()
+
+
+def data_revision(user_id: int) -> int:
+    """Changes whenever anything a solve reads for this user is written."""
+    return _revisions[int(user_id)]
+
+
+def _data_changed(user_id: int):
+    _revisions[int(user_id)] += 1
 
 
 def get_data_dir() -> Path:
@@ -272,6 +288,7 @@ class ScheduleProvider:
         filepath = get_schedule_file(user_id)
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
+        _data_changed(user_id)
 
     channels = channels_registry
 
@@ -329,6 +346,9 @@ class ScheduleProvider:
         if step_minutes is not None:
             data[user_id_str]["step_minutes"] = step_minutes
         self.save_channels(data)
+        # The solver's settings live next to the channel ids, not in the
+        # schedule file, but a solve reads them all the same.
+        _data_changed(user_id)
         return True
 
     def create_backup(self, user_id: int) -> dict:

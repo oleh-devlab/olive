@@ -31,7 +31,7 @@ class InflationPageSource(PageSource):
     def phrases(self, guild_id: int | None) -> dict:
         return get_phrases(guild_id).get(self.phrases_section, {})
 
-    async def build_pages(self, user_id: int, guild_id: int | None) -> list[Page]:
+    async def build_pages(self, user_id: int, guild_id: int | None, force: bool = False) -> list[Page]:
         # Which rendering the reader gets is their stored preference, set with
         # `/inflation view`; the source itself is shared by every channel and so
         # must not hold it.
@@ -82,7 +82,7 @@ class InflationServerPageSource(InflationPageSource):
     view_prefix = "inflation_server"
     paginated = False
 
-    async def build_pages(self, owner_id: int, guild_id: int | None) -> list[Page]:
+    async def build_pages(self, owner_id: int, guild_id: int | None, force: bool = False) -> list[Page]:
         # The header is prepended to the page content, so it eats into the same
         # message limit the report has to fit in. +2 for the blank line after it.
         reserve = len(self.header(guild_id)) + 2

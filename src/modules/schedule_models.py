@@ -96,3 +96,7 @@ class SolvedSchedule:
     skipped_task_ids: list[int] = field(default_factory=list)
     skipped_routines: list[str] = field(default_factory=list)
     status: str = ""
+    # When the solve read the data and the clock. A schedule can be shown well
+    # after it was computed, so this rather than the time of showing it is what
+    # says how current it is.
+    computed_at: datetime.datetime | None = None

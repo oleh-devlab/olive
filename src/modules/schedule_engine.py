@@ -3,16 +3,35 @@ import collections
 import datetime
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 import settings
 
 from core.time_utils import tz
 from modules.automatic_timetable_py.src.scheduler import Scheduler
 from modules.schedule_models import ScheduleItem, SolvedSchedule
-from modules.schedule_provider import ScheduleProvider
+from modules.schedule_provider import ScheduleProvider, data_revision
 from modules import schedule_stats
 
 _solver_lock = asyncio.Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class _Solve:
+    schedule: SolvedSchedule
+    # The user's data revision when the solve read their data.
+    revision: int
+
+
+# The last solve of each user, and the one running for them now. In memory only,
+# like the revisions they are checked against: after a restart the first caller
+# solves afresh.
+_last_solves: dict[int, _Solve] = {}
+_running: dict[int, asyncio.Task] = {}
+
+# Data that keeps changing under each solve would otherwise send a caller round
+# for ever; after this many it gets the latest one there is.
+MAX_SOLVES_PER_CALL = 3
 
 
 def format_skipped_routines(skipped) -> list[str]:
@@ -137,15 +156,16 @@ def items_from_result(result) -> list[ScheduleItem]:
 
 
 def _solve_sync(client_ID: int) -> SolvedSchedule:
+    computed_at = datetime.datetime.now(tz)
     provider = ScheduleProvider()
     planning_days = provider.get_planning_days(client_ID)
 
     scheduler = _load_scheduler(client_ID, provider, planning_days)
     if scheduler is None:
-        return SolvedSchedule(planning_days=planning_days, status="NO_DATA")
+        return SolvedSchedule(planning_days=planning_days, status="NO_DATA", computed_at=computed_at)
 
     # Pass the timezone-aware start time so that it matches the timezone-aware deadlines
-    now_tz = datetime.datetime.now(tz).replace(second=0, microsecond=0)
+    now_tz = computed_at.replace(second=0, microsecond=0)
     workers = getattr(settings, "schedule_compute_workers", 1)
 
     start_perf = time.perf_counter()
@@ -158,7 +178,9 @@ def _solve_sync(client_ID: int) -> SolvedSchedule:
         )
 
     if not result.is_successful:
-        return SolvedSchedule(solve_time=solve_time, planning_days=planning_days, status=result.status)
+        return SolvedSchedule(
+            solve_time=solve_time, planning_days=planning_days, status=result.status, computed_at=computed_at
+        )
 
     return SolvedSchedule(
         items=items_from_result(result),
@@ -167,20 +189,63 @@ def _solve_sync(client_ID: int) -> SolvedSchedule:
         skipped_task_ids=[st.task.id for st in getattr(result, "skipped_tasks", [])],
         skipped_routines=format_skipped_routines(getattr(result, "skipped_routines", [])),
         status=result.status,
+        computed_at=computed_at,
     )
 
 
-async def solve_schedule(client_ID: int) -> SolvedSchedule:
-    """
-    Main entry point for the schedule engine.
-    Fetches the schedule using the current active algorithm.
-    Runs the CPU-intensive solve operation in a background thread.
-    """
+async def _solve(client_ID: int) -> _Solve:
+    """Run the solver for one user, off the event loop, and keep what it made."""
     async with _solver_lock:
+        # Taken right before the solve reads the data, on the event loop the
+        # commands, the agent and the web editor all write from: a write after
+        # this is one the solve may have missed, and shows as a newer revision.
+        revision = data_revision(client_ID)
         schedule = await asyncio.to_thread(_solve_sync, client_ID)
 
     # Every solve passes through here — the loop's, the reader's and the
-    # agent's alike — so this is the one place that has to count them.
+    # agent's alike — so this is the one place that has to count them. A
+    # schedule answered from the last solve is not a solve.
     schedule_stats.record(client_ID, schedule.solve_time)
 
-    return schedule
+    solve = _Solve(schedule, revision)
+    _last_solves[client_ID] = solve
+    return solve
+
+
+def _join_or_start(client_ID: int) -> asyncio.Future:
+    """The solve running for this user, or a new one: never two at once."""
+    task = _running.get(client_ID)
+    if task is None:
+        task = asyncio.create_task(_solve(client_ID))
+        _running[client_ID] = task
+        task.add_done_callback(lambda _: _running.pop(client_ID, None))
+
+    # One caller giving up must not cancel the solve the others are waiting on.
+    return asyncio.shield(task)
+
+
+async def get_solved_schedule(client_ID: int, *, force: bool = False) -> SolvedSchedule:
+    """
+    The user's schedule: their last solve while their data has not changed
+    since, and a new solve once it has.
+
+    `force` asks for a new solve even so, for when it is time rather than the
+    data that has moved on — a schedule starts at the moment it was solved.
+    The loop's tick and the reader's refresh button ask for one. Either way a
+    solve already running for the user is joined rather than doubled.
+    """
+    solve = None
+    for _ in range(MAX_SOLVES_PER_CALL):
+        last = _last_solves.get(client_ID)
+        if not force and last is not None and last.revision == data_revision(client_ID):
+            return last.schedule
+
+        solve = await _join_or_start(client_ID)
+        if solve.revision == data_revision(client_ID):
+            return solve.schedule
+
+        # The data changed while that solve was reading it, so what it made is
+        # already out of date — and any solve from here on is new enough.
+        force = False
+
+    return solve.schedule

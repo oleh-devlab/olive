@@ -4,7 +4,7 @@ The reader's own view is not built here: the cog asks the engine for a solve,
 `schedule_timeline` for the days, and `schedule_pagination` for the pages.
 """
 
-from modules.schedule_engine import solve_schedule
+from modules.schedule_engine import get_solved_schedule
 from modules.schedule_timeline import group_into_days
 
 NO_ITEMS_TEXT = (
@@ -14,7 +14,7 @@ NO_ITEMS_TEXT = (
 
 async def get_schedule(client_ID: int) -> str:
     """Returns a full formatted schedule string for the agent."""
-    schedule = await solve_schedule(client_ID)
+    schedule = await get_solved_schedule(client_ID)
     days = group_into_days(schedule.items)
 
     if not days:

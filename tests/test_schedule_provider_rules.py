@@ -1,4 +1,4 @@
-"""Tests for the task rules `ScheduleProvider` holds for every way a task changes.
+"""Tests for the rules `ScheduleProvider` holds for every way the data changes.
 
 `/task`, the agent and the web editor all add and spend through the provider,
 so a rule kept here is kept by all three -- which is the point: the task limit
@@ -170,3 +170,64 @@ class TestRoutineAndTimeBlockLimits(ProviderTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDataRevision(ProviderTestCase):
+    """What tells a solve of the current data from a solve of older data."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.dict(schedule_provider._revisions, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.object(schedule_provider.channels_registry, "path", Path(tmp.name) / "channels.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_every_write_moves_it_on(self):
+        revisions = [schedule_provider.data_revision(USER)]
+        task_id = self.provider.add_task(USER, task())
+        revisions.append(schedule_provider.data_revision(USER))
+        self.provider.spend_task_time(USER, task_id, 5)
+        revisions.append(schedule_provider.data_revision(USER))
+        self.provider.add_routine(USER, routine())
+        revisions.append(schedule_provider.data_revision(USER))
+        self.provider.add_time_block(USER, block())
+        revisions.append(schedule_provider.data_revision(USER))
+
+        self.assertEqual(len(set(revisions)), len(revisions))
+
+    def test_reading_leaves_it_alone(self):
+        self.provider.add_task(USER, task())
+        before = schedule_provider.data_revision(USER)
+
+        self.provider.list_tasks(USER)
+        self.provider.list_routines(USER)
+        self.provider.get_settings(USER)
+
+        self.assertEqual(schedule_provider.data_revision(USER), before)
+
+    def test_the_solver_settings_count_although_they_live_with_the_channels(self):
+        schedule_provider.channels_registry.save({str(USER): {"channel_id": 1}})
+        before = schedule_provider.data_revision(USER)
+
+        self.provider.update_schedule_settings(USER, planning_days=21)
+
+        self.assertNotEqual(schedule_provider.data_revision(USER), before)
+
+    def test_it_is_per_user(self):
+        before = schedule_provider.data_revision(USER)
+
+        self.provider.add_task(USER + 1, task())
+
+        self.assertEqual(schedule_provider.data_revision(USER), before)
+
+    def test_it_never_reaches_the_disk(self):
+        self.provider.add_task(USER, task())
+
+        stored = schedule_provider.get_schedule_file(USER).read_text()
+
+        self.assertNotIn("revision", stored)
