@@ -10,13 +10,9 @@ import {
   hasCounted,
   isFinished,
   isRunning,
-  isTimerKey,
-  loadTimer,
   minutesToLog,
-  parseTimer,
   pause,
   remaining,
-  saveTimer,
   setMinutes,
   settle,
   start,
@@ -53,24 +49,11 @@ const duration = (minutes: number): string =>
 // folds down to a strip. It logs what it counted against the task -- only when
 // asked, and never more than it was set to -- the way `/task spend` does.
 export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
-  const [stored, setStored] = useState<TimerState | null>(loadTimer);
+  // In this page's memory only: a reload or a closed tab drops it.
+  const [stored, setStored] = useState<TimerState | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [draft, setDraft] = useState<string | null>(null);
   const [logging, setLogging] = useState(false);
-
-  const keep = (next: TimerState | null) => {
-    setStored(next);
-    saveTimer(next);
-  };
-
-  // Another tab changed the timer: show that one, so the same time is not counted twice.
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (isTimerKey(event.key)) setStored(parseTimer(event.newValue));
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
 
   const running = stored !== null && isRunning(stored);
 
@@ -82,11 +65,7 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
       () => {
         const at = Date.now();
         setNow(at);
-        setStored((current) => {
-          const next = current && settle(current, at);
-          if (next !== current) saveTimer(next);
-          return next;
-        });
+        setStored((current) => current && settle(current, at));
       },
       running ? 1000 : 30_000,
     );
@@ -121,7 +100,7 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
   }, [title]);
 
   function change(minutes: number) {
-    if (timer) keep(setMinutes(timer, minutes, Date.now()));
+    if (timer) setStored(setMinutes(timer, minutes, Date.now()));
   }
 
   function commitDraft() {
@@ -131,16 +110,16 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
 
   function reset() {
     if (timer && counted(timer, Date.now()) >= 60_000 && !window.confirm(`Discard the ${loggable} min counted?`)) return;
-    keep(null);
+    setStored(null);
   }
 
   async function log() {
     if (!timer || loggable < 1 || logging) return;
     const stopped = pause(timer, Date.now());
-    keep(stopped);
+    setStored(stopped);
     setLogging(true);
     try {
-      if (await onLog({ id: timer.taskId, name: timer.name }, minutesToLog(stopped, Date.now()))) keep(null);
+      if (await onLog({ id: timer.taskId, name: timer.name }, minutesToLog(stopped, Date.now()))) setStored(null);
     } finally {
       setLogging(false);
     }
@@ -232,11 +211,11 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
 
             <div className="panel-actions">
               {running ? (
-                <button type="button" onClick={() => keep(pause(timer, Date.now()))}>
+                <button type="button" onClick={() => setStored(pause(timer, Date.now()))}>
                   Pause
                 </button>
               ) : (
-                <button type="button" className="primary" disabled={finished} onClick={() => keep(start(timer, Date.now()))}>
+                <button type="button" className="primary" disabled={finished} onClick={() => setStored(start(timer, Date.now()))}>
                   {hasCounted(timer, now) ? "Resume" : "Start"}
                 </button>
               )}

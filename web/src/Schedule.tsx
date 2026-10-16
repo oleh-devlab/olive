@@ -32,11 +32,13 @@ interface Props {
   fail: (error: unknown) => void;
   // How many days to show until the reader picks another number.
   initialSpan: number;
+  // Told when the reader picks one.
+  onSpanChange?: (span: number) => void;
   // Told of every schedule this reads, for the rest of the page to use the same one.
   onSolved?: (schedule: SolvedSchedule) => void;
 }
 
-export function Schedule({ version, fail, initialSpan, onSolved }: Props) {
+export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved }: Props) {
   const [schedule, setSchedule] = useState<SolvedSchedule | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const [span, setSpan] = useState(initialSpan);
@@ -139,7 +141,15 @@ export function Schedule({ version, fail, initialSpan, onSolved }: Props) {
 
         <div className="schedule-span" role="group" aria-label="Days shown">
           {SPANS.map((count) => (
-            <button key={count} type="button" aria-pressed={span === count} onClick={() => setSpan(count)}>
+            <button
+              key={count}
+              type="button"
+              aria-pressed={span === count}
+              onClick={() => {
+                setSpan(count);
+                onSpanChange?.(count);
+              }}
+            >
               {count === 1 ? "Day" : `${count} days`}
             </button>
           ))}

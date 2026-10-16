@@ -27,7 +27,11 @@ const TABS = [
 const STACKED_BELOW_PX = 760;
 const PANEL_PX = 280;
 const STRIP_PX = 36;
+// The only two things the page keeps in the browser: whether the panel was
+// left folded, and how many days the calendar was last set to show.
 const PANEL_KEY = "olive.panel";
+const DAYS_KEY = "olive.days";
+const DAY_CHOICES = [1, 3, 7];
 
 function panelOpenAtStart(): boolean {
   try {
@@ -47,10 +51,24 @@ function keepPanelOpen(open: boolean) {
   }
 }
 
-// Three days to begin with if three columns of at least MIN_DAY_PX fit beside
-// the panel, one otherwise; seven only when asked for.
+function keepDays(days: number) {
+  try {
+    window.localStorage.setItem(DAYS_KEY, String(days));
+  } catch {
+    // Not kept: the next visit works the number out again.
+  }
+}
+
+// The number of days last chosen; else three if three columns of at least
+// MIN_DAY_PX fit beside the panel, one otherwise.
 const MIN_DAY_PX = 200;
 function daysAtStart(panelOpen: boolean): number {
+  try {
+    const kept = Number(window.localStorage.getItem(DAYS_KEY));
+    if (DAY_CHOICES.includes(kept)) return kept;
+  } catch {
+    // Nothing kept, then.
+  }
   const beside = window.innerWidth >= STACKED_BELOW_PX ? (panelOpen ? PANEL_PX : STRIP_PX) + 16 : 0;
   // The page's and the calendar card's padding, and the hours down its left.
   const room = window.innerWidth - beside - 32 - 26 - 44;
@@ -210,7 +228,13 @@ export default function App({ loginError }: { loginError?: string }) {
           <section id="app-view">
             <div className={panelOpen ? "workspace" : "workspace panel-closed"}>
               <TimerPanel schedule={solved} tasks={tasks} open={panelOpen} onToggle={togglePanel} onLog={spend} />
-              <Schedule version={scheduleVersion} fail={fail} initialSpan={daysShown} onSolved={setSolved} />
+              <Schedule
+                version={scheduleVersion}
+                fail={fail}
+                initialSpan={daysShown}
+                onSpanChange={keepDays}
+                onSolved={setSolved}
+              />
             </div>
 
             <nav className="tabs" role="tablist">

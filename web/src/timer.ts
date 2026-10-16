@@ -2,7 +2,8 @@
 //
 // What it counts is kept as a start time and what was counted before the last
 // pause, never as a number ticking up: a tab in the background is woken up
-// rarely, and the clock is the only thing that knows how long it slept.
+// rarely, and the clock is the only thing that knows how long it slept. It is
+// kept nowhere but in the open page: a reload or a closed tab drops it.
 
 import type { ScheduleEntry } from "./types";
 
@@ -11,7 +12,6 @@ export const MIN_MIN = 1;
 export const MAX_MIN = 600;
 
 const MINUTE_MS = 60_000;
-const STORAGE_KEY = "olive.timer";
 
 export interface TimerState {
   // The task it runs for, fixed once it has run: a new solve may move the
@@ -94,49 +94,4 @@ export function formatClock(ms: number): string {
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = String(total % 60).padStart(2, "0");
   return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${String(minutes).padStart(2, "0")}:${seconds}`;
-}
-
-// Kept in the browser, so that a reload does not lose a running timer and two
-// tabs show the same one -- which is what stops the same time being logged
-// twice. Storage can be missing or refuse, and then the timer just forgets.
-export function loadTimer(): TimerState | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? parseTimer(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveTimer(timer: TimerState | null) {
-  try {
-    if (timer) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(timer));
-    else window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Not kept, then: it still works until the page is closed.
-  }
-}
-
-export const isTimerKey = (key: string | null): boolean => key === STORAGE_KEY;
-
-// What another tab or an older version left there is checked, not trusted.
-export function parseTimer(raw: string | null): TimerState | null {
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as Partial<TimerState>;
-    const numbers = [value.taskId, value.session, value.sessions, value.minutes, value.countedMs];
-    if (numbers.some((n) => typeof n !== "number" || !Number.isFinite(n)) || typeof value.name !== "string") return null;
-    if (value.startedAt !== null && (typeof value.startedAt !== "number" || !Number.isFinite(value.startedAt))) return null;
-    return {
-      taskId: value.taskId!,
-      name: value.name,
-      session: value.session!,
-      sessions: value.sessions!,
-      minutes: clampMinutes(value.minutes!),
-      countedMs: Math.max(0, value.countedMs!),
-      startedAt: value.startedAt ?? null,
-    };
-  } catch {
-    return null;
-  }
 }
