@@ -26,22 +26,20 @@ const KINDS: Record<EntryType, string> = {
   time_block: "Time block",
 };
 
-// As many days as fit side by side without squeezing a day's names into nothing.
-function spanForScreen(): number {
-  if (window.innerWidth < 700) return 1;
-  return window.innerWidth < 1100 ? 3 : 7;
-}
-
 interface Props {
   // Bumped by the page whenever it has changed the data: the schedule is read again.
   version: number;
   fail: (error: unknown) => void;
+  // How many days to show until the reader picks another number.
+  initialSpan: number;
+  // Told of every schedule this reads, for the rest of the page to use the same one.
+  onSolved?: (schedule: SolvedSchedule) => void;
 }
 
-export function Schedule({ version, fail }: Props) {
+export function Schedule({ version, fail, initialSpan, onSolved }: Props) {
   const [schedule, setSchedule] = useState<SolvedSchedule | null>(null);
   const [recalculating, setRecalculating] = useState(false);
-  const [span, setSpan] = useState(spanForScreen);
+  const [span, setSpan] = useState(initialSpan);
   const [first, setFirst] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   // Counts the reader's returns to this tab, each of which reads the schedule again.
@@ -59,12 +57,14 @@ export function Schedule({ version, fail }: Props) {
   useEffect(() => {
     let cancelled = false;
     api<SolvedSchedule>("GET", "/api/schedule").then((solved) => {
-      if (!cancelled) setSchedule(solved);
+      if (cancelled) return;
+      setSchedule(solved);
+      onSolved?.(solved);
     }, fail);
     return () => {
       cancelled = true;
     };
-  }, [version, returns, fail]);
+  }, [version, returns, fail, onSolved]);
 
   // Moves the line that marks the present moment; nothing is fetched.
   useEffect(() => {
@@ -75,7 +75,9 @@ export function Schedule({ version, fail }: Props) {
   async function recalculate() {
     setRecalculating(true);
     try {
-      setSchedule(await api<SolvedSchedule>("POST", "/api/schedule/recalculate"));
+      const solved = await api<SolvedSchedule>("POST", "/api/schedule/recalculate");
+      setSchedule(solved);
+      onSolved?.(solved);
       setNow(Date.now());
     } catch (error) {
       fail(error);

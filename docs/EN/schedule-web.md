@@ -43,7 +43,9 @@ At the top is the schedule itself, as a calendar: one, three or seven days side 
 
 The page shows the schedule the bot calculated last — the same one the Discord message shows — and calculates it again only when your data has changed since. So it takes no button to see a change: the schedule is read again when the page opens, after every change made on it, and when you come back to the tab. A schedule starts at the moment it was calculated, though, and the bot recalculates it on its own only every `schedule_loop_update_seconds`; **Recalculate** asks for one from now, and the Discord message then shows that one too.
 
-Below the calendar are three tabs — Tasks, Routines, Time blocks — with the same kind of table:
+Beside the calendar is a timer for the task being worked on: the session going on now in the schedule, or the next one, with the break that comes after it and how much is left on the task. It starts at the session's length, which the −5 and +5 buttons or a number typed in change. **Start** and **Pause** run it; **Log** writes the time it counted off the task, as `/task spend` does — only when pressed, and never more than the timer was set to. A timer that has counted anything stays with its task even when the schedule moves on, survives a reload, and is the same timer in every tab, so the same time cannot be logged twice; while it runs, the tab's title counts down. The « button folds the panel into a thin strip, which still shows the time left, and the page remembers how it was left. On a computer the page opens with the panel unfolded and three days, or one when three would not fit beside it; on a phone the panel sits folded above the calendar.
+
+Below the calendar and the timer, across the whole width, are three tabs — Tasks, Routines, Time blocks — with the same kind of table:
 
 - Double-click a row or press ✎ to turn it into inputs. Enter saves, Esc cancels.
 - The "+" row at the bottom adds a new item, prefilled with the same defaults as the matching command.

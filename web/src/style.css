@@ -76,9 +76,8 @@ body {
 }
 
 main {
+  /* The whole width: the calendar is what gains from it. */
   padding: 16px;
-  max-width: 1400px;
-  margin: 0 auto;
 }
 
 .card {
@@ -685,4 +684,174 @@ dialog input {
 
 .warning {
   color: var(--danger);
+}
+
+/* --- Timer panel and the page around it --- */
+
+/* The panel beside the calendar, folded down to a strip or not; the tables
+   go below both, across the whole width. The panel is as tall as the calendar
+   and its contents stay in sight while the page scrolls past it. Narrower than
+   the breakpoint (App.tsx has the same one) it goes above the calendar instead. */
+.workspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.workspace.panel-closed {
+  grid-template-columns: 36px minmax(0, 1fr);
+}
+
+.workspace .schedule {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.panel {
+  padding: 12px;
+}
+
+.panel-body {
+  position: sticky;
+  top: 16px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.panel p {
+  margin: 0;
+}
+
+.panel-toggle {
+  padding: 2px 8px;
+  color: var(--muted);
+}
+
+.panel-task {
+  margin: 12px 0 8px;
+}
+
+.panel-when,
+.panel-facts {
+  font-size: 13px;
+}
+
+.panel-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.panel-name .muted {
+  font-weight: 400;
+}
+
+.panel .panel-clock {
+  margin: 8px 0;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel .panel-clock.running {
+  color: var(--accent);
+}
+
+.panel .panel-clock.finished {
+  color: var(--danger);
+  font-size: 28px;
+}
+
+.panel-set {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.panel-set label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.panel-set input {
+  width: 64px;
+  text-align: right;
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.panel button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Folded down: a strip holding the button that opens it, and the time left. */
+.panel.closed {
+  padding: 6px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.panel.closed .panel-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-strip-time {
+  writing-mode: vertical-rl;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-strip-time.running {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (max-width: 759px) {
+  .workspace,
+  .workspace.panel-closed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel-body {
+    position: static;
+  }
+
+  .panel.closed {
+    padding: 4px 8px;
+  }
+
+  .panel.closed .panel-body {
+    flex-direction: row;
+  }
+
+  .panel-strip-time {
+    writing-mode: horizontal-tb;
+  }
 }

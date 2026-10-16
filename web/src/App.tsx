@@ -5,7 +5,8 @@ import { SkipDialog, SpendDialog } from "./dialogs";
 import { Schedule } from "./Schedule";
 import { Button, Table } from "./Table";
 import { ROUTINES, TASKS, TIME_BLOCKS } from "./tables";
-import type { Listing, Me, Routine, Task } from "./types";
+import { TimerPanel } from "./TimerPanel";
+import type { Listing, Me, Routine, SolvedSchedule, Task } from "./types";
 
 // What `/oauth/callback` sends back in `?error=` when signing in did not work.
 export const LOGIN_ERRORS: Record<string, string> = {
@@ -20,6 +21,41 @@ const TABS = [
   { id: "routines", label: "Routines" },
   { id: "time-blocks", label: "Time blocks" },
 ];
+
+// The timer's panel: beside the calendar on a wide screen, above it on a
+// narrow one (the stylesheet's breakpoint is the same), folded to a strip or not.
+const STACKED_BELOW_PX = 760;
+const PANEL_PX = 280;
+const STRIP_PX = 36;
+const PANEL_KEY = "olive.panel";
+
+function panelOpenAtStart(): boolean {
+  try {
+    const kept = window.localStorage.getItem(PANEL_KEY);
+    if (kept !== null) return kept === "open";
+  } catch {
+    // Nothing kept, then.
+  }
+  return window.innerWidth >= STACKED_BELOW_PX;
+}
+
+function keepPanelOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(PANEL_KEY, open ? "open" : "closed");
+  } catch {
+    // Not kept: the next visit starts from the default again.
+  }
+}
+
+// Three days to begin with if three columns of at least MIN_DAY_PX fit beside
+// the panel, one otherwise; seven only when asked for.
+const MIN_DAY_PX = 200;
+function daysAtStart(panelOpen: boolean): number {
+  const beside = window.innerWidth >= STACKED_BELOW_PX ? (panelOpen ? PANEL_PX : STRIP_PX) + 16 : 0;
+  // The page's and the calendar card's padding, and the hours down its left.
+  const room = window.innerWidth - beside - 32 - 26 - 44;
+  return room / 3 >= MIN_DAY_PX ? 3 : 1;
+}
 
 function tabFromHash(): string {
   const hash = window.location.hash.slice(1);
@@ -39,6 +75,10 @@ export default function App({ loginError }: { loginError?: string }) {
   const [tasksVersion, setTasksVersion] = useState(0);
   const [routinesVersion, setRoutinesVersion] = useState(0);
   const [scheduleVersion, setScheduleVersion] = useState(0);
+  const [solved, setSolved] = useState<SolvedSchedule | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [panelOpen, setPanelOpen] = useState(panelOpenAtStart);
+  const [daysShown] = useState(() => daysAtStart(panelOpen));
 
   const notify = useCallback((text: string) => setStatus({ text, kind: "ok" }), []);
 
@@ -51,7 +91,10 @@ export default function App({ loginError }: { loginError?: string }) {
     setStatus({ text: failure.message, kind: "error" });
   }, []);
 
-  const onTasksLoaded = useCallback((data: Listing) => setCompleted(data.completed as Task[]), []);
+  const onTasksLoaded = useCallback((data: Listing) => {
+    setTasks(data.tasks as Task[]);
+    setCompleted(data.completed as Task[]);
+  }, []);
   // Anything the page writes changes what the schedule above the tables shows.
   const dataChanged = useCallback(() => setScheduleVersion((version) => version + 1), []);
 
@@ -91,7 +134,13 @@ export default function App({ loginError }: { loginError?: string }) {
     }
   }
 
-  async function spend(task: Task, minutes: number) {
+  function togglePanel() {
+    keepPanelOpen(!panelOpen);
+    setPanelOpen(!panelOpen);
+  }
+
+  // True once the minutes are logged; the timer only lets go of them then.
+  async function spend(task: { id: number; name: string }, minutes: number): Promise<boolean> {
     try {
       const result = await api<{ completed: boolean; remaining_min: number }>("POST", `/api/tasks/${task.id}/spend`, {
         minutes,
@@ -103,8 +152,10 @@ export default function App({ loginError }: { loginError?: string }) {
           ? `“${task.name}” is done and moved to the history.`
           : `Logged ${minutes} min. ${result.remaining_min} min left.`,
       );
+      return true;
     } catch (error) {
       fail(error);
+      return false;
     }
   }
 
@@ -157,7 +208,10 @@ export default function App({ loginError }: { loginError?: string }) {
 
         {view.kind === "app" && (
           <section id="app-view">
-            <Schedule version={scheduleVersion} fail={fail} />
+            <div className={panelOpen ? "workspace" : "workspace panel-closed"}>
+              <TimerPanel schedule={solved} tasks={tasks} open={panelOpen} onToggle={togglePanel} onLog={spend} />
+              <Schedule version={scheduleVersion} fail={fail} initialSpan={daysShown} onSolved={setSolved} />
+            </div>
 
             <nav className="tabs" role="tablist">
               {TABS.map((item) => (
