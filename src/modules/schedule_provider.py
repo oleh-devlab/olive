@@ -33,6 +33,14 @@ def max_tasks_per_user() -> int:
     return getattr(settings, "schedule_max_tasks_per_user", 100)
 
 
+def max_routines_per_user() -> int:
+    return getattr(settings, "schedule_max_routines_per_user", 20)
+
+
+def max_timeblocks_per_user() -> int:
+    return getattr(settings, "schedule_max_timeblocks_per_user", 50)
+
+
 def get_schedule_channels_file() -> Path:
     return get_data_dir() / "schedule_channels.json"
 
@@ -143,7 +151,8 @@ def _dict_to_completed_task(d: dict) -> CompletedTask:
     )
 
 
-def _timeblock_to_dict(block: TimeBlock) -> dict:
+def timeblock_to_dict(block: TimeBlock) -> dict:
+    """A time block in the shape it is stored in -- and handed to the web editor in."""
     start_val = _serialize_datetime(block.start) if isinstance(block.start, datetime.datetime) else block.start
     end_val = _serialize_datetime(block.end) if isinstance(block.end, datetime.datetime) else block.end
     repeat = block_repeat(block)
@@ -189,7 +198,8 @@ def _dict_to_timeblock(d: dict) -> TimeBlock:
     )
 
 
-def _routine_to_dict(routine: Routine) -> dict:
+def routine_to_dict(routine: Routine) -> dict:
+    """A routine in the shape it is stored in -- and handed to the web editor in."""
     return {
         "id": routine.id,
         "depends_on": routine.depends_on,
@@ -459,10 +469,14 @@ class ScheduleProvider:
 
     def add_time_block(self, user_id: int, block: TimeBlock) -> int:
         data = self._load_data(user_id)
+
+        max_blocks = max_timeblocks_per_user()
+        if len(data.get("time_blocks", [])) >= max_blocks:
+            raise ScheduleLimitError(f"You have reached the maximum limit of {max_blocks} timeblocks.")
         if block.id is None:
             max_id = max((b.get("id", 0) or 0 for b in data.get("time_blocks", [])), default=0)
             block.id = max_id + 1
-        data.setdefault("time_blocks", []).append(_timeblock_to_dict(block))
+        data.setdefault("time_blocks", []).append(timeblock_to_dict(block))
         self._save_data(user_id, data)
         return block.id
 
@@ -514,7 +528,7 @@ class ScheduleProvider:
         data = self._load_data(user_id)
         for i, b in enumerate(data.get("time_blocks", [])):
             if b.get("id") == block_id:
-                data["time_blocks"][i] = _timeblock_to_dict(edited)
+                data["time_blocks"][i] = timeblock_to_dict(edited)
                 break
 
         self._save_data(user_id, data)
@@ -533,18 +547,21 @@ class ScheduleProvider:
 
         return False
 
-    def add_routine(self, user_id: int, routine: Routine):
+    def add_routine(self, user_id: int, routine: Routine) -> int:
         data = self._load_data(user_id)
+
+        max_routines = max_routines_per_user()
+        if len(data.get("routines", [])) >= max_routines:
+            raise ScheduleLimitError(f"You have reached the maximum limit of {max_routines} routines.")
 
         new_id = 1
         if data.get("routines"):
             new_id = max(r.get("id", 0) for r in data["routines"]) + 1
 
-        routine_dict = _routine_to_dict(routine)
-        routine_dict["id"] = new_id
-
-        data.setdefault("routines", []).append(routine_dict)
+        routine.id = new_id
+        data.setdefault("routines", []).append(routine_to_dict(routine))
         self._save_data(user_id, data)
+        return new_id
 
     def list_routines(self, user_id: int) -> list[Routine]:
         data = self._load_data(user_id)
@@ -584,7 +601,7 @@ class ScheduleProvider:
         data = self._load_data(user_id)
         for i, r in enumerate(data.get("routines", [])):
             if r.get("id") == routine_id:
-                data["routines"][i] = _routine_to_dict(routine)
+                data["routines"][i] = routine_to_dict(routine)
                 break
 
         self._save_data(user_id, data)

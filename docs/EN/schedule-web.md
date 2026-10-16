@@ -1,8 +1,8 @@
 # Schedule web editor
 
-A page where the owner of a schedule channel edits their tasks as a table: add, change, log time spent, delete. Sign-in is with Discord.
+A page where the owner of a schedule channel edits their tasks, routines and time blocks as tables. Sign-in is with Discord.
 
-It is not a separate service and not a sync. The server runs inside the bot's process (`cogs/schedule/web.py`) and writes through the same `ScheduleProvider`, into the same `data/{user_id}_schedule.json`, as `/task` and the agent. The schedule message is recomputed right after every save.
+It is not a separate service and not a sync. The server runs inside the bot's process (`cogs/schedule/web.py`) and writes through the same `ScheduleProvider`, into the same `data/{user_id}_schedule.json`, as `/task`, `/routine`, `/timeblock` and the agent. The schedule message is recomputed right after every save.
 
 Only users who have a schedule channel (`/schedule_channel create`) can sign in. Deleting the channel ends access to the page at once, without waiting for the session to expire.
 
@@ -35,14 +35,16 @@ Only users who have a schedule channel (`/schedule_channel create`) can sign in.
 
 ## What the page does
 
-- A table of the active tasks. Double-click a row or press ✎ to turn it into inputs. Enter saves, Esc cancels.
-- The "+" row at the bottom adds a new task, prefilled with the defaults from `settings.py`.
-- ⏱ logs minutes spent, like `/task spend`; once the time runs out, the task moves to the history.
-- ✕ deletes the task, and removes it from other tasks' dependencies.
+Three tabs — Tasks, Routines, Time blocks — with the same kind of table:
 
-A row is checked by the same validators as `/task add`. Saving a row replaces the whole task, so a cleared cell (description, deadline, dependencies) really is cleared.
+- Double-click a row or press ✎ to turn it into inputs. Enter saves, Esc cancels.
+- The "+" row at the bottom adds a new item, prefilled with the same defaults as the matching command.
+- ✕ deletes the item, and removes it from other items' dependencies.
+- Tasks: ⏱ logs minutes spent, like `/task spend`; once the time runs out, the task moves to the history.
+- Routines: ⏸ skips a routine up to and including the date you pick, like `/routine skip`. Editing the row leaves the skip as it is.
+- Time blocks: a one-off block takes a date and time, a daily or weekly one only a time of day. An end before the start means the block runs past midnight.
 
-Routines and time blocks are still edited in Discord only.
+A row is checked by the same validators as `/task add`, `/routine add_*` and `/timeblock add`, and the limits on how many items there may be are kept by the provider itself, the same for the commands, the agent and the page. Saving a row replaces the whole item, so a cleared cell (description, deadline, dependencies) really is cleared.
 
 ## Security
 

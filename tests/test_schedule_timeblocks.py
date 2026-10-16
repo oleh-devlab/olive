@@ -65,20 +65,20 @@ class TestSerialization(unittest.TestCase):
     """What a stored block looks like, and what comes back out of it."""
 
     def test_a_daily_block_is_written_as_a_repeat_word(self):
-        d = schedule_provider._timeblock_to_dict(TimeBlock(start=START, end=END, daily=True, id=1))
+        d = schedule_provider.timeblock_to_dict(TimeBlock(start=START, end=END, daily=True, id=1))
         self.assertEqual(d["repeat"], "daily")
         self.assertNotIn("daily", d)
 
     def test_a_one_time_block_is_written_as_once(self):
-        d = schedule_provider._timeblock_to_dict(TimeBlock(start=START, end=END, daily=False, id=1))
+        d = schedule_provider.timeblock_to_dict(TimeBlock(start=START, end=END, daily=False, id=1))
         self.assertEqual(d["repeat"], "once")
 
     def test_only_a_weekly_block_stores_weekdays(self):
-        weekly = schedule_provider._timeblock_to_dict(TimeBlock(start=START, end=END, weekdays=[1, 3], id=2))
+        weekly = schedule_provider.timeblock_to_dict(TimeBlock(start=START, end=END, weekdays=[1, 3], id=2))
         self.assertEqual(weekly["repeat"], "weekly")
         self.assertEqual(weekly["weekdays"], [1, 3])
 
-        daily = schedule_provider._timeblock_to_dict(TimeBlock(start=START, end=END, daily=True, id=3))
+        daily = schedule_provider.timeblock_to_dict(TimeBlock(start=START, end=END, daily=True, id=3))
         self.assertNotIn("weekdays", daily)
 
     def test_a_block_survives_the_round_trip(self):
@@ -88,7 +88,7 @@ class TestSerialization(unittest.TestCase):
             TimeBlock(start=START, end=END, weekdays=[0, 2, 4], name="gym", id=3),
         ):
             with self.subTest(repeat=block_repeat(block)):
-                back = schedule_provider._dict_to_timeblock(schedule_provider._timeblock_to_dict(block))
+                back = schedule_provider._dict_to_timeblock(schedule_provider.timeblock_to_dict(block))
                 self.assertEqual(block_repeat(back), block_repeat(block))
                 self.assertEqual(back.weekdays, block.weekdays)
                 self.assertEqual((back.start, back.end, back.name, back.id), (START, END, block.name, block.id))

@@ -8,28 +8,7 @@ const LOGIN_ERRORS = {
   no_channel: "This account has no schedule channel. Please create one in Discord first with /schedule_channel create.",
 };
 
-// The editable columns, in table order. `blank` is what an empty cell means.
-const FIELDS = [
-  { key: "name", label: "Name", type: "text" },
-  { key: "duration", label: "Duration", type: "number", min: 1 },
-  { key: "priority", label: "Priority", type: "number", min: 0, max: 10 },
-  { key: "deadline", label: "Deadline", type: "deadline" },
-  { key: "max_chunk_duration", label: "Session", type: "number", min: 1, blank: "whole" },
-  { key: "min_chunk_duration", label: "Min.", type: "number", min: 0, blank: "auto" },
-  { key: "break_duration", label: "Break", type: "number", min: 0 },
-  { key: "depends_on", label: "After", type: "ids" },
-  { key: "description", label: "Description", type: "text" },
-];
-
-const state = {
-  tasks: [],
-  completed: [],
-  defaults: {},
-  limits: {},
-  editingId: null,
-  spendTask: null,
-  busy: false,
-};
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const byId = (id) => document.getElementById(id);
 
@@ -93,30 +72,59 @@ function fail(error) {
   setStatus(error.message, "error");
 }
 
-// --- Deadlines ---
-// The API sends ISO with the bot's own offset ("2026-10-25T18:00:00+02:00").
-// Its first 16 characters are the bot's wall-clock time, which is what a
-// datetime input holds and what the API takes back.
+// --- Dates and times ---
+// A deadline and a block's bounds come as ISO with the bot's own offset
+// ("2026-10-25T18:00:00+02:00"). Their first 16 characters are the bot's
+// wall-clock time, which is what a datetime input holds and what the API takes
+// back. A routine's times are "HH:MM" and its skip date "DD.MM.YYYY".
 
-function toInputDeadline(iso) {
-  return iso ? iso.slice(0, 16) : "";
-}
+const wallClock = (iso) => (iso ? iso.slice(0, 16) : "");
+const timeOf = (iso) => (iso ? iso.slice(11, 16) : "");
 
-function displayDeadline(iso) {
+function displayDateTime(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso || "");
   return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : "—";
 }
 
-function isOverdue(iso) {
+function isPast(iso) {
   return Boolean(iso) && new Date(iso) < new Date();
 }
 
-// --- Building rows ---
+function localToday() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
-function cell(text, className) {
+// "DD.MM.YYYY" as stored, and the "YYYY-MM-DD" a date input holds.
+function isoDate(stored) {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(stored || "");
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
+function storedDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : null;
+}
+
+function describeRepeat(repeat, weekdays) {
+  if (repeat === "weekly") return (weekdays || []).map((d) => WEEKDAYS[d]).join(", ");
+  return repeat === "once" ? "Once" : "Daily";
+}
+
+// A skip whose date has passed no longer leaves anything out.
+function skippedUntil(routine) {
+  const until = isoDate(routine.resume_after);
+  return until && until >= localToday() ? routine.resume_after : "—";
+}
+
+// --- Small DOM helpers ---
+
+function cell(text, className, title) {
   const td = document.createElement("td");
   td.textContent = text === null || text === undefined ? "" : String(text);
   if (className) td.className = className;
+  if (title) td.title = title;
   return td;
 }
 
@@ -131,251 +139,491 @@ function button(text, title, onClick, className = "") {
   return b;
 }
 
-function nameOf(id) {
-  const task = state.tasks.find((t) => t.id === id);
-  return task ? task.name : "(no such task)";
-}
-
-function viewRow(task) {
-  const tr = document.createElement("tr");
-  tr.append(cell(task.id, "num id"), cell(task.name, "name"));
-  tr.append(cell(task.duration, "num"), cell(task.priority, "num"));
-
-  const deadline = cell(displayDeadline(task.deadline), "deadline");
-  if (isOverdue(task.deadline)) {
-    deadline.classList.add("overdue");
-    deadline.title = "The deadline has passed";
+function input(type, value, properties = {}) {
+  const el = document.createElement("input");
+  el.type = type;
+  el.value = value ?? "";
+  for (const [key, property] of Object.entries(properties)) {
+    if (property !== undefined && property !== null) el[key] = property;
   }
-  tr.append(deadline);
-
-  tr.append(cell(task.max_chunk_duration ?? "whole", "num"), cell(task.min_chunk_duration ?? "—", "num"));
-  tr.append(cell(task.break_duration, "num"));
-
-  const deps = cell(task.depends_on.map((id) => `#${id}`).join(", ") || "—", "deps");
-  deps.title = task.depends_on.map((id) => `#${id} ${nameOf(id)}`).join("\n");
-  tr.append(deps);
-
-  const description = cell(task.description, "description");
-  description.title = task.description;
-  tr.append(description);
-
-  const actions = document.createElement("td");
-  actions.className = "actions";
-  actions.append(
-    button("✎", "Edit", () => startEdit(task.id)),
-    button("⏱", "Log time spent", () => openSpend(task)),
-    button("✕", "Delete", () => removeTask(task), "danger"),
-  );
-  tr.append(actions);
-
-  tr.addEventListener("dblclick", (event) => {
-    if (!event.target.closest("button")) startEdit(task.id);
-  });
-  return tr;
+  return el;
 }
 
-function inputFor(field, task) {
-  const input = document.createElement("input");
-  input.dataset.key = field.key;
-  input.className = `in-${field.key}`;
-  input.setAttribute("aria-label", field.label);
-  const value = task ? task[field.key] : state.defaults[field.key];
+function select(options, value) {
+  const el = document.createElement("select");
+  for (const [optionValue, label] of options) {
+    const option = document.createElement("option");
+    option.value = optionValue;
+    option.textContent = label;
+    el.append(option);
+  }
+  el.value = value ?? options[0][0];
+  return el;
+}
 
-  if (field.type === "number") {
-    input.type = "number";
-    input.step = "1";
-    input.inputMode = "numeric";
-    if (field.min !== undefined) input.min = String(field.min);
-    if (field.max !== undefined) input.max = String(field.max);
-    if (field.blank) input.placeholder = field.blank;
-    input.value = value ?? "";
-  } else if (field.type === "deadline") {
-    input.type = "datetime-local";
-    input.value = toInputDeadline(value);
-  } else if (field.type === "ids") {
-    input.type = "text";
-    input.placeholder = "1, 3";
-    input.value = (value || []).join(", ");
-  } else {
-    input.type = "text";
-    input.value = value ?? "";
-    if (field.key === "name") {
-      input.maxLength = state.limits.name_length || 100;
-      input.placeholder = "New task";
+function weekdayPicker(selected) {
+  const box = document.createElement("span");
+  box.className = "weekdays";
+  WEEKDAYS.forEach((day, index) => {
+    const label = document.createElement("label");
+    const check = input("checkbox", String(index), { checked: (selected || []).includes(index) });
+    label.append(check, day.slice(0, 2));
+    box.append(label);
+  });
+  return box;
+}
+
+function readNumber(el, label) {
+  const value = el.value.trim();
+  if (value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n)) throw new ApiError(`“${label}” must be a whole number.`);
+  return n;
+}
+
+// --- Columns ---
+// Each column says how an item shows in it (`view`), what edits it (`edit`),
+// and how the edited value goes into the row sent to the API (`read`). `bind`
+// runs once the whole editing row exists, for columns that follow another one.
+
+const column = {
+  name: (placeholder, required = true) => ({
+    label: "Name",
+    className: "name",
+    view: (item) => item.name || (required ? "" : "—"),
+    edit: (item, table) =>
+      input("text", item?.name, { maxLength: table.limits.name_length || 100, placeholder, className: "in-name" }),
+    read: (td, row) => {
+      row.name = td.firstChild.value.trim();
+    },
+  }),
+
+  number: (key, label, { min, max, blank, title } = {}) => ({
+    label,
+    title,
+    numeric: true,
+    view: (item) => item[key] ?? blank ?? "—",
+    edit: (item, table) =>
+      input("number", item ? item[key] : table.defaults[key], { min, max, step: 1, inputMode: "numeric", placeholder: blank }),
+    read: (td, row) => {
+      row[key] = readNumber(td.firstChild, label);
+    },
+  }),
+
+  text: (key, label, lengthLimit) => ({
+    label,
+    className: key,
+    view: (item) => ({ text: item[key], title: item[key] }),
+    edit: (item, table) => input("text", item?.[key], { maxLength: table.limits[lengthLimit] || 1000, className: `in-${key}` }),
+    read: (td, row) => {
+      row[key] = td.firstChild.value.trim();
+    },
+  }),
+
+  ids: (label, title) => ({
+    label,
+    title,
+    view: (item, table) => ({
+      text: item.depends_on.map((id) => `#${id}`).join(", ") || "—",
+      title: item.depends_on.map((id) => `#${id} ${table.nameOf(id)}`).join("\n"),
+    }),
+    edit: (item) => input("text", (item?.depends_on || []).join(", "), { placeholder: "1, 3", className: "in-ids" }),
+    read: (td, row) => {
+      const ids = td.firstChild.value.trim().split(/[\s,;#]+/).filter(Boolean).map(Number);
+      if (ids.some((n) => !Number.isInteger(n))) throw new ApiError(`“${label}” takes IDs separated by commas.`);
+      row.depends_on = ids;
+    },
+  }),
+
+  deadline: () => ({
+    label: "Deadline",
+    view: (item) =>
+      isPast(item.deadline)
+        ? { text: displayDateTime(item.deadline), className: "overdue", title: "The deadline has passed" }
+        : displayDateTime(item.deadline),
+    edit: (item) => input("datetime-local", wallClock(item?.deadline), { className: "in-datetime" }),
+    read: (td, row) => {
+      row.deadline = td.firstChild.value || null;
+    },
+  }),
+
+  repeat: (options) => ({
+    label: "Repeat",
+    view: (item) => describeRepeat(item.repeat, item.weekdays),
+    edit: (item) => {
+      const box = document.createElement("span");
+      box.className = "repeat";
+      const choice = select(options, item?.repeat);
+      choice.dataset.role = "repeat";
+      const days = weekdayPicker(item?.weekdays);
+      const sync = () => (days.hidden = choice.value !== "weekly");
+      choice.addEventListener("change", sync);
+      sync();
+      box.append(choice, days);
+      return box;
+    },
+    read: (td, row) => {
+      row.repeat = td.querySelector("select").value;
+      row.weekdays = row.repeat === "weekly" ? [...td.querySelectorAll("input:checked")].map((c) => Number(c.value)) : null;
+    },
+  }),
+
+  // One end of a time block: a date and time when it happens once, a time of
+  // day when it repeats. A repeating block's date is only a template, so both
+  // ends of it are sent on the same one -- the block's own, or today for a new
+  // block -- and the server moves an end before the start onto the next day.
+  bound: (key, label) => ({
+    label,
+    view: (item) => (item.repeat === "once" ? displayDateTime(item[key]) : timeOf(item[key])),
+    edit: (item) => {
+      const once = (item?.repeat ?? "once") === "once";
+      const el = input(once ? "datetime-local" : "time", once ? wallClock(item?.[key]) : timeOf(item?.[key]), {
+        className: "in-datetime",
+      });
+      el.dataset.bound = key;
+      return el;
+    },
+    bind: (tr, item) => {
+      tr.dataset.anchor = item?.start ? item.start.slice(0, 10) : localToday();
+      const choice = tr.querySelector('select[data-role="repeat"]');
+      const el = tr.querySelector(`[data-bound="${key}"]`);
+      choice.addEventListener("change", () => {
+        const once = choice.value === "once";
+        if (once === (el.type === "datetime-local")) return;
+        const value = el.value;
+        el.type = once ? "datetime-local" : "time";
+        el.value = once ? (value ? `${tr.dataset.anchor}T${value}` : "") : value.slice(11, 16);
+      });
+    },
+    read: (td, row, tr) => {
+      const el = td.firstChild;
+      if (!el.value) row[key] = null;
+      else row[key] = el.type === "time" ? `${tr.dataset.anchor}T${el.value}` : el.value;
+    },
+  }),
+};
+
+const ROUTINE_TYPES = [
+  ["fixed", "Fixed"],
+  ["flexible", "Flexible"],
+];
+
+// --- A table of one kind of item ---
+
+class Table {
+  constructor({ id, endpoint, listKey, noun, plural, fields, actions = () => [], afterLoad = () => {} }) {
+    Object.assign(this, { id, endpoint, listKey, noun, plural, fields, actions, afterLoad });
+    this.items = [];
+    this.limits = {};
+    this.defaults = {};
+    this.editingId = null;
+    this.busy = false;
+  }
+
+  mount() {
+    const head = document.createElement("tr");
+    const heading = (text, className, title) => {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.textContent = text;
+      if (className) th.className = className;
+      if (title) th.title = title;
+      return th;
+    };
+    head.append(heading("ID", "num"));
+    for (const field of this.fields) head.append(heading(field.label, field.numeric ? "num" : "", field.title));
+    const actions = heading("");
+    const hidden = document.createElement("span");
+    hidden.className = "sr-only";
+    hidden.textContent = "Actions";
+    actions.append(hidden);
+    head.append(actions);
+
+    const thead = document.createElement("thead");
+    thead.append(head);
+    this.body = document.createElement("tbody");
+    this.foot = document.createElement("tfoot");
+    byId(`table-${this.id}`).replaceChildren(thead, this.body, this.foot);
+  }
+
+  async reload() {
+    const data = await api("GET", this.endpoint);
+    this.items = data[this.listKey];
+    this.limits = data.limits || {};
+    this.defaults = data.defaults || {};
+    if (!this.items.some((item) => item.id === this.editingId)) this.editingId = null;
+    this.renderRows();
+    this.afterLoad(data);
+  }
+
+  nameOf(id) {
+    const item = this.items.find((i) => i.id === id);
+    return item ? item.name : "(no such item)";
+  }
+
+  renderRows() {
+    const rows = this.items.map((item) => (item.id === this.editingId ? this.editorRow(item) : this.viewRow(item)));
+    this.body.replaceChildren(...rows);
+    byId(`tab-${this.id}`).querySelector(".empty").hidden = this.items.length > 0;
+  }
+
+  // Kept apart from the rest so that what is being typed into it survives
+  // another row being edited or a reload.
+  renderNewRow() {
+    if (this.items.length >= (this.limits.max_items || Infinity)) {
+      const tr = document.createElement("tr");
+      const td = cell(`You have reached the limit of ${this.limits.max_items} ${this.plural}.`, "muted");
+      td.colSpan = this.fields.length + 2;
+      tr.append(td);
+      this.foot.replaceChildren(tr);
     } else {
-      input.maxLength = state.limits.description_length || 1000;
+      this.foot.replaceChildren(this.editorRow(null));
     }
   }
-  return input;
-}
 
-function editorRow(task) {
-  const isNew = task === null;
-  const tr = document.createElement("tr");
-  tr.className = isNew ? "new" : "editing";
-  tr.append(cell(isNew ? "+" : task.id, "num id"));
-
-  for (const field of FIELDS) {
-    const td = document.createElement("td");
-    td.append(inputFor(field, task));
-    tr.append(td);
-  }
-
-  const save = () => saveRow(tr, isNew ? null : task.id);
-  const actions = document.createElement("td");
-  actions.className = "actions";
-  if (isNew) {
-    actions.append(button("Add", "Add task", save, "primary"));
-  } else {
-    actions.append(button("✓", "Save", save, "primary"), button("↺", "Cancel", cancelEdit));
-  }
-  tr.append(actions);
-
-  tr.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && event.target.tagName === "INPUT") {
-      event.preventDefault();
-      save();
-    } else if (event.key === "Escape" && !isNew) {
-      cancelEdit();
-    }
-  });
-  return tr;
-}
-
-function readRow(tr) {
-  const text = (key) => tr.querySelector(`[data-key="${key}"]`).value.trim();
-  const label = (key) => FIELDS.find((f) => f.key === key).label;
-  const number = (key) => {
-    const value = text(key);
-    if (value === "") return null;
-    const n = Number(value);
-    if (!Number.isInteger(n)) throw new ApiError(`“${label(key)}” must be a whole number.`);
-    return n;
-  };
-
-  const ids = text("depends_on").split(/[\s,;#]+/).filter(Boolean).map(Number);
-  if (ids.some((n) => !Number.isInteger(n))) throw new ApiError("“After” takes task IDs separated by commas.");
-
-  return {
-    name: text("name"),
-    description: text("description"),
-    duration: number("duration"),
-    priority: number("priority"),
-    deadline: text("deadline") || null,
-    max_chunk_duration: number("max_chunk_duration"),
-    min_chunk_duration: number("min_chunk_duration"),
-    break_duration: number("break_duration"),
-    depends_on: ids,
-  };
-}
-
-// --- Rendering ---
-
-function renderTasks() {
-  const rows = state.tasks.map((t) => (t.id === state.editingId ? editorRow(t) : viewRow(t)));
-  byId("task-rows").replaceChildren(...rows);
-  byId("empty").hidden = state.tasks.length > 0;
-}
-
-// Kept apart from the rest so that what is being typed into it survives
-// another row being edited or a reload.
-function renderNewRow() {
-  const footer = byId("new-row");
-  if (state.tasks.length >= (state.limits.max_tasks || Infinity)) {
+  viewRow(item) {
     const tr = document.createElement("tr");
-    const td = cell(`You have reached the limit of ${state.limits.max_tasks} tasks.`, "muted");
-    td.colSpan = FIELDS.length + 2;
-    tr.append(td);
-    footer.replaceChildren(tr);
-  } else {
-    footer.replaceChildren(editorRow(null));
+    tr.append(cell(item.id, "num id"));
+    for (const field of this.fields) {
+      const shown = field.view(item, this);
+      const { text, className = "", title = "" } = typeof shown === "object" && shown !== null ? shown : { text: shown };
+      const classes = [field.numeric ? "num" : "", field.className || "", className].filter(Boolean).join(" ");
+      tr.append(cell(text, classes, title));
+    }
+
+    const actions = document.createElement("td");
+    actions.className = "actions";
+    actions.append(
+      button("✎", "Edit", () => this.startEdit(item.id)),
+      ...this.actions(item),
+      button("✕", "Delete", () => this.remove(item), "danger"),
+    );
+    tr.append(actions);
+
+    tr.addEventListener("dblclick", (event) => {
+      if (!event.target.closest("button")) this.startEdit(item.id);
+    });
+    return tr;
+  }
+
+  editorRow(item) {
+    const isNew = item === null;
+    const tr = document.createElement("tr");
+    tr.className = isNew ? "new" : "editing";
+    tr.append(cell(isNew ? "+" : item.id, "num id"));
+
+    tr.fieldCells = this.fields.map((field) => {
+      const td = document.createElement("td");
+      td.append(field.edit(item, this));
+      tr.append(td);
+      return td;
+    });
+    for (const field of this.fields) field.bind?.(tr, item);
+
+    const save = () => this.save(tr, isNew ? null : item.id);
+    const actions = document.createElement("td");
+    actions.className = "actions";
+    if (isNew) {
+      actions.append(button("Add", `Add ${this.noun.toLowerCase()}`, save, "primary"));
+    } else {
+      actions.append(button("✓", "Save", save, "primary"), button("↺", "Cancel", () => this.cancelEdit()));
+    }
+    tr.append(actions);
+
+    tr.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && event.target.tagName === "INPUT") {
+        event.preventDefault();
+        save();
+      } else if (event.key === "Escape" && !isNew) {
+        this.cancelEdit();
+      }
+    });
+    return tr;
+  }
+
+  readRow(tr) {
+    const row = {};
+    this.fields.forEach((field, index) => field.read(tr.fieldCells[index], row, tr));
+    return row;
+  }
+
+  startEdit(id) {
+    this.editingId = id;
+    this.renderRows();
+    this.body.querySelector("tr.editing input, tr.editing select")?.focus();
+  }
+
+  cancelEdit() {
+    this.editingId = null;
+    this.renderRows();
+  }
+
+  async save(tr, id) {
+    if (this.busy) return;
+
+    let row;
+    try {
+      row = this.readRow(tr);
+    } catch (error) {
+      return fail(error);
+    }
+
+    this.busy = true;
+    tr.classList.add("saving");
+    try {
+      if (id === null) {
+        const created = await api("POST", this.endpoint, row);
+        await this.reload();
+        this.renderNewRow();
+        setStatus(`${this.noun} #${created.id} added.`);
+        this.foot.querySelector("input")?.focus();
+      } else {
+        await api("PUT", `${this.endpoint}/${id}`, row);
+        this.editingId = null;
+        await this.reload();
+        setStatus(`${this.noun} #${id} saved.`);
+      }
+    } catch (error) {
+      fail(error);
+    } finally {
+      this.busy = false;
+      tr.classList.remove("saving");
+    }
+  }
+
+  async remove(item) {
+    const label = item.name ? ` “${item.name}”` : "";
+    if (!window.confirm(`Delete ${this.noun.toLowerCase()} #${item.id}${label}?`)) return;
+    try {
+      await api("DELETE", `${this.endpoint}/${item.id}`);
+      await this.reload();
+      this.renderNewRow();
+      setStatus(`${this.noun} #${item.id} deleted.`);
+    } catch (error) {
+      fail(error);
+    }
   }
 }
 
-function renderHistory() {
-  byId("history-count").textContent = String(state.completed.length);
-  const items = state.completed.map((t) => {
+// --- The three tables ---
+
+const tasks = new Table({
+  id: "tasks",
+  endpoint: "/api/tasks",
+  listKey: "tasks",
+  noun: "Task",
+  plural: "tasks",
+  fields: [
+    column.name("New task"),
+    column.number("duration", "Duration", { min: 1, title: "Minutes still left" }),
+    column.number("priority", "Priority", { min: 0, max: 10, title: "0 — anywhere; 1–10 — the higher, the earlier" }),
+    column.deadline(),
+    column.number("max_chunk_duration", "Session", { min: 1, blank: "whole", title: "Longest session, min" }),
+    column.number("min_chunk_duration", "Min.", { min: 0, blank: "auto", title: "Shortest session, min" }),
+    column.number("break_duration", "Break", { min: 0, title: "Break after each session, min" }),
+    column.ids("After", "IDs of the tasks this one comes after"),
+    column.text("description", "Description", "description_length"),
+  ],
+  actions: (task) => [button("⏱", "Log time spent", () => openSpend(task))],
+  afterLoad: (data) => renderHistory(data.completed),
+});
+
+const routines = new Table({
+  id: "routines",
+  endpoint: "/api/routines",
+  listKey: "routines",
+  noun: "Routine",
+  plural: "routines",
+  fields: [
+    column.name("New routine"),
+    {
+      label: "Type",
+      title: "Fixed: at a set time. Flexible: anywhere before its deadline.",
+      view: (item) => (item.type === "fixed" ? "Fixed" : "Flexible"),
+      edit: (item) => select(ROUTINE_TYPES, item?.type),
+      read: (td, row) => {
+        row.type = td.firstChild.value;
+      },
+    },
+    {
+      // A fixed routine's start and a flexible one's deadline share a column:
+      // which of the two it is follows the type.
+      label: "Time",
+      title: "Fixed: when it starts. Flexible: when it has to be done by.",
+      view: (item) => (item.type === "fixed" ? `at ${item.time ?? "—"}` : `by ${item.deadline_time ?? "—"}`),
+      edit: (item) => input("time", item ? (item.type === "fixed" ? item.time : item.deadline_time) : ""),
+      read: (td, row) => {
+        const value = td.firstChild.value || null;
+        row.time = row.type === "fixed" ? value : null;
+        row.deadline_time = row.type === "flexible" ? value : null;
+      },
+    },
+    column.number("duration", "Duration", { min: 1, title: "Minutes" }),
+    column.number("priority", "Priority", { min: 0, max: 10, title: "0 — anywhere; 1–10 — the higher, the earlier" }),
+    column.number("break_duration", "Break", { min: 0, title: "Break after it, min" }),
+    column.repeat([
+      ["daily", "Daily"],
+      ["weekly", "Weekly"],
+    ]),
+    column.ids("After", "IDs of the routines this one comes after"),
+    {
+      label: "Skipped until",
+      title: "Left out of the schedule up to and including this date",
+      view: (item) => skippedUntil(item),
+      edit: (item) => document.createTextNode(item ? skippedUntil(item) : ""),
+      read: () => {},
+    },
+  ],
+  actions: (routine) => [button("⏸", "Skip", () => openSkip(routine))],
+});
+
+const timeBlocks = new Table({
+  id: "time-blocks",
+  endpoint: "/api/time-blocks",
+  listKey: "time_blocks",
+  noun: "Time block",
+  plural: "time blocks",
+  fields: [
+    column.name("(optional)", false),
+    column.repeat([
+      ["once", "Once"],
+      ["daily", "Daily"],
+      ["weekly", "Weekly"],
+    ]),
+    column.bound("start", "Start"),
+    column.bound("end", "End"),
+  ],
+});
+
+const TABLES = [tasks, routines, timeBlocks];
+
+function renderHistory(completed) {
+  byId("history-count").textContent = String(completed.length);
+  const items = completed.map((task) => {
     const li = document.createElement("li");
-    li.textContent = `#${t.id} ${t.name}`;
+    li.textContent = `#${task.id} ${task.name}`;
     return li;
   });
   byId("history-list").replaceChildren(...items);
 }
 
-async function reload() {
-  const data = await api("GET", "/api/tasks");
-  Object.assign(state, {
-    tasks: data.tasks,
-    completed: data.completed,
-    defaults: data.defaults,
-    limits: data.limits,
-  });
-  if (!state.tasks.some((t) => t.id === state.editingId)) state.editingId = null;
-  renderTasks();
-  renderHistory();
-}
+// --- Tabs ---
 
-// --- Actions ---
-
-function startEdit(id) {
-  state.editingId = id;
-  renderTasks();
-  const input = byId("task-rows").querySelector("tr.editing .in-name");
-  if (input) input.focus();
-}
-
-function cancelEdit() {
-  state.editingId = null;
-  renderTasks();
-}
-
-async function saveRow(tr, id) {
-  if (state.busy) return;
-
-  let payload;
-  try {
-    payload = readRow(tr);
-  } catch (error) {
-    return fail(error);
+function showTab(name) {
+  const tab = TABLES.some((table) => table.id === name) ? name : "tasks";
+  for (const table of TABLES) {
+    byId(`tab-${table.id}`).hidden = table.id !== tab;
+    document.querySelector(`[data-tab="${table.id}"]`).setAttribute("aria-selected", String(table.id === tab));
   }
-
-  state.busy = true;
-  tr.classList.add("saving");
-  try {
-    if (id === null) {
-      const created = await api("POST", "/api/tasks", payload);
-      await reload();
-      renderNewRow();
-      setStatus(`Task #${created.id} added.`);
-      byId("new-row").querySelector(".in-name")?.focus();
-    } else {
-      await api("PUT", `/api/tasks/${id}`, payload);
-      state.editingId = null;
-      await reload();
-      setStatus(`Task #${id} saved.`);
-    }
-  } catch (error) {
-    fail(error);
-  } finally {
-    state.busy = false;
-    tr.classList.remove("saving");
-  }
+  window.history.replaceState(null, "", `#${tab}`);
 }
 
-async function removeTask(task) {
-  if (!window.confirm(`Delete task #${task.id} “${task.name}”?`)) return;
-  try {
-    await api("DELETE", `/api/tasks/${task.id}`);
-    await reload();
-    renderNewRow();
-    setStatus(`Task #${task.id} deleted.`);
-  } catch (error) {
-    fail(error);
-  }
-}
+// --- Dialogs ---
+
+const dialogs = { spendTask: null, skipRoutine: null };
 
 function openSpend(task) {
-  state.spendTask = task;
+  dialogs.spendTask = task;
   const dialog = byId("spend-dialog");
   dialog.returnValue = "";
   byId("spend-name").textContent = task.name;
@@ -384,14 +632,14 @@ function openSpend(task) {
 }
 
 async function onSpendClosed() {
-  const task = state.spendTask;
+  const task = dialogs.spendTask;
   const minutes = Number(byId("spend-minutes").value);
   if (byId("spend-dialog").returnValue !== "ok" || !task || !Number.isInteger(minutes) || minutes <= 0) return;
 
   try {
     const result = await api("POST", `/api/tasks/${task.id}/spend`, { minutes });
-    await reload();
-    renderNewRow();
+    await tasks.reload();
+    tasks.renderNewRow();
     setStatus(
       result.completed
         ? `“${task.name}” is done and moved to the history.`
@@ -401,6 +649,33 @@ async function onSpendClosed() {
     fail(error);
   }
 }
+
+function openSkip(routine) {
+  dialogs.skipRoutine = routine;
+  const dialog = byId("skip-dialog");
+  dialog.returnValue = "";
+  byId("skip-name").textContent = routine.name;
+  const until = byId("skip-until");
+  until.min = localToday();
+  until.value = localToday();
+  dialog.showModal();
+}
+
+async function onSkipClosed() {
+  const routine = dialogs.skipRoutine;
+  const resumeAfter = storedDate(byId("skip-until").value);
+  if (byId("skip-dialog").returnValue !== "ok" || !routine || !resumeAfter) return;
+
+  try {
+    await api("POST", `/api/routines/${routine.id}/skip`, { resume_after: resumeAfter });
+    await routines.reload();
+    setStatus(`Routine #${routine.id} is skipped up to and including ${resumeAfter}.`);
+  } catch (error) {
+    fail(error);
+  }
+}
+
+// --- Start ---
 
 async function logout() {
   try {
@@ -413,6 +688,10 @@ async function logout() {
 async function init() {
   byId("logout").addEventListener("click", logout);
   byId("spend-dialog").addEventListener("close", onSpendClosed);
+  byId("skip-dialog").addEventListener("close", onSkipClosed);
+  for (const tab of document.querySelectorAll("[data-tab]")) {
+    tab.addEventListener("click", () => showTab(tab.dataset.tab));
+  }
 
   const params = new URLSearchParams(window.location.search);
   const loginError = LOGIN_ERRORS[params.get("error")];
@@ -429,14 +708,16 @@ async function init() {
   byId("who-name").textContent = me.name;
   byId("who").hidden = false;
 
+  for (const table of TABLES) table.mount();
+  showTab(window.location.hash.slice(1));
+  show("app-view");
+
   try {
-    await reload();
+    await Promise.all(TABLES.map((table) => table.reload()));
   } catch (error) {
-    show("app-view");
     return fail(error);
   }
-  renderNewRow();
-  show("app-view");
+  for (const table of TABLES) table.renderNewRow();
 }
 
 init();

@@ -159,6 +159,11 @@ def parse_timeblock_bound(time_str: str, anchor: datetime.datetime) -> datetime.
         if " " in time_str:
             return datetime.datetime.strptime(time_str, "%d.%m.%Y %H:%M").replace(tzinfo=tz)
 
+        if "T" in time_str:
+            # ISO, the spelling a bound is stored in -- and what the web editor sends back.
+            bound = datetime.datetime.fromisoformat(time_str)
+            return bound.astimezone(tz) if bound.tzinfo is not None else bound.replace(tzinfo=tz)
+
         h, m = map(int, time_str.split(":"))
         return anchor.replace(hour=h, minute=m, second=0, microsecond=0)
     except Exception:

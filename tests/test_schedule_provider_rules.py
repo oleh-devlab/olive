@@ -29,13 +29,24 @@ import settings  # noqa: E402
 from modules import schedule_provider  # noqa: E402
 from modules.schedule_agent_tools import ScheduleAgentTools  # noqa: E402
 from modules.schedule_exceptions import ScheduleItemNotFoundError, ScheduleLimitError  # noqa: E402
-from modules.schedule_models import Task  # noqa: E402
+from modules.schedule_models import Routine, Task, TimeBlock  # noqa: E402
 
 USER = 42
 
 
 def task(name: str = "Read", minutes: int = 30) -> Task:
     return Task(name=name, duration=datetime.timedelta(minutes=minutes))
+
+
+def routine(name: str = "Stretch") -> Routine:
+    return Routine(
+        name=name, type="fixed", repeat="daily", duration=datetime.timedelta(minutes=10), time=datetime.time(7, 0)
+    )
+
+
+def block(hour: int = 9) -> TimeBlock:
+    start = datetime.datetime(2026, 10, 20, hour, 0)
+    return TimeBlock(start=start, end=start + datetime.timedelta(hours=1), daily=False)
 
 
 class ProviderTestCase(unittest.TestCase):
@@ -48,8 +59,8 @@ class ProviderTestCase(unittest.TestCase):
 
         self.provider = schedule_provider.ScheduleProvider()
 
-    def limit(self, n: int):
-        patcher = mock.patch.object(settings, "schedule_max_tasks_per_user", n, create=True)
+    def limit(self, n: int, what: str = "tasks"):
+        patcher = mock.patch.object(settings, f"schedule_max_{what}_per_user", n, create=True)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -117,6 +128,44 @@ class TestSpendTaskTime(ProviderTestCase):
         task_id = self.provider.add_task(USER, task(minutes=60))
         with self.assertRaisesRegex(ValueError, "minutes must be > 0"):
             ScheduleAgentTools(USER).spend_task_time(task_id, 0)
+
+
+class TestRoutineAndTimeBlockLimits(ProviderTestCase):
+    """The same rule for the other two kinds, which `/routine` and `/timeblock` used to keep alone."""
+
+    def test_a_routine_past_the_limit_is_refused_and_not_stored(self):
+        self.limit(1, "routines")
+        self.assertEqual(self.provider.add_routine(USER, routine("One")), 1)
+
+        with self.assertRaises(ScheduleLimitError):
+            self.provider.add_routine(USER, routine("Two"))
+        self.assertEqual([r.name for r in self.provider.list_routines(USER)], ["One"])
+
+    def test_a_time_block_past_the_limit_is_refused_and_not_stored(self):
+        self.limit(1, "timeblocks")
+        self.provider.add_time_block(USER, block(9))
+
+        with self.assertRaises(ScheduleLimitError):
+            self.provider.add_time_block(USER, block(11))
+        self.assertEqual(len(self.provider.list_time_blocks(USER)), 1)
+
+    def test_the_agent_is_held_to_both(self):
+        self.limit(1, "routines")
+        self.limit(1, "timeblocks")
+        tools = ScheduleAgentTools(USER)
+        tools.add_routine(name="One", routine_type="fixed", repeat="daily", duration_min=10, time_str="07:00")
+        tools.add_time_block("09:00", "10:00")
+
+        with self.assertRaises(ScheduleLimitError):
+            tools.add_routine(name="Two", routine_type="fixed", repeat="daily", duration_min=10, time_str="08:00")
+        with self.assertRaises(ScheduleLimitError):
+            tools.add_time_block("11:00", "12:00")
+
+    def test_adding_a_routine_gives_it_its_id(self):
+        first, second = routine("One"), routine("Two")
+        self.assertEqual(self.provider.add_routine(USER, first), 1)
+        self.assertEqual(self.provider.add_routine(USER, second), 2)
+        self.assertEqual((first.id, second.id), (1, 2))
 
 
 if __name__ == "__main__":

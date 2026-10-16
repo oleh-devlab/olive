@@ -253,13 +253,6 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            blocks = provider.list_time_blocks(inter.author.id)
-            max_blocks = getattr(settings, "schedule_max_timeblocks_per_user", 20)
-            if len(blocks) >= max_blocks:
-                return await inter.edit_original_response(
-                    f"You have reached the maximum limit of {max_blocks} timeblocks."
-                )
-
             wd_list = None
             if weekdays:
                 # Naming days is what makes a block weekly, the same way it does
@@ -381,13 +374,6 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            routines = provider.list_routines(inter.author.id)
-            max_routines = getattr(settings, "schedule_max_routines_per_user", 30)
-            if len(routines) >= max_routines:
-                return await inter.edit_original_response(
-                    f"You have reached the maximum limit of {max_routines} routines."
-                )
-
             wd_list = None
             repeat = "daily"
             if weekdays:
@@ -470,13 +456,6 @@ class AutoSchedule(commands.Cog):
     ):
         await inter.response.defer(ephemeral=True)
         try:
-            routines = provider.list_routines(inter.author.id)
-            max_routines = getattr(settings, "schedule_max_routines_per_user", 30)
-            if len(routines) >= max_routines:
-                return await inter.edit_original_response(
-                    f"You have reached the maximum limit of {max_routines} routines."
-                )
-
             wd_list = None
             repeat = "daily"
             if weekdays:
@@ -782,7 +761,7 @@ class AutoSchedule(commands.Cog):
 
     @schedule_channel.sub_command(
         name="web",
-        description=phrases_cmd.get("cmd_schedule_channel_web_desc", "Link to edit your tasks in a browser"),
+        description=phrases_cmd.get("cmd_schedule_channel_web_desc", "Link to edit your schedule in a browser"),
     )
     async def schedule_channel_web(self, inter: disnake.ApplicationCommandInteraction):
         await inter.response.defer(ephemeral=True)
@@ -805,7 +784,7 @@ class AutoSchedule(commands.Cog):
             return
 
         await inter.edit_original_response(
-            utils.format_phrase(phrases, "web_link", "Edit your tasks here: {url}", url=base_url.rstrip("/") + "/")
+            utils.format_phrase(phrases, "web_link", "Edit your schedule here: {url}", url=base_url.rstrip("/") + "/")
         )
 
 

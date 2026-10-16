@@ -394,6 +394,248 @@ class TestTaskTable(WebTestCase):
         self.assertEqual(response.status, 201)
 
 
+def routine_row(**overrides) -> dict:
+    data = {
+        "name": "Morning run",
+        "type": "fixed",
+        "repeat": "daily",
+        "duration": 30,
+        "time": "07:00",
+        "deadline_time": None,
+        "weekdays": None,
+        "priority": 2,
+        "break_duration": 5,
+        "depends_on": [],
+    }
+    data.update(overrides)
+    return data
+
+
+def block_row(**overrides) -> dict:
+    data = {"name": "", "repeat": "once", "start": "2026-10-23T14:00", "end": "2026-10-23T15:30", "weekdays": None}
+    data.update(overrides)
+    return data
+
+
+class SignedInTestCase(WebTestCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        await self.sign_in()
+
+    async def listing(self, path: str, key: str) -> list[dict]:
+        response = await self.client.get(path)
+        self.assertEqual(response.status, 200)
+        return (await response.json())[key]
+
+    async def assert_all_refused(self, path: str, cases: dict):
+        for label, body in cases.items():
+            with self.subTest(label):
+                response = await self.client.post(path, json=body)
+                self.assertEqual(response.status, 400, await response.text())
+                self.assertIn("error", await response.json())
+
+
+class TestRoutineTable(SignedInTestCase):
+    async def routines(self) -> list[dict]:
+        return await self.listing("/api/routines", "routines")
+
+    async def test_a_new_row_becomes_a_routine_listed_as_stored(self):
+        response = await self.client.post("/api/routines", json=routine_row())
+        self.assertEqual(response.status, 201)
+        created = await response.json()
+
+        stored = self.provider.get_routine(USER, created["id"])
+        self.assertEqual(stored.time, datetime.time(7, 0))
+        self.assertEqual(stored.duration, datetime.timedelta(minutes=30))
+        self.assertEqual(await self.routines(), [schedule_provider.routine_to_dict(stored)])
+        self.assertEqual(self.redrawn, [USER])
+
+    async def test_a_flexible_weekly_routine_keeps_its_deadline_and_days(self):
+        body = routine_row(type="flexible", time=None, deadline_time="22:00", repeat="weekly", weekdays=[0, 2])
+        created = await (await self.client.post("/api/routines", json=body)).json()
+
+        stored = self.provider.get_routine(USER, created["id"])
+        self.assertIsNone(stored.time)
+        self.assertEqual(stored.deadline_time, datetime.time(22, 0))
+        self.assertEqual(stored.weekdays, [0, 2])
+
+    async def test_rows_the_routine_validator_refuses_are_refused_and_nothing_is_stored(self):
+        await self.assert_all_refused(
+            "/api/routines",
+            {
+                "empty name": routine_row(name=" "),
+                "unknown type": routine_row(type="sometimes"),
+                "fixed without a time": routine_row(time=None),
+                "flexible without a deadline": routine_row(type="flexible", time=None),
+                "time in another format": routine_row(time="7am"),
+                "weekly without days": routine_row(repeat="weekly"),
+                "a day past Sunday": routine_row(repeat="weekly", weekdays=[7]),
+                "days as text": routine_row(repeat="weekly", weekdays="0,2"),
+                "zero duration": routine_row(duration=0),
+                "priority above ten": routine_row(priority=11),
+                "dependency that does not exist": routine_row(depends_on=[9]),
+                "not an object": [routine_row()],
+            },
+        )
+        self.assertEqual(self.provider.list_routines(USER), [])
+        self.assertEqual(self.redrawn, [])
+
+    async def test_a_row_read_from_the_api_saves_back_unchanged_skip_included(self):
+        first = await (await self.client.post("/api/routines", json=routine_row())).json()
+        second = await (
+            await self.client.post("/api/routines", json=routine_row(name="Read", depends_on=[first["id"]]))
+        ).json()
+        until = (datetime.date.today() + datetime.timedelta(days=3)).strftime("%d.%m.%Y")
+        await self.client.post(f"/api/routines/{second['id']}/skip", json={"resume_after": until})
+        before = await self.routines()
+
+        for routine in before:
+            response = await self.client.put(f"/api/routines/{routine['id']}", json=routine)
+            self.assertEqual(response.status, 200, await response.text())
+
+        self.assertEqual(await self.routines(), before)
+        self.assertEqual(before[1]["resume_after"], until)
+
+    async def test_saving_a_row_replaces_the_routine(self):
+        created = await (await self.client.post("/api/routines", json=routine_row())).json()
+        body = routine_row(name="Evening run", type="flexible", time=None, deadline_time="21:00", priority=None)
+
+        response = await self.client.put(f"/api/routines/{created['id']}", json=body)
+        self.assertEqual(response.status, 200, await response.text())
+        stored = self.provider.get_routine(USER, created["id"])
+        self.assertEqual((stored.name, stored.type, stored.time), ("Evening run", "flexible", None))
+        self.assertEqual(stored.deadline_time, datetime.time(21, 0))
+
+    async def test_a_routine_cannot_wait_for_itself(self):
+        created = await (await self.client.post("/api/routines", json=routine_row())).json()
+        response = await self.client.put(f"/api/routines/{created['id']}", json=routine_row(depends_on=[created["id"]]))
+        self.assertEqual(response.status, 400)
+
+    async def test_skipping_takes_what_routine_skip_takes(self):
+        created = await (await self.client.post("/api/routines", json=routine_row())).json()
+        path = f"/api/routines/{created['id']}/skip"
+        today = datetime.date.today()
+
+        response = await self.client.post(path, json={"days": 2})
+        self.assertEqual(
+            (await response.json())["resume_after"], (today + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
+        )
+
+        response = await self.client.post(path, json={})
+        self.assertEqual((await response.json())["resume_after"], today.strftime("%d.%m.%Y"))
+
+        yesterday = (today - datetime.timedelta(days=1)).strftime("%d.%m.%Y")
+        for body in ({"resume_after": yesterday}, {"days": 0}, {"days": 1, "resume_after": yesterday}, ["x"]):
+            with self.subTest(body=body):
+                self.assertEqual((await self.client.post(path, json=body)).status, 400)
+
+        self.assertEqual((await self.client.post("/api/routines/99/skip", json={})).status, 404)
+
+    async def test_the_routine_limit_holds(self):
+        with mock.patch.object(settings, "schedule_max_routines_per_user", 1, create=True):
+            self.assertEqual((await self.client.post("/api/routines", json=routine_row())).status, 201)
+            response = await self.client.post("/api/routines", json=routine_row(name="One too many"))
+        self.assertEqual(response.status, 409)
+
+    async def test_a_routine_that_is_gone_is_not_found(self):
+        self.assertEqual((await self.client.put("/api/routines/5", json=routine_row())).status, 404)
+        self.assertEqual((await self.client.delete("/api/routines/5")).status, 404)
+        self.assertEqual(self.redrawn, [])
+
+    async def test_removing_a_routine_drops_it_from_what_waited_for_it(self):
+        first = await (await self.client.post("/api/routines", json=routine_row())).json()
+        second = await (
+            await self.client.post("/api/routines", json=routine_row(name="After", depends_on=[first["id"]]))
+        ).json()
+
+        self.assertEqual((await self.client.delete(f"/api/routines/{first['id']}")).status, 204)
+        self.assertEqual(self.provider.get_routine(USER, second["id"]).depends_on, [])
+
+
+class TestTimeBlockTable(SignedInTestCase):
+    async def blocks(self) -> list[dict]:
+        return await self.listing("/api/time-blocks", "time_blocks")
+
+    async def test_a_one_off_block_lands_on_its_own_day(self):
+        response = await self.client.post("/api/time-blocks", json=block_row(name="Dentist"))
+        self.assertEqual(response.status, 201)
+        created = await response.json()
+
+        stored = self.provider.get_time_block(USER, created["id"])
+        self.assertEqual(stored.start, datetime.datetime(2026, 10, 23, 14, 0, tzinfo=tz))
+        self.assertEqual(stored.end, datetime.datetime(2026, 10, 23, 15, 30, tzinfo=tz))
+        self.assertEqual(await self.blocks(), [schedule_provider.timeblock_to_dict(stored)])
+        self.assertEqual(self.redrawn, [USER])
+
+    async def test_a_weekly_block_past_midnight_ends_the_next_day(self):
+        body = block_row(repeat="weekly", weekdays=[1, 3], start="2026-10-20T22:00", end="2026-10-20T01:00")
+        created = await (await self.client.post("/api/time-blocks", json=body)).json()
+
+        stored = self.provider.get_time_block(USER, created["id"])
+        self.assertEqual(stored.weekdays, [1, 3])
+        self.assertEqual(stored.end - stored.start, datetime.timedelta(hours=3))
+
+    async def test_a_bare_time_is_taken_too(self):
+        created = await (
+            await self.client.post("/api/time-blocks", json=block_row(repeat="daily", start="08:00", end="09:00"))
+        ).json()
+        self.assertEqual(created["repeat"], "daily")
+
+    async def test_rows_the_time_block_validator_refuses_are_refused_and_nothing_is_stored(self):
+        await self.assert_all_refused(
+            "/api/time-blocks",
+            {
+                "no start": block_row(start=None),
+                "an end days before the start": block_row(end="2026-10-21T15:30"),
+                "an hour past the day": block_row(start="25:00"),
+                "weekly without days": block_row(repeat="weekly"),
+                "days on a daily block": block_row(repeat="daily", weekdays=[1]),
+                "unknown repeat": block_row(repeat="monthly"),
+                "name too long": block_row(name="x" * 101),
+            },
+        )
+        self.assertEqual(self.provider.list_time_blocks(USER), [])
+
+    async def test_a_row_read_from_the_api_saves_back_unchanged(self):
+        await self.client.post("/api/time-blocks", json=block_row(name="Dentist"))
+        await self.client.post(
+            "/api/time-blocks",
+            json=block_row(repeat="weekly", weekdays=[4], start="2026-10-20T23:00", end="2026-10-20T01:00"),
+        )
+        before = await self.blocks()
+
+        for block in before:
+            response = await self.client.put(f"/api/time-blocks/{block['id']}", json=block)
+            self.assertEqual(response.status, 200, await response.text())
+
+        self.assertEqual(await self.blocks(), before)
+
+    async def test_saving_a_row_can_change_how_a_block_repeats(self):
+        created = await (
+            await self.client.post("/api/time-blocks", json=block_row(repeat="weekly", weekdays=[0]))
+        ).json()
+
+        response = await self.client.put(f"/api/time-blocks/{created['id']}", json=block_row(repeat="daily"))
+        self.assertEqual(response.status, 200, await response.text())
+        stored = self.provider.get_time_block(USER, created["id"])
+        self.assertTrue(stored.daily)
+        self.assertIsNone(stored.weekdays)
+
+    async def test_the_time_block_limit_holds(self):
+        with mock.patch.object(settings, "schedule_max_timeblocks_per_user", 1, create=True):
+            self.assertEqual((await self.client.post("/api/time-blocks", json=block_row())).status, 201)
+            response = await self.client.post("/api/time-blocks", json=block_row(name="One too many"))
+        self.assertEqual(response.status, 409)
+
+    async def test_a_block_that_is_gone_is_not_found(self):
+        self.assertEqual((await self.client.put("/api/time-blocks/5", json=block_row())).status, 404)
+        self.assertEqual((await self.client.delete("/api/time-blocks/5")).status, 404)
+
+        created = await (await self.client.post("/api/time-blocks", json=block_row())).json()
+        self.assertEqual((await self.client.delete(f"/api/time-blocks/{created['id']}")).status, 204)
+        self.assertEqual(self.provider.list_time_blocks(USER), [])
+
+
 class FakeRegistry:
     def __init__(self, entries: dict):
         self.entries = entries

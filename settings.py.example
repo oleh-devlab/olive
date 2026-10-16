@@ -101,7 +101,7 @@ schedule_max_timeblocks_per_user = 50
 schedule_max_channels_per_guild = 5
 
 # --- Schedule web editor ---
-# A page where the owner of a schedule channel edits their tasks as a table,
+# A page where the owner of a schedule channel edits their tasks, routines and time blocks as tables,
 # signed in with Discord. The bot serves it itself on host:port; `base_url` is
 # the address the browser sees (normally a reverse proxy or a tunnel in front of
 # that port), and `<base_url>/oauth/callback` has to be registered as a redirect

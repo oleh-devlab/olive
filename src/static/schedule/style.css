@@ -164,6 +164,38 @@ button.link:hover {
   background: none;
 }
 
+/* --- Tabs --- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs button {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+}
+
+.tabs button:hover {
+  background: none;
+  color: var(--text);
+}
+
+.tabs button[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.empty {
+  margin-top: 8px;
+}
+
 /* --- Table --- */
 
 .table-wrap {
@@ -259,7 +291,8 @@ tfoot tr.new td {
 
 /* --- Inputs --- */
 
-input {
+input,
+select {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -269,7 +302,8 @@ input {
   width: 100%;
 }
 
-input:focus {
+input:focus,
+select:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
@@ -279,16 +313,45 @@ input[type="number"] {
   text-align: right;
 }
 
+input[type="time"],
+input[type="checkbox"],
+select {
+  width: auto;
+}
+
 .in-name {
   min-width: 150px;
 }
 
-.in-deadline {
+.in-datetime {
   width: auto;
 }
 
-.in-depends_on {
+.in-ids {
   width: 72px;
+}
+
+.repeat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.weekdays {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.weekdays label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.weekdays input {
+  margin: 0;
 }
 
 .in-description {
@@ -324,7 +387,7 @@ dialog::backdrop {
 }
 
 dialog input {
-  width: 120px;
+  width: auto;
 }
 
 .dialog-actions {
