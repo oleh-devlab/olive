@@ -7,11 +7,12 @@ a task is or drift apart. The server runs on the bot's own event loop (see
 `cogs/schedule/web.py`), which is what makes that safe -- a provider call is a
 synchronous read-modify-write, and nothing else runs while it does.
 
-The API speaks the bot's own vocabulary rather than the browser's: a deadline
-is `DD.MM.YYYY HH:MM` in the bot's timezone, the same string `/task add` takes,
-and durations are whole minutes.
+A task goes out in the shape it is stored in (`schedule_provider.task_to_dict`)
+and comes back in the same one, so a row read from the API saves back as it
+is: durations in whole minutes, the deadline as an ISO timestamp.
 """
 
+import datetime
 import json
 import logging
 import secrets
@@ -27,7 +28,7 @@ from core.time_utils import tz
 from core.web_auth import DiscordOAuth, OAuthError, SessionSigner, new_state
 from modules.schedule_exceptions import ScheduleValidationError
 from modules.schedule_models import Task
-from modules.schedule_provider import ScheduleProvider
+from modules.schedule_provider import ScheduleProvider, task_to_dict
 from modules.schedule_validators import parse_depends_on, validate_task_creation_data
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ SESSION_COOKIE = "olive_session"
 STATE_COOKIE = "olive_oauth_state"
 STATE_MAX_AGE = 600
 
-DEADLINE_FORMAT = "%d.%m.%Y %H:%M"
+# What the `/task add` validator reads a deadline from.
+VALIDATOR_DEADLINE_FORMAT = "%d.%m.%Y %H:%M"
 MAX_NAME_LENGTH = 100
 MAX_DESCRIPTION_LENGTH = 1000
 
@@ -63,29 +65,6 @@ def _origin_of(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}".lower()
 
 
-def _minutes(td) -> int | None:
-    return None if td is None else int(td.total_seconds() // 60)
-
-
-def task_to_json(task: Task) -> dict:
-    deadline = task.deadline
-    if deadline is not None and deadline.tzinfo is not None:
-        deadline = deadline.astimezone(tz)
-
-    return {
-        "id": task.id,
-        "name": task.name,
-        "description": task.description,
-        "duration_min": _minutes(task.duration),
-        "priority": task.priority,
-        "deadline": deadline.strftime(DEADLINE_FORMAT) if deadline else None,
-        "max_chunk_min": _minutes(task.max_chunk_duration),
-        "min_chunk_min": _minutes(task.min_chunk_duration),
-        "break_min": _minutes(task.break_duration),
-        "depends_on": list(task.depends_on),
-    }
-
-
 def _whole_number(row: dict, key: str, default: int | None = None) -> int | None:
     """A field that is either absent (the default), null, or an integer -- never a bool or a string."""
     value = row.get(key, default)
@@ -96,6 +75,30 @@ def _whole_number(row: dict, key: str, default: int | None = None) -> int | None
         raise ScheduleValidationError(f"'{key}' must be a whole number.")
 
     return value
+
+
+def _deadline_for_validator(value: object) -> str | None:
+    """
+    An ISO deadline, respelled the way the `/task add` validator reads one.
+
+    Bare (`2026-10-25T18:00`, what a datetime input gives) means the bot's own
+    timezone, the way a typed deadline always has; with an offset (what
+    `task_to_dict` writes) it is moved into that timezone first.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if not isinstance(value, str):
+        raise ScheduleValidationError("'deadline' must be an ISO date and time, or null.")
+
+    try:
+        deadline = datetime.datetime.fromisoformat(value.strip())
+    except ValueError:
+        raise ScheduleValidationError("'deadline' must be an ISO date and time, e.g. 2026-10-25T18:00.") from None
+
+    if deadline.tzinfo is not None:
+        deadline = deadline.astimezone(tz)
+
+    return deadline.strftime(VALIDATOR_DEADLINE_FORMAT)
 
 
 def task_from_json(row: object, user_id: int, task_id: int | None = None) -> Task:
@@ -121,20 +124,18 @@ def task_from_json(row: object, user_id: int, task_id: int | None = None) -> Tas
     if len(description) > MAX_DESCRIPTION_LENGTH:
         raise ScheduleValidationError(f"Description is limited to {MAX_DESCRIPTION_LENGTH} characters.")
 
-    deadline = row.get("deadline")
-    if deadline is not None and not isinstance(deadline, str):
-        raise ScheduleValidationError("'deadline' must be text in the 'DD.MM.YYYY HH:MM' format, or null.")
+    deadline = _deadline_for_validator(row.get("deadline"))
 
     depends_on = row.get("depends_on") or []
     if not isinstance(depends_on, list) or any(isinstance(d, bool) or not isinstance(d, int) for d in depends_on):
         raise ScheduleValidationError("'depends_on' must be a list of task IDs.")
 
-    duration_min = _whole_number(row, "duration_min")
+    duration_min = _whole_number(row, "duration")
     if duration_min is None:
-        raise ScheduleValidationError("'duration_min' is required.")
+        raise ScheduleValidationError("'duration' is required.")
 
     priority = _whole_number(row, "priority", getattr(settings, "schedule_default_priority", 1))
-    break_min = _whole_number(row, "break_min", getattr(settings, "schedule_default_break_min", 15))
+    break_min = _whole_number(row, "break_duration", getattr(settings, "schedule_default_break_min", 15))
 
     task = validate_task_creation_data(
         name=name,
@@ -143,11 +144,11 @@ def task_from_json(row: object, user_id: int, task_id: int | None = None) -> Tas
         priority=getattr(settings, "schedule_default_priority", 1) if priority is None else priority,
         # Null means "never split", so it is not replaced with the default.
         max_chunk_duration_min=_whole_number(
-            row, "max_chunk_min", getattr(settings, "schedule_default_max_chunk_min", 45)
+            row, "max_chunk_duration", getattr(settings, "schedule_default_max_chunk_min", 45)
         ),
         break_duration_min=break_min or 0,
-        min_chunk_duration_min=_whole_number(row, "min_chunk_min"),
-        deadline=(deadline or "").strip() or None,
+        min_chunk_duration_min=_whole_number(row, "min_chunk_duration"),
+        deadline=deadline,
         user_id=user_id,
     )
 
@@ -370,8 +371,8 @@ class ScheduleWebApp:
         user_id = self._user_id(request)
         return web.json_response(
             {
-                "tasks": [task_to_json(t) for t in self.provider.list_tasks(user_id)],
-                "completed": [task_to_json(t) for t in self.provider.list_completed_tasks(user_id)],
+                "tasks": [task_to_dict(t) for t in self.provider.list_tasks(user_id)],
+                "completed": [task_to_dict(t) for t in self.provider.list_completed_tasks(user_id)],
                 "limits": {
                     "max_tasks": getattr(settings, "schedule_max_tasks_per_user", 100),
                     "name_length": MAX_NAME_LENGTH,
@@ -379,8 +380,8 @@ class ScheduleWebApp:
                 },
                 "defaults": {
                     "priority": getattr(settings, "schedule_default_priority", 1),
-                    "max_chunk_min": getattr(settings, "schedule_default_max_chunk_min", 45),
-                    "break_min": getattr(settings, "schedule_default_break_min", 15),
+                    "max_chunk_duration": getattr(settings, "schedule_default_max_chunk_min", 45),
+                    "break_duration": getattr(settings, "schedule_default_break_min", 15),
                 },
             }
         )
@@ -400,7 +401,7 @@ class ScheduleWebApp:
             raise _error(web.HTTPBadRequest, str(e)) from None
 
         self._changed(user_id)
-        return web.json_response(task_to_json(task), status=201)
+        return web.json_response(task_to_dict(task), status=201)
 
     async def update_task(self, request: web.Request) -> web.Response:
         user_id = self._user_id(request)
@@ -428,7 +429,7 @@ class ScheduleWebApp:
             raise _error(web.HTTPBadRequest, str(e)) from None
 
         self._changed(user_id)
-        return web.json_response(task_to_json(self.provider.get_task(user_id, task_id)))
+        return web.json_response(task_to_dict(self.provider.get_task(user_id, task_id)))
 
     async def delete_task(self, request: web.Request) -> web.Response:
         user_id = self._user_id(request)

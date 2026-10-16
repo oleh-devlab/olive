@@ -91,7 +91,8 @@ def _deserialize_date(d_str: str | None) -> datetime.date | None:
         return None
 
 
-def _task_to_dict(task: Task) -> dict:
+def task_to_dict(task: Task) -> dict:
+    """A task in the shape it is stored in -- and handed to the web editor in, so the two cannot drift apart."""
     return {
         "id": task.id,
         "depends_on": task.depends_on,
@@ -343,7 +344,7 @@ class ScheduleProvider:
                 max_id = t["id"]
 
         task.id = max_id + 1
-        data["tasks"].append(_task_to_dict(task))
+        data["tasks"].append(task_to_dict(task))
         self._save_data(user_id, data)
         return task.id
 
@@ -430,7 +431,7 @@ class ScheduleProvider:
         data = self._load_data(user_id)
         for i, t in enumerate(data["tasks"]):
             if t.get("id") == task_id:
-                data["tasks"][i] = _task_to_dict(task)
+                data["tasks"][i] = task_to_dict(task)
                 break
 
         self._save_data(user_id, data)

@@ -10,6 +10,7 @@ re-exports the scheduler, so `ortools` comes with them -- and, through
 `core.personal_channels`, `disnake`. This suite needs all three present.
 """
 
+import datetime
 import sys
 import tempfile
 import types
@@ -31,6 +32,7 @@ sys.modules.setdefault("settings", types.ModuleType("settings"))
 import settings  # noqa: E402
 
 import cogs.schedule.web as web_cog  # noqa: E402
+from core.time_utils import tz  # noqa: E402
 from core.web_auth import OAuthError, SessionSigner  # noqa: E402
 from modules import schedule_provider  # noqa: E402
 from modules.schedule_web import SESSION_COOKIE, STATE_COOKIE, ScheduleWebApp  # noqa: E402
@@ -62,12 +64,12 @@ def row(**overrides) -> dict:
     data = {
         "name": "Write report",
         "description": "",
-        "duration_min": 90,
+        "duration": 90,
         "priority": 2,
         "deadline": None,
-        "max_chunk_min": 45,
-        "min_chunk_min": None,
-        "break_min": 10,
+        "max_chunk_duration": 45,
+        "min_chunk_duration": None,
+        "break_duration": 10,
         "depends_on": [],
     }
     data.update(overrides)
@@ -209,7 +211,7 @@ class TestTaskTable(WebTestCase):
         await self.sign_in()
 
     async def test_a_new_row_becomes_a_task_and_redraws_the_schedule(self):
-        response = await self.client.post("/api/tasks", json=row(deadline="20.10.2026 18:00", depends_on=[]))
+        response = await self.client.post("/api/tasks", json=row(deadline="2026-10-20T18:00", depends_on=[]))
         self.assertEqual(response.status, 201)
         created = await response.json()
 
@@ -217,13 +219,34 @@ class TestTaskTable(WebTestCase):
         self.assertEqual(stored.name, "Write report")
         self.assertEqual(stored.duration.total_seconds(), 90 * 60)
         self.assertEqual(stored.break_duration.total_seconds(), 10 * 60)
+        # A bare time is the bot's own, the way a typed deadline always is.
+        self.assertEqual(stored.deadline, datetime.datetime(2026, 10, 20, 18, 0, tzinfo=tz))
         self.assertEqual(self.redrawn, [USER])
 
         listed = await self.tasks()
-        self.assertEqual(listed[0]["deadline"], "20.10.2026 18:00")
-        self.assertEqual(listed[0]["max_chunk_min"], 45)
+        # Handed out exactly as stored, not in a shape of the page's own.
+        self.assertEqual(listed, [schedule_provider.task_to_dict(stored)])
+        self.assertEqual(listed[0]["max_chunk_duration"], 45)
         # Longer than one session, so the validator picked a shortest one.
-        self.assertEqual(listed[0]["min_chunk_min"], 15)
+        self.assertEqual(listed[0]["min_chunk_duration"], 15)
+
+    async def test_a_row_read_from_the_api_saves_back_unchanged(self):
+        first = await (await self.client.post("/api/tasks", json=row(name="First"))).json()
+        await self.client.post(
+            "/api/tasks", json=row(deadline="2026-12-01T09:30", description="Draft", depends_on=[first["id"]])
+        )
+        before = await self.tasks()
+
+        for task in before:
+            response = await self.client.put(f"/api/tasks/{task['id']}", json=task)
+            self.assertEqual(response.status, 200, await response.text())
+
+        self.assertEqual(await self.tasks(), before)
+
+    async def test_a_deadline_with_an_offset_keeps_its_moment(self):
+        created = await (await self.client.post("/api/tasks", json=row(deadline="2026-10-20T15:00:00+00:00"))).json()
+        stored = self.provider.get_task(USER, created["id"])
+        self.assertEqual(stored.deadline, datetime.datetime(2026, 10, 20, 15, 0, tzinfo=datetime.UTC))
 
     async def test_the_table_lists_only_the_signed_in_users_tasks(self):
         other_task = schedule_provider._dict_to_task({"name": "Not yours", "duration": 30})
@@ -234,15 +257,17 @@ class TestTaskTable(WebTestCase):
     async def test_rows_the_validators_refuse_are_refused_and_nothing_is_stored(self):
         cases = {
             "empty name": row(name="   "),
-            "zero duration": row(duration_min=0),
-            "missing duration": {k: v for k, v in row().items() if k != "duration_min"},
-            "duration as text": row(duration_min="90"),
-            "duration as a bool": row(duration_min=True),
-            "fractional duration": row(duration_min=1.5),
+            "zero duration": row(duration=0),
+            "missing duration": {k: v for k, v in row().items() if k != "duration"},
+            "duration as text": row(duration="90"),
+            "duration as a bool": row(duration=True),
+            "fractional duration": row(duration=1.5),
             "priority above ten": row(priority=11),
-            "deadline in another format": row(deadline="2026-10-20 18:00"),
-            "shortest session above the longest": row(min_chunk_min=60, max_chunk_min=30),
-            "negative break": row(break_min=-5),
+            "deadline as typed in Discord": row(deadline="20.10.2026 18:00"),
+            "deadline that is not a date": row(deadline="tomorrow"),
+            "deadline as a number": row(deadline=1_800_000_000),
+            "shortest session above the longest": row(min_chunk_duration=60, max_chunk_duration=30),
+            "negative break": row(break_duration=-5),
             "dependency that does not exist": row(depends_on=[99]),
             "dependencies as text": row(depends_on="1, 2"),
             "name too long": row(name="x" * 101),
@@ -274,14 +299,14 @@ class TestTaskTable(WebTestCase):
         created = await (
             await self.client.post(
                 "/api/tasks",
-                json=row(description="Draft", deadline="01.11.2026 09:00", depends_on=[first["id"]]),
+                json=row(description="Draft", deadline="2026-11-01T09:00", depends_on=[first["id"]]),
             )
         ).json()
         self.redrawn.clear()
 
         response = await self.client.put(
             f"/api/tasks/{created['id']}",
-            json=row(name="Renamed", duration_min=30, max_chunk_min=None, description="", deadline=None),
+            json=row(name="Renamed", duration=30, max_chunk_duration=None, description="", deadline=None),
         )
         self.assertEqual(response.status, 200, await response.text())
 
@@ -315,7 +340,7 @@ class TestTaskTable(WebTestCase):
         self.assertEqual((await self.client.delete(f"/api/tasks/{first['id']}")).status, 404)
 
     async def test_spent_time_comes_off_the_task_until_it_is_done(self):
-        created = await (await self.client.post("/api/tasks", json=row(duration_min=60))).json()
+        created = await (await self.client.post("/api/tasks", json=row(duration=60))).json()
         path = f"/api/tasks/{created['id']}/spend"
 
         response = await self.client.post(path, json={"minutes": 20})

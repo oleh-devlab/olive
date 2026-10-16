@@ -11,12 +11,12 @@ const LOGIN_ERRORS = {
 // The editable columns, in table order. `blank` is what an empty cell means.
 const FIELDS = [
   { key: "name", label: "Назва", type: "text" },
-  { key: "duration_min", label: "Тривалість", type: "number", min: 1 },
+  { key: "duration", label: "Тривалість", type: "number", min: 1 },
   { key: "priority", label: "Пріоритет", type: "number", min: 0, max: 10 },
   { key: "deadline", label: "Дедлайн", type: "deadline" },
-  { key: "max_chunk_min", label: "Сесія", type: "number", min: 1, blank: "ціла" },
-  { key: "min_chunk_min", label: "Мін.", type: "number", min: 0, blank: "авто" },
-  { key: "break_min", label: "Перерва", type: "number", min: 0 },
+  { key: "max_chunk_duration", label: "Сесія", type: "number", min: 1, blank: "ціла" },
+  { key: "min_chunk_duration", label: "Мін.", type: "number", min: 0, blank: "авто" },
+  { key: "break_duration", label: "Перерва", type: "number", min: 0 },
   { key: "depends_on", label: "Після", type: "ids" },
   { key: "description", label: "Опис", type: "text" },
 ];
@@ -93,20 +93,21 @@ function fail(error) {
   setStatus(error.message, "error");
 }
 
-// --- Deadlines: the API says "DD.MM.YYYY HH:MM", a datetime input "YYYY-MM-DDTHH:MM" ---
+// --- Deadlines ---
+// The API sends ISO with the bot's own offset ("2026-10-25T18:00:00+02:00").
+// Its first 16 characters are the bot's wall-clock time, which is what a
+// datetime input holds and what the API takes back.
 
-function toInputDeadline(text) {
-  const m = /^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})$/.exec(text || "");
-  return m ? `${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}` : "";
+function toInputDeadline(iso) {
+  return iso ? iso.slice(0, 16) : "";
 }
 
-function fromInputDeadline(value) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || "");
-  return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : null;
+function displayDeadline(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso || "");
+  return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : "—";
 }
 
-function isOverdue(text) {
-  const iso = toInputDeadline(text);
+function isOverdue(iso) {
   return Boolean(iso) && new Date(iso) < new Date();
 }
 
@@ -138,17 +139,17 @@ function nameOf(id) {
 function viewRow(task) {
   const tr = document.createElement("tr");
   tr.append(cell(task.id, "num id"), cell(task.name, "name"));
-  tr.append(cell(task.duration_min, "num"), cell(task.priority, "num"));
+  tr.append(cell(task.duration, "num"), cell(task.priority, "num"));
 
-  const deadline = cell(task.deadline || "—", "deadline");
+  const deadline = cell(displayDeadline(task.deadline), "deadline");
   if (isOverdue(task.deadline)) {
     deadline.classList.add("overdue");
     deadline.title = "Дедлайн минув";
   }
   tr.append(deadline);
 
-  tr.append(cell(task.max_chunk_min ?? "ціла", "num"), cell(task.min_chunk_min ?? "—", "num"));
-  tr.append(cell(task.break_min, "num"));
+  tr.append(cell(task.max_chunk_duration ?? "ціла", "num"), cell(task.min_chunk_duration ?? "—", "num"));
+  tr.append(cell(task.break_duration, "num"));
 
   const deps = cell(task.depends_on.map((id) => `#${id}`).join(", ") || "—", "deps");
   deps.title = task.depends_on.map((id) => `#${id} ${nameOf(id)}`).join("\n");
@@ -258,12 +259,12 @@ function readRow(tr) {
   return {
     name: text("name"),
     description: text("description"),
-    duration_min: number("duration_min"),
+    duration: number("duration"),
     priority: number("priority"),
-    deadline: fromInputDeadline(text("deadline")),
-    max_chunk_min: number("max_chunk_min"),
-    min_chunk_min: number("min_chunk_min"),
-    break_min: number("break_min"),
+    deadline: text("deadline") || null,
+    max_chunk_duration: number("max_chunk_duration"),
+    min_chunk_duration: number("min_chunk_duration"),
+    break_duration: number("break_duration"),
     depends_on: ids,
   };
 }
