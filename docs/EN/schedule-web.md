@@ -32,7 +32,7 @@ Only users who have a schedule channel (`/schedule_channel create`) can sign in.
    - When `base_url` starts with `https://`, cookies are marked `Secure` and the browser will not send them over HTTP.
    - Do not expose the port to the internet directly without HTTPS: the session cookie would travel in clear text.
 5. **Build the page**: `scripts/build-web.sh`. The page is written in React and TypeScript under `web/`, and what the bot serves from `src/static/schedule/` is built from it rather than kept in git.
-   - The build runs in a Node container, so the host needs no Node: podman if it is running, otherwise docker. With neither, the script uses the host's npm (Node 22 or newer). `CONTAINER_RUNTIME=podman`, `docker` or `none` picks one.
+   - The build runs in a Node container, so the host needs no Node: podman if it is running, otherwise docker. With neither, the script uses the host's npm (Node 26 or newer). `CONTAINER_RUNTIME=podman`, `docker` or `none` picks one.
    - The result does not depend on which one built it, and the files belong to whoever ran the script, whether the runtime is rootless or not.
    - Run it again after every `git pull` that changes `web/`. Without a built page the server does not start, and the log says so.
 6. Restart the bot. Users get the link with `/schedule_channel web`.
