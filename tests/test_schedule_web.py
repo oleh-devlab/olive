@@ -36,6 +36,7 @@ from core.time_utils import tz  # noqa: E402
 from core.web_auth import OAuthError, SessionSigner  # noqa: E402
 from modules import schedule_provider  # noqa: E402
 from modules import schedule_web  # noqa: E402
+from modules.schedule_models import ScheduleItem, SolvedSchedule  # noqa: E402
 from modules.schedule_web import SESSION_COOKIE, STATE_COOKIE, ScheduleWebApp  # noqa: E402
 
 USER = 123456789012345678
@@ -101,6 +102,8 @@ class WebTestCase(unittest.IsolatedAsyncioTestCase):
         self.oauth = FakeOAuth()
         self.allowed = {USER, OTHER_USER}
         self.redrawn = []
+        # Stands in for the engine, so no test here runs the solver.
+        self.solve = mock.AsyncMock(return_value=SolvedSchedule())
 
         app = ScheduleWebApp(
             provider=self.provider,
@@ -110,6 +113,7 @@ class WebTestCase(unittest.IsolatedAsyncioTestCase):
             is_allowed=lambda user_id: user_id in self.allowed,
             on_change=self.redrawn.append,
             static_dir=stand_in_page(Path(tmp.name) / "page"),
+            get_schedule=self.solve,
         ).make_app()
 
         self.client = TestClient(TestServer(app))
@@ -445,6 +449,148 @@ class SignedInTestCase(WebTestCase):
                 response = await self.client.post(path, json=body)
                 self.assertEqual(response.status, 400, await response.text())
                 self.assertIn("error", await response.json())
+
+
+class TestSchedule(SignedInTestCase):
+    """The schedule is read from the engine: its last solve, or a new one on request."""
+
+    def solved(self) -> SolvedSchedule:
+        start = datetime.datetime(2026, 10, 20, 9, 0, tzinfo=tz)
+        return SolvedSchedule(
+            items=[
+                ScheduleItem(
+                    item_type="task",
+                    task_name="Write report",
+                    dt_start=start,
+                    dt_end=start + datetime.timedelta(minutes=45),
+                    session_index="2",
+                    total_sessions=3,
+                    algo_notes="",
+                    item_id=7,
+                ),
+                ScheduleItem(
+                    item_type="time_block",
+                    task_name="",
+                    dt_start=start + datetime.timedelta(hours=3),
+                    dt_end=start + datetime.timedelta(hours=4),
+                    session_index="1",
+                    total_sessions=1,
+                    algo_notes="",
+                    item_id=2,
+                ),
+            ],
+            solve_time=0.51234,
+            planning_days=14,
+            skipped_task_ids=[9],
+            skipped_routines=["Stretch: 21.10"],
+            status="OPTIMAL",
+            computed_at=datetime.datetime(2026, 10, 20, 8, 55, 12, 345678, tzinfo=tz),
+        )
+
+    async def test_reading_takes_the_last_solve_and_redraws_nothing(self):
+        self.solve.return_value = self.solved()
+
+        response = await self.client.get("/api/schedule")
+
+        self.assertEqual(response.status, 200)
+        self.solve.assert_awaited_once_with(USER, force=False)
+        self.assertEqual(self.redrawn, [])
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    async def test_a_solve_goes_out_as_what_goes_where_and_what_did_not_fit(self):
+        self.solve.return_value = self.solved()
+
+        body = await (await self.client.get("/api/schedule")).json()
+
+        offset = datetime.datetime(2026, 10, 20, tzinfo=tz).strftime("%z")
+        offset = f"{offset[:3]}:{offset[3:]}"
+        self.assertEqual(
+            body,
+            {
+                "computed_at": f"2026-10-20T08:55:12{offset}",
+                "status": "OPTIMAL",
+                "solve_time": 0.512,
+                "planning_days": 14,
+                "items": [
+                    {
+                        "type": "task",
+                        "id": 7,
+                        "name": "Write report",
+                        "start": f"2026-10-20T09:00:00{offset}",
+                        "end": f"2026-10-20T09:45:00{offset}",
+                        "session": 2,
+                        "sessions": 3,
+                    },
+                    {
+                        "type": "time_block",
+                        "id": 2,
+                        "name": "",
+                        "start": f"2026-10-20T12:00:00{offset}",
+                        "end": f"2026-10-20T13:00:00{offset}",
+                        "session": 1,
+                        "sessions": 1,
+                    },
+                ],
+                "skipped_task_ids": [9],
+                "skipped_routines": ["Stretch: 21.10"],
+            },
+        )
+
+    async def test_nothing_to_schedule_is_an_empty_schedule_not_an_error(self):
+        self.solve.return_value = SolvedSchedule(planning_days=14, status="NO_DATA")
+
+        response = await self.client.get("/api/schedule")
+
+        self.assertEqual(response.status, 200)
+        body = await response.json()
+        self.assertEqual((body["items"], body["status"], body["computed_at"]), ([], "NO_DATA", None))
+
+    async def test_recalculating_forces_a_new_solve_and_redraws_discord(self):
+        self.solve.return_value = self.solved()
+
+        response = await self.client.post("/api/schedule/recalculate")
+
+        self.assertEqual(response.status, 200)
+        self.solve.assert_awaited_once_with(USER, force=True)
+        self.assertEqual(self.redrawn, [USER])
+        self.assertEqual(len((await response.json())["items"]), 2)
+
+    async def test_recalculating_is_refused_from_another_site(self):
+        response = await self.client.post("/api/schedule/recalculate", headers={"Origin": "https://evil.example"})
+
+        self.assertEqual(response.status, 403)
+        self.solve.assert_not_awaited()
+        self.assertEqual(self.redrawn, [])
+
+    async def test_a_solver_that_gave_up_says_why_and_redraws_nothing(self):
+        self.solve.side_effect = TimeoutError("CP-SAT solver timed out after 15.00s.")
+
+        response = await self.client.post("/api/schedule/recalculate")
+
+        self.assertEqual(response.status, 503)
+        self.assertEqual(await response.json(), {"error": "CP-SAT solver timed out after 15.00s."})
+        self.assertEqual(self.redrawn, [])
+
+    async def test_any_other_failure_is_reported_without_its_insides(self):
+        self.solve.side_effect = RuntimeError("/home/bot/data/123_schedule.json is broken")
+
+        with self.assertLogs(schedule_web.logger, "ERROR"):
+            response = await self.client.get("/api/schedule")
+
+        self.assertEqual(response.status, 500)
+        self.assertEqual(await response.json(), {"error": "The schedule could not be calculated."})
+        self.assertIn("Content-Security-Policy", response.headers)
+
+    async def test_only_a_signed_in_owner_of_a_schedule_gets_one(self):
+        self.client.session.cookie_jar.clear()
+        self.assertEqual((await self.client.get("/api/schedule")).status, 401)
+
+        await self.sign_in()
+        self.allowed.discard(USER)
+        self.assertEqual((await self.client.get("/api/schedule")).status, 403)
+        self.assertEqual((await self.client.post("/api/schedule/recalculate")).status, 403)
+
+        self.solve.assert_not_awaited()
 
 
 class TestRoutineTable(SignedInTestCase):

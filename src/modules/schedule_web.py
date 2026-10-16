@@ -12,6 +12,10 @@ An item goes out in the shape it is stored in (`schedule_provider.task_to_dict`
 and its siblings) and comes back in the same one, so a row read from the API
 saves back as it is: durations in whole minutes, a deadline or a block's bounds
 as ISO timestamps, a routine's times as `HH:MM`.
+
+The schedule itself is read, never written: it is the engine's last solve, the
+same one the Discord message shows, and a new solve only when the data has
+changed since -- or when the reader asks for one, because time has moved on.
 """
 
 import contextlib
@@ -20,7 +24,7 @@ import inspect
 import json
 import logging
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -28,8 +32,9 @@ import aiohttp
 from aiohttp import web
 
 from core.web_auth import DiscordOAuth, OAuthError, SessionSigner, new_state
+from modules.schedule_engine import get_solved_schedule
 from modules.schedule_exceptions import ScheduleItemNotFoundError, ScheduleLimitError, ScheduleValidationError
-from modules.schedule_models import Routine, Task, TimeBlock
+from modules.schedule_models import Routine, SolvedSchedule, Task, TimeBlock
 from modules.schedule_provider import (
     ScheduleProvider,
     max_routines_per_user,
@@ -272,6 +277,30 @@ class ItemKind:
         }
 
 
+def schedule_to_json(schedule: SolvedSchedule) -> dict:
+    """A solve as the page draws it: what goes where and when, and what did not fit."""
+    return {
+        "computed_at": schedule.computed_at.isoformat(timespec="seconds") if schedule.computed_at else None,
+        "status": schedule.status,
+        "solve_time": round(schedule.solve_time, 3),
+        "planning_days": schedule.planning_days,
+        "items": [
+            {
+                "type": item.item_type,
+                "id": item.item_id,
+                "name": item.task_name,
+                "start": item.dt_start.isoformat(),
+                "end": item.dt_end.isoformat(),
+                "session": int(item.session_index),
+                "sessions": item.total_sessions,
+            }
+            for item in schedule.items
+        ],
+        "skipped_task_ids": list(schedule.skipped_task_ids),
+        "skipped_routines": list(schedule.skipped_routines),
+    }
+
+
 @contextlib.contextmanager
 def _as_http_errors():
     """What the validators and the provider refuse, answered with the HTTP status for it."""
@@ -293,7 +322,8 @@ class ScheduleWebApp:
 
     Who may sign in and what happens after a write are the caller's to decide:
     the cog lets in whoever has a schedule channel and redraws that channel, a
-    test passes a set and a list.
+    test passes a set and a list. So is where a solved schedule comes from: the
+    engine, unless a test hands in something that does not run the solver.
     """
 
     def __init__(
@@ -306,6 +336,7 @@ class ScheduleWebApp:
         is_allowed: Callable[[int], bool],
         on_change: Callable[[int], None],
         static_dir: Path | None = None,
+        get_schedule: Callable[..., Awaitable[SolvedSchedule]] | None = None,
     ):
         self.provider = provider
         self.oauth = oauth
@@ -316,6 +347,7 @@ class ScheduleWebApp:
         self.is_allowed = is_allowed
         self.on_change = on_change
         self.static_dir = static_dir or STATIC_DIR
+        self.get_schedule = get_schedule or get_solved_schedule
 
         # Keyed by the path each kind is served under.
         self.kinds = {
@@ -357,6 +389,8 @@ class ScheduleWebApp:
             web.get(CALLBACK_PATH, self.oauth_callback),
             web.post("/logout", self.logout),
             web.get("/api/me", self.me),
+            web.get("/api/schedule", self.schedule),
+            web.post("/api/schedule/recalculate", self.recalculate_schedule),
             web.get("/api/tasks", self.list_tasks),
             web.get("/api/routines", self.list_routines),
             web.get("/api/time-blocks", self.list_time_blocks),
@@ -529,6 +563,31 @@ class ScheduleWebApp:
         session = self._session(request) or {}
         # As a string: a Discord id does not fit in a JavaScript number.
         return web.json_response({"id": str(user_id), "name": session.get("name", "")})
+
+    async def schedule(self, request: web.Request) -> web.Response:
+        """The last solve, or a new one if the data has changed since: cheap whenever nothing has."""
+        user_id = self._user_id(request)
+        return web.json_response(schedule_to_json(await self._solved(user_id, force=False)))
+
+    async def recalculate_schedule(self, request: web.Request) -> web.Response:
+        """A new solve whatever the data, for a schedule that starts now rather than at the last one."""
+        user_id = self._user_id(request)
+        schedule = await self._solved(user_id, force=True)
+
+        # The Discord message redraws from the solve just made: the engine keeps
+        # it, and nothing has changed since, so that costs no second solve.
+        self._changed(user_id)
+        return web.json_response(schedule_to_json(schedule))
+
+    async def _solved(self, user_id: int, force: bool) -> SolvedSchedule:
+        try:
+            return await self.get_schedule(user_id, force=force)
+        except TimeoutError as e:
+            # The engine's own words: what took too long, and what to shorten.
+            raise _error(web.HTTPServiceUnavailable, str(e)) from None
+        except Exception:
+            logger.exception("Could not solve the schedule of user %s", user_id)
+            raise _error(web.HTTPInternalServerError, "The schedule could not be calculated.") from None
 
     async def list_tasks(self, request: web.Request) -> web.Response:
         user_id = self._user_id(request)
