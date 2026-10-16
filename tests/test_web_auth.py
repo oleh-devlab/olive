@@ -28,10 +28,11 @@ class TestSessionSigner(unittest.TestCase):
         self.signer = SessionSigner("secret", max_age_seconds=3600)
 
     def test_a_cookie_reads_back_as_what_was_signed(self):
-        token = self.signer.dumps({"uid": "42", "name": "Олива"}, now=NOW)
+        # Not ASCII, the way a Discord display name may not be.
+        token = self.signer.dumps({"uid": "42", "name": "Olivé"}, now=NOW)
         data = self.signer.loads(token, now=NOW + 10)
         self.assertEqual(data["uid"], "42")
-        self.assertEqual(data["name"], "Олива")
+        self.assertEqual(data["name"], "Olivé")
 
     def test_a_cookie_expires_after_its_max_age(self):
         token = self.signer.dumps({"uid": "42"}, now=NOW)

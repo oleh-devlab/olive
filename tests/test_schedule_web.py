@@ -48,7 +48,7 @@ class FakeOAuth:
     """Discord's half of the code flow, reduced to: this code is this user."""
 
     def __init__(self):
-        self.user = {"id": str(USER), "username": "olive", "global_name": "Олива"}
+        self.user = {"id": str(USER), "username": "olive", "global_name": "Olive"}
         self.fail = False
 
     def authorize_url(self, state: str) -> str:
@@ -145,7 +145,7 @@ class TestSignIn(WebTestCase):
         self.assertEqual(session_cookie["samesite"], "Lax")
 
         response = await self.client.get("/api/me")
-        self.assertEqual(await response.json(), {"id": str(USER), "name": "Олива"})
+        self.assertEqual(await response.json(), {"id": str(USER), "name": "Olive"})
 
     async def test_a_callback_that_did_not_start_here_signs_no_one_in(self):
         await self.client.get("/login", allow_redirects=False)
