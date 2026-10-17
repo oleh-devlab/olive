@@ -46,14 +46,16 @@ const duration = (minutes: number): string =>
 // A timer for the task being worked on, in a panel beside the calendar -- as
 // tall as the calendar, its contents staying in sight as that scrolls -- that
 // folds down to a strip. It logs what it counted against the task -- only when
-// asked, and never more than it was set to -- the way `/task spend` does.
+// asked, and never more than it was set to -- the way `/task spend` does; below
+// it, minutes set by hand are logged against the same task with a button of
+// their own. The two never fill each other in: what is logged is the reader's
+// to decide.
 export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
   // In this page's memory only: a reload or a closed tab drops it.
   const [stored, setStored] = useState<TimerState | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // The minutes to log when set by hand, for the timer they were set for;
-  // until then the field follows what the timer has counted.
-  const [logSet, setLogSet] = useState<{ taskId: number; session: number; minutes: number } | null>(null);
+  // The minutes set by hand, for the task they were set for.
+  const [typed, setTyped] = useState<{ taskId: number; minutes: number } | null>(null);
   const [logging, setLogging] = useState(false);
 
   const running = stored !== null && isRunning(stored);
@@ -87,9 +89,8 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
 
   const left = timer ? remaining(timer, now) : 0;
   const finished = timer !== null && isFinished(timer, now);
-  const ownLog =
-    logSet && timer && logSet.taskId === timer.taskId && logSet.session === timer.session ? logSet.minutes : null;
-  const toLog = ownLog ?? (timer ? minutesToLog(timer, now) : 0);
+  const timed = timer ? minutesToLog(timer, now) : 0;
+  const byHand = typed && timer && typed.taskId === timer.taskId ? typed.minutes : 0;
   const ownSession = timer !== null && focus !== null && timer.taskId === Number(focus.entry.id);
   const task = timer ? tasks.find((candidate) => candidate.id === timer.taskId) : undefined;
 
@@ -106,34 +107,41 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
     if (timer) setStored(setMinutes(timer, minutes, Date.now()));
   }
 
-  function setLog(minutes: number) {
-    if (timer) setLogSet({ taskId: timer.taskId, session: timer.session, minutes: Math.min(MAX_MIN, Math.max(0, minutes)) });
+  function setByHand(minutes: number) {
+    if (timer) setTyped({ taskId: timer.taskId, minutes: Math.min(MAX_MIN, Math.max(0, minutes)) });
   }
 
   function reset() {
     const discarded = timer ? minutesToLog(timer, Date.now()) : 0;
     if (discarded >= 1 && !window.confirm(`Discard the ${discarded} min counted?`)) return;
     setStored(null);
-    setLogSet(null);
   }
 
-  // Logs what the field says -- what the timer counted, or what was set by
-  // hand -- and starts afresh once it is logged; the timer stops either way.
-  async function log() {
-    if (!timer || logging) return;
-    const stopped = pause(timer, Date.now());
-    const minutes = ownLog ?? minutesToLog(stopped, Date.now());
-    if (minutes < 1) return;
-    setStored(stopped);
+  async function send(minutes: number): Promise<boolean> {
+    if (!timer) return false;
     setLogging(true);
     try {
-      if (await onLog({ id: timer.taskId, name: timer.name }, minutes)) {
-        setStored(null);
-        setLogSet(null);
-      }
+      return await onLog({ id: timer.taskId, name: timer.name }, minutes);
     } finally {
       setLogging(false);
     }
+  }
+
+  // Logs what the timer counted and starts it afresh once that is logged; it
+  // stops either way.
+  async function logTimed() {
+    if (!timer || logging) return;
+    const stopped = pause(timer, Date.now());
+    const minutes = minutesToLog(stopped, Date.now());
+    if (minutes < 1) return;
+    setStored(stopped);
+    if (await send(minutes)) setStored(null);
+  }
+
+  // Logs the minutes set by hand, leaving the timer as it is.
+  async function logByHand() {
+    if (logging || byHand < 1) return;
+    if (await send(byHand)) setTyped(null);
   }
 
   if (!open) {
@@ -206,22 +214,31 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
                   {hasCounted(timer, now) ? "Resume" : "Start"}
                 </button>
               )}
+              <button
+                type="button"
+                className="primary"
+                disabled={timed < 1 || logging}
+                title={`Log the time counted against #${timer.taskId}, as /task spend does`}
+                onClick={() => void logTimed()}
+              >
+                Log {timed} min
+              </button>
               <button type="button" className="link" disabled={!hasCounted(timer, now) && !running} onClick={reset}>
                 Reset
               </button>
             </div>
 
             <div className="panel-log">
-              <MinutesField label="To log" value={toLog} min={0} onChange={setLog} />
+              <MinutesField label="To log" value={byHand} min={0} onChange={setByHand} />
               <div className="panel-actions">
                 <button
                   type="button"
                   className="primary"
-                  disabled={toLog < 1 || logging}
-                  title={`Log this time against #${timer.taskId}, as /task spend does`}
-                  onClick={() => void log()}
+                  disabled={byHand < 1 || logging}
+                  title={`Log these minutes against #${timer.taskId}, as /task spend does`}
+                  onClick={() => void logByHand()}
                 >
-                  Log {toLog} min
+                  Log {byHand} min
                 </button>
               </div>
             </div>

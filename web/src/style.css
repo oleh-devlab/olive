@@ -786,7 +786,7 @@ dialog input {
   color: var(--muted);
 }
 
-/* The time to log, set apart from the timer it follows. */
+/* Minutes logged by hand, set apart from the timer. */
 .panel-log {
   margin-top: 12px;
   padding-top: 12px;
