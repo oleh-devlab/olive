@@ -15,7 +15,7 @@ import {
   weekdayOf,
   type Segment,
 } from "./calendar";
-import type { EntryType, SolvedSchedule } from "./types";
+import type { EntryType, SolvedSchedule, Task } from "./types";
 
 const SPANS = [1, 3, 7];
 
@@ -36,9 +36,11 @@ interface Props {
   onSpanChange?: (span: number) => void;
   // Told of every schedule this reads, for the rest of the page to use the same one.
   onSolved?: (schedule: SolvedSchedule) => void;
+  // The tasks as the table last read them, to name the ones that did not fit.
+  tasks?: Task[];
 }
 
-export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved }: Props) {
+export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, tasks = [] }: Props) {
   const [schedule, setSchedule] = useState<SolvedSchedule | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const [span, setSpan] = useState(initialSpan);
@@ -156,16 +158,12 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved }:
         </div>
 
         <div className="schedule-solve">
-          <span className="muted" title={`${schedule.status} · solved in ${schedule.solve_time.toFixed(2)} s`}>
-            {schedule.computed_at
-              ? `Calculated ${shortDate(dayOf(schedule.computed_at))} ${schedule.computed_at.slice(11, 16)}`
-              : ""}
-          </span>
           <button type="button" className="primary" disabled={recalculating} onClick={() => void recalculate()}>
             {recalculating ? "Calculating…" : "Recalculate"}
           </button>
         </div>
       </div>
+      <p className="schedule-facts muted">{solveFacts(schedule)}</p>
 
       {hours ? (
         <CalendarGrid days={shown} byDay={byDay} hours={hours} present={present} />
@@ -175,7 +173,7 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved }:
         </p>
       )}
 
-      <Notes schedule={schedule} />
+      <Notes schedule={schedule} tasks={tasks} />
     </section>
   );
 }
@@ -319,7 +317,29 @@ function Entry({ segment, range, y }: { segment: Segment; range: Range; y: (minu
   );
 }
 
-function Notes({ schedule }: { schedule: SolvedSchedule }) {
+// What the Discord message says above the schedule: when it was calculated and
+// how long that took, how the solver ended, how far ahead it plans at the
+// least, and how often the bot calculates it again on its own.
+function solveFacts(schedule: SolvedSchedule): string {
+  const facts: string[] = [];
+  if (schedule.computed_at) {
+    const took = schedule.solve_time > 0 ? ` in ${schedule.solve_time.toFixed(2)} s` : "";
+    facts.push(`Calculated ${shortDate(dayOf(schedule.computed_at))} ${schedule.computed_at.slice(11, 16)}${took}`);
+  }
+  if (schedule.status) facts.push(schedule.status);
+  if (schedule.planning_days > 0) facts.push(`horizon ${schedule.planning_days} ${schedule.planning_days === 1 ? "day" : "days"}`);
+  if (schedule.update_seconds) facts.push(`updates every ${every(schedule.update_seconds)}`);
+  return facts.join(" · ");
+}
+
+function every(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 1) return `${Math.round(seconds)} s`;
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
+}
+
+function Notes({ schedule, tasks }: { schedule: SolvedSchedule; tasks: Task[] }) {
   const legend = (
     <ul className="calendar-legend" aria-label="Legend">
       {Object.entries(KINDS).map(([type, kind]) => (
@@ -344,8 +364,14 @@ function Notes({ schedule }: { schedule: SolvedSchedule }) {
       {legend}
       {schedule.skipped_task_ids.length > 0 && (
         <p className="warning">
-          Did not fit: {schedule.skipped_task_ids.length === 1 ? "task" : "tasks"}{" "}
-          {schedule.skipped_task_ids.map((id) => `#${id}`).join(", ")}.
+          Did not fit:{" "}
+          {schedule.skipped_task_ids
+            .map((id) => {
+              const name = tasks.find((task) => task.id === id)?.name;
+              return name ? `#${id} ${name}` : `#${id}`;
+            })
+            .join(", ")}
+          .
         </p>
       )}
       {schedule.skipped_routines.length > 0 && (

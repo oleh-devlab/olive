@@ -77,4 +77,6 @@ export interface SolvedSchedule {
   items: ScheduleEntry[];
   skipped_task_ids: number[];
   skipped_routines: string[];
+  // How often the bot calculates it again on its own, or null when it does not.
+  update_seconds: number | null;
 }

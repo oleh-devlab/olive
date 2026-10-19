@@ -277,8 +277,12 @@ class ItemKind:
         }
 
 
-def schedule_to_json(schedule: SolvedSchedule) -> dict:
-    """A solve as the page draws it: what goes where and when, and what did not fit."""
+def schedule_to_json(schedule: SolvedSchedule, update_seconds: float | None = None) -> dict:
+    """A solve as the page draws it: what goes where and when, and what did not fit.
+
+    Along with it, how often the bot solves again on its own -- the Discord
+    message says so above the schedule, and so does the page.
+    """
     return {
         "computed_at": schedule.computed_at.isoformat(timespec="seconds") if schedule.computed_at else None,
         "status": schedule.status,
@@ -298,6 +302,7 @@ def schedule_to_json(schedule: SolvedSchedule) -> dict:
         ],
         "skipped_task_ids": list(schedule.skipped_task_ids),
         "skipped_routines": list(schedule.skipped_routines),
+        "update_seconds": update_seconds,
     }
 
 
@@ -337,6 +342,7 @@ class ScheduleWebApp:
         on_change: Callable[[int], None],
         static_dir: Path | None = None,
         get_schedule: Callable[..., Awaitable[SolvedSchedule]] | None = None,
+        update_interval: Callable[[], float | None] = lambda: None,
     ):
         self.provider = provider
         self.oauth = oauth
@@ -348,6 +354,9 @@ class ScheduleWebApp:
         self.on_change = on_change
         self.static_dir = static_dir or STATIC_DIR
         self.get_schedule = get_schedule or get_solved_schedule
+        # How often the bot solves again on its own, in seconds, asked each time
+        # rather than kept: None while nothing does.
+        self.update_interval = update_interval
 
         # Keyed by the path each kind is served under.
         self.kinds = {
@@ -567,7 +576,7 @@ class ScheduleWebApp:
     async def schedule(self, request: web.Request) -> web.Response:
         """The last solve, or a new one if the data has changed since: cheap whenever nothing has."""
         user_id = self._user_id(request)
-        return web.json_response(schedule_to_json(await self._solved(user_id, force=False)))
+        return web.json_response(schedule_to_json(await self._solved(user_id, force=False), self.update_interval()))
 
     async def recalculate_schedule(self, request: web.Request) -> web.Response:
         """A new solve whatever the data, for a schedule that starts now rather than at the last one."""
@@ -577,7 +586,7 @@ class ScheduleWebApp:
         # The Discord message redraws from the solve just made: the engine keeps
         # it, and nothing has changed since, so that costs no second solve.
         self._changed(user_id)
-        return web.json_response(schedule_to_json(schedule))
+        return web.json_response(schedule_to_json(schedule, self.update_interval()))
 
     async def _solved(self, user_id: int, force: bool) -> SolvedSchedule:
         try:

@@ -31,6 +31,11 @@ sys.modules.setdefault("settings", types.ModuleType("settings"))
 
 import settings  # noqa: E402
 
+# The schedule loop's error handler takes `channels` from it at import.
+if not hasattr(settings, "channels"):
+    settings.channels = {}
+
+import cogs.schedule.loop as loop_cog  # noqa: E402
 import cogs.schedule.web as web_cog  # noqa: E402
 from core.time_utils import tz  # noqa: E402
 from core.web_auth import OAuthError, SessionSigner  # noqa: E402
@@ -114,6 +119,7 @@ class WebTestCase(unittest.IsolatedAsyncioTestCase):
             on_change=self.redrawn.append,
             static_dir=stand_in_page(Path(tmp.name) / "page"),
             get_schedule=self.solve,
+            update_interval=lambda: 600.0,
         ).make_app()
 
         self.client = TestClient(TestServer(app))
@@ -533,6 +539,7 @@ class TestSchedule(SignedInTestCase):
                 ],
                 "skipped_task_ids": [9],
                 "skipped_routines": ["Stretch: 21.10"],
+                "update_seconds": 600.0,
             },
         )
 
@@ -873,6 +880,16 @@ class TestCog(unittest.IsolatedAsyncioTestCase):
     def test_only_an_owner_of_a_schedule_channel_may_sign_in(self):
         self.assertTrue(web_cog.has_schedule_channel(USER))
         self.assertFalse(web_cog.has_schedule_channel(OTHER_USER))
+
+    def test_how_often_the_schedule_is_solved_again_is_the_loops_own_interval(self):
+        loop = mock.Mock(hours=0, minutes=10, seconds=30)
+        self.bot.get_cog.return_value = mock.Mock(main_loop=loop)
+        self.assertEqual(self.cog.update_interval(), 630)
+        self.bot.get_cog.assert_called_with(loop_cog.ScheduleMessageLoop.__cog_name__)
+
+    def test_without_the_loop_nothing_solves_again_on_its_own(self):
+        self.bot.get_cog.return_value = None
+        self.assertIsNone(self.cog.update_interval())
 
     def test_a_write_redraws_the_owners_schedule_message(self):
         self.cog.redraw_schedule(USER)

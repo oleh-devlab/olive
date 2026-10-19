@@ -441,7 +441,9 @@ dialog input {
   border-color: var(--accent);
 }
 
-.schedule-solve .muted {
+/* What the Discord message says above the schedule. */
+.schedule-facts {
+  margin: -2px 0 10px;
   font-size: 13px;
 }
 

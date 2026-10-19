@@ -234,6 +234,7 @@ export default function App({ loginError }: { loginError?: string }) {
                 initialSpan={daysShown}
                 onSpanChange={keepDays}
                 onSolved={setSolved}
+                tasks={tasks}
               />
             </div>
 
