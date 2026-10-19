@@ -1,11 +1,12 @@
 import logging
+from collections.abc import Callable
 from datetime import date as date_type
 from datetime import datetime
 
 import disnake
-import settings
 from disnake.ext import commands
 
+from cogs.schedule.loop import update_interval
 from core import cache
 from core.paged_message import Page, PageSource, PaginationView, blank_buttons, ensure_controller
 from core.time_utils import tz
@@ -63,6 +64,11 @@ class SchedulePageSource(PageSource):
     view_prefix = "schedule"
     phrases_section = "schedule"
 
+    def __init__(self, update_interval: Callable[[], float | None] = lambda: None):
+        # How often the schedule is solved again on its own, in seconds, asked
+        # each time a page is drawn: None while nothing does.
+        self.update_interval = update_interval
+
     def phrases(self, guild_id: int | None) -> dict:
         return get_phrases(guild_id).get(self.phrases_section, {})
 
@@ -107,7 +113,7 @@ class SchedulePageSource(PageSource):
         notes: str = "",
     ) -> str:
         """One page's message text. Called with an empty body to price the frame."""
-        update_seconds = getattr(settings, "schedule_loop_update_seconds", None)
+        update_seconds = self.update_interval()
 
         # The time the schedule was solved, not shown: a page built from the last
         # solve would otherwise claim to be newer than it is.
@@ -121,7 +127,7 @@ class SchedulePageSource(PageSource):
             planning_days=schedule.planning_days,
             perf_time=schedule.solve_time,
             status_text=schedule.status,
-            update_mins=str(update_seconds // 60) if update_seconds else "N/A",
+            update_mins=str(round(update_seconds / 60)) if update_seconds else "N/A",
         )
 
         content += notes
@@ -188,7 +194,7 @@ class SchedulePageSource(PageSource):
 class ScheduleUI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.source = SchedulePageSource()
+        self.source = SchedulePageSource(update_interval=lambda: update_interval(bot))
 
     async def cog_load(self):
         # Persistent view: the pager keeps working across restarts. The skip

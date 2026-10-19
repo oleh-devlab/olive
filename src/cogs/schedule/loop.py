@@ -29,5 +29,18 @@ class ScheduleMessageLoop(PersonalChannelLoopCog):
             cache.tasks_channels[tasks_channel_id] = user_id
 
 
+def update_interval(bot: commands.Bot) -> float | None:
+    """How often the loop solves every schedule again, off the running loop itself.
+
+    None while it is not loaded: then nothing solves again on its own, whatever
+    `settings` says.
+    """
+    cog = bot.get_cog(ScheduleMessageLoop.__cog_name__)
+    if cog is None:
+        return None
+    loop = cog.main_loop
+    return (loop.hours or 0) * 3600 + (loop.minutes or 0) * 60 + (loop.seconds or 0)
+
+
 def setup(bot: commands.Bot) -> None:
     bot.add_cog(ScheduleMessageLoop(bot))

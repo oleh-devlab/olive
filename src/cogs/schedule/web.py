@@ -18,6 +18,7 @@ import settings
 from aiohttp import web
 from disnake.ext import commands
 
+from cogs.schedule.loop import update_interval
 from core.token_manager import token_registry
 from core.web_auth import DiscordOAuth, SessionSigner
 from modules.schedule_provider import ScheduleProvider, channels_registry
@@ -69,7 +70,7 @@ class ScheduleWebServer(commands.Cog):
             base_url=base_url,
             is_allowed=has_schedule_channel,
             on_change=self.redraw_schedule,
-            update_interval=self.update_interval,
+            update_interval=lambda: update_interval(self.bot),
         ).make_app()
 
         host = getattr(settings, "schedule_web_host", "127.0.0.1")
@@ -98,14 +99,6 @@ class ScheduleWebServer(commands.Cog):
         if self.runner is not None:
             self.cleanup_task = asyncio.create_task(self.runner.cleanup())
             self.runner = None
-
-    def update_interval(self) -> float | None:
-        """How often the schedule loop solves again, off the loop itself: None while it is not loaded."""
-        cog = self.bot.get_cog("ScheduleMessageLoop")
-        if cog is None:
-            return None
-        loop = cog.main_loop
-        return (loop.hours or 0) * 3600 + (loop.minutes or 0) * 60 + (loop.seconds or 0)
 
     def redraw_schedule(self, user_id: int):
         channel_id = self.provider.get_schedule_channel_id(user_id)

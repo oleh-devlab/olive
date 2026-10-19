@@ -47,9 +47,9 @@ def item(kind: str, name: str, day_offset: int, hour: int, item_id: int) -> Sche
     )
 
 
-async def build(items: list[ScheduleItem], **solved_fields):
+async def build(items: list[ScheduleItem], update_seconds: float | None = None, **solved_fields):
     """The pages the cog would publish for this solve."""
-    source = ui.SchedulePageSource()
+    source = ui.SchedulePageSource(update_interval=lambda: update_seconds)
     source.phrases = lambda guild_id: {}
     solved = SolvedSchedule(items=items, solve_time=0.1, planning_days=7, status="OPTIMAL", **solved_fields)
 
@@ -131,6 +131,37 @@ class TestSkipButtons(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(view.children), PaginationView.MAX_COMPONENTS)
         self.assertEqual([len(row["components"]) for row in view.to_components()], [5, 5, 5, 5, 5])
+
+
+class TestAutoUpdates(unittest.IsolatedAsyncioTestCase):
+    """How often the message says it updates is how often the loop really runs."""
+
+    async def test_the_page_says_how_often_the_loop_solves_again(self):
+        _, pages = await build([item("task", "Report", 0, 10, 1)], update_seconds=600.0)
+        self.assertIn("Auto-updates every 10 min", pages[0].content)
+
+    async def test_without_the_loop_the_page_says_it_does_not_update_on_its_own(self):
+        _, pages = await build([item("task", "Report", 0, 10, 1)], update_seconds=None)
+        self.assertIn("Auto-updates every N/A min", pages[0].content)
+
+    def test_the_interval_is_read_off_the_running_loop(self):
+        bot = mock.Mock()
+        bot.get_cog.return_value = mock.Mock(main_loop=mock.Mock(hours=0, minutes=10, seconds=30))
+        self.assertEqual(loop.update_interval(bot), 630)
+        bot.get_cog.assert_called_with(loop.ScheduleMessageLoop.__cog_name__)
+
+    def test_without_the_loop_loaded_nothing_solves_again_on_its_own(self):
+        bot = mock.Mock()
+        bot.get_cog.return_value = None
+        self.assertIsNone(loop.update_interval(bot))
+
+    def test_the_cog_asks_the_loop_each_time_a_page_is_drawn(self):
+        bot = mock.Mock()
+        bot.get_cog.return_value = None
+        source = ui.ScheduleUI(bot).source
+        self.assertIsNone(source.update_interval())
+        bot.get_cog.return_value = mock.Mock(main_loop=mock.Mock(hours=None, minutes=None, seconds=900.0))
+        self.assertEqual(source.update_interval(), 900.0)
 
 
 if __name__ == "__main__":
