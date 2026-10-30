@@ -288,7 +288,6 @@ function MinutesField({
           max={MAX_MIN}
           inputMode="numeric"
           aria-label={`${label}, minutes`}
-          title="Minutes"
           value={draft ?? String(value)}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
@@ -297,6 +296,7 @@ function MinutesField({
             if (event.key === "Escape") setDraft(null);
           }}
         />
+        min
       </label>
       <button type="button" title={`${STEP_MIN} min more`} onClick={() => onChange(Math.min(MAX_MIN, value + STEP_MIN))}>
         +{STEP_MIN}

@@ -235,13 +235,17 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   // A day too narrow to break a name into words, such as a week on a phone,
   // keeps it to one line, cut short.
   const narrow = dayWidth < MIN_WRAP_DAY_PX;
-  const axis = buildAxis(segments, range, (segment) =>
-    segment.entry.type === "time_block"
-      ? LINE_PX
-      : narrow
-        ? ENTRY_PX
-      : ENTRY_PX + (nameLines(entryLabel(segment.entry), dayWidth / segment.lanes - ENTRY_INSET_PX) - 1) * NAME_LINE_PX,
-  );
+  // The lines each task's or routine's name is given: the room the axis makes
+  // for it, and what the entry clamps it to, so its times always stay in sight.
+  const lines = new Map<Segment, number>();
+  for (const segment of segments) {
+    if (segment.entry.type === "time_block") continue;
+    lines.set(segment, narrow ? 1 : nameLines(segment.entry, dayWidth / segment.lanes - ENTRY_INSET_PX));
+  }
+  const axis = buildAxis(segments, range, (segment) => {
+    const given = lines.get(segment);
+    return given === undefined ? LINE_PX : ENTRY_PX + (given - 1) * NAME_LINE_PX;
+  });
   const nowShown = present.minute >= range.from && present.minute <= range.to;
 
   const [screen, setScreen] = useState(() => window.innerHeight);
@@ -309,7 +313,7 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
               <div className="calendar-past" style={{ height: axis.y(Math.min(present.minute, range.to)) }} />
             )}
             {(byDay.get(day) ?? []).map((segment, index) => (
-              <Entry key={index} segment={segment} range={range} y={axis.y} />
+              <Entry key={index} segment={segment} range={range} y={axis.y} lines={lines.get(segment) ?? 1} />
             ))}
             {day === present.day && nowShown && (
               <div className="calendar-now" style={{ top: axis.y(present.minute) }} title="Now" />
@@ -330,15 +334,12 @@ function labelParts(entry: ScheduleEntry): { id: string; session: string } {
   };
 }
 
-function entryLabel(entry: ScheduleEntry): string {
-  const { id, session } = labelParts(entry);
-  return `${id}${entry.name || KINDS[entry.type]}${session}`;
-}
-
-// How an entry's name is set (the stylesheet has the same): its font, the
-// height of a line of it, the most lines it wraps to, and the width its
-// border and padding take from the day's.
+// How an entry's name is set (the stylesheet has the same): its fonts -- the
+// name bold, its number and session not -- the height of a line of it, the
+// most lines it wraps to, and the width its border and padding take from the
+// day's.
 const NAME_FONT = "600 12px";
+const LABEL_FONT = "400 12px";
 const NAME_LINE_PX = 15.6;
 const MAX_NAME_LINES = 3;
 const ENTRY_INSET_PX = 14;
@@ -346,20 +347,36 @@ const ENTRY_INSET_PX = 14;
 const MIN_WRAP_DAY_PX = 90;
 
 let measurer: CanvasRenderingContext2D | null = null;
+let family = "";
 
-// How many lines a name wraps to in `width` pixels, word by word as the
-// browser does it, a word too long for a line broken anywhere.
-function nameLines(text: string, width: number): number {
+// How many lines an entry's name line wraps to in `width` pixels, word by
+// word as the browser does it, a word too long for a line broken anywhere.
+// Only an estimate: the entry clamps the name to it, so a browser that needs
+// a line more cuts the name short rather than pushing its times out of sight.
+function nameLines(entry: ScheduleEntry, width: number): number {
   if (!measurer) {
     measurer = document.createElement("canvas").getContext("2d");
     if (!measurer) return 1;
-    measurer.font = `${NAME_FONT} ${getComputedStyle(document.body).fontFamily}`;
+    family = getComputedStyle(document.body).fontFamily;
   }
   if (width <= 0) return 1;
-  const space = measurer.measureText(" ").width;
+  const { id, session } = labelParts(entry);
+  const words = (text: string, font: string) =>
+    text
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => ({ word, font: `${font} ${family}` }));
+  const all = [
+    ...words(id, LABEL_FONT),
+    ...words(entry.name || KINDS[entry.type], NAME_FONT),
+    ...words(session, LABEL_FONT),
+  ];
+
   let lines = 1;
   let line = 0;
-  for (const word of text.split(/\s+/).filter(Boolean)) {
+  for (const { word, font } of all) {
+    measurer.font = font;
+    const space = measurer.measureText(" ").width;
     const w = measurer.measureText(word).width;
     if (line > 0 && line + space + w <= width) {
       line += space + w;
@@ -372,7 +389,15 @@ function nameLines(text: string, width: number): number {
   return Math.min(Math.max(lines, 1), MAX_NAME_LINES);
 }
 
-function Entry({ segment, range, y }: { segment: Segment; range: Range; y: (minute: number) => number }) {
+interface EntryProps {
+  segment: Segment;
+  range: Range;
+  y: (minute: number) => number;
+  // The lines its name may take, which the calendar made room for.
+  lines: number;
+}
+
+function Entry({ segment, range, y, lines }: EntryProps) {
   // A block can reach past the hours shown; only what is inside them is drawn.
   const shown = clip(segment, range);
   if (!shown) return null;
@@ -393,7 +418,8 @@ function Entry({ segment, range, y }: { segment: Segment; range: Range; y: (minu
         height: y(shown.to) - y(shown.from),
         left: `${(segment.lane / segment.lanes) * 100}%`,
         width: `${100 / segment.lanes}%`,
-      }}
+        "--name-lines": lines,
+      } as CSSProperties}
       title={`${KINDS[entry.type]}: ${id}${name}${session}\n${times}`}
     >
       <span className="entry-name">

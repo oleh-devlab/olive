@@ -642,13 +642,14 @@ dialog input {
   font-weight: 600;
 }
 
-/* A task's or a routine's name wraps, up to as many lines as Schedule.tsx
-   gives it room for (MAX_NAME_LINES) -- unless the day is too narrow to
-   break it into words; the tooltip has the rest. */
+/* A task's or a routine's name wraps onto as many lines as Schedule.tsx made
+   room for (--name-lines, at most MAX_NAME_LINES), and no more, so that its
+   times stay in sight -- unless the day is too narrow to break it into words;
+   the tooltip has the rest. */
 .calendar:not(.narrow) .entry:not(.entry-time_block) .entry-name {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: var(--name-lines, 3);
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -835,10 +836,17 @@ dialog input {
 .panel-set {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+}
+
+/* Its buttons a little narrower than elsewhere, so that the row's label
+   keeps its width and the two rows line up. */
+.panel-set button {
+  padding-inline: 6px;
 }
 
 .panel-set-label {
+  flex-shrink: 0;
   width: 46px;
   font-size: 12.5px;
   color: var(--muted);
@@ -854,12 +862,16 @@ dialog input {
 .panel-set label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  font-size: 12.5px;
   color: var(--muted);
 }
 
+/* Three digits, MAX_MIN's, and no more: "min" beside it, and a Log button
+   after, still fit in the panel's width. */
 .panel-set input {
-  width: 52px;
+  width: 42px;
+  padding-inline: 4px;
   text-align: right;
 }
 
