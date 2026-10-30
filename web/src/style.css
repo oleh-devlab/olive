@@ -50,7 +50,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 .bar {
@@ -58,14 +58,14 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 6px 12px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
 .bar h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
 }
 
 .who {
@@ -77,14 +77,14 @@ body {
 
 main {
   /* The whole width: the calendar is what gains from it. */
-  padding: 16px;
+  padding: 10px 12px;
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 12px;
 }
 
 #login-view {
@@ -97,8 +97,8 @@ main {
 }
 
 .hint {
-  margin-top: 0;
-  font-size: 14px;
+  margin: 0 0 6px;
+  font-size: 12.5px;
 }
 
 .error {
@@ -106,8 +106,11 @@ main {
 }
 
 .status {
-  min-height: 1.45em;
-  margin: 0 0 8px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .status.ok {
@@ -140,7 +143,7 @@ button,
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 4px 10px;
+  padding: 2px 8px;
   cursor: pointer;
   text-decoration: none;
 }
@@ -175,18 +178,26 @@ button.link:hover {
 
 /* --- Tabs --- */
 
+/* The tabs on the left of the row, and the status after them. */
+.tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
 .tabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 2px;
 }
 
 .tabs button {
   border: none;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  padding: 8px 12px;
+  padding: 5px 10px;
   color: var(--muted);
 }
 
@@ -224,7 +235,7 @@ table {
 
 th,
 td {
-  padding: 6px;
+  padding: 3px 6px;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
@@ -290,12 +301,15 @@ tfoot tr.new td {
   text-align: right;
 }
 
+/* Small enough not to make the row taller than its text. */
 .actions button {
-  padding: 4px 8px;
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .actions button + button {
-  margin-left: 4px;
+  margin-left: 3px;
 }
 
 /* --- Inputs --- */
@@ -307,7 +321,7 @@ select {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 3px 6px;
+  padding: 1px 5px;
   width: 100%;
 }
 
@@ -370,7 +384,8 @@ select {
 /* --- History and dialog --- */
 
 #history {
-  margin-top: 16px;
+  margin-top: 8px;
+  font-size: 13px;
 }
 
 #history summary {
@@ -378,9 +393,15 @@ select {
   color: var(--muted);
 }
 
+/* One run of names that wraps, rather than a line each. */
 #history ul {
-  margin: 8px 0 0;
-  padding-left: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
 }
 
 dialog {
@@ -409,8 +430,8 @@ dialog input {
 /* --- Schedule --- */
 
 .schedule {
-  margin-bottom: 16px;
-  padding: 12px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
 }
 
 .schedule-bar {
@@ -418,8 +439,8 @@ dialog input {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 16px;
-  margin-bottom: 10px;
+  gap: 6px 16px;
+  margin-bottom: 4px;
 }
 
 .schedule-nav,
@@ -441,10 +462,15 @@ dialog input {
   border-color: var(--accent);
 }
 
-/* What the Discord message says above the schedule. */
+/* What the Discord message says above the schedule, and the legend after it. */
 .schedule-facts {
-  margin: -2px 0 10px;
-  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 16px;
+  margin: 0 0 4px;
+  font-size: 12.5px;
 }
 
 .schedule button:disabled {
@@ -473,7 +499,7 @@ dialog input {
 }
 
 .calendar-head span {
-  padding: 4px 6px;
+  padding: 3px 6px;
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
@@ -612,9 +638,21 @@ dialog input {
    line; its tooltip still says it all. The heights are of what is inside the
    border and padding: two lines of text, one, and one at a smaller size. */
 @container (height < 31px) {
-  .entry-time {
+  .calendar:not(.one-line) .entry-time {
     display: none;
   }
+}
+
+/* A day wide enough says an entry's times and its name on one line, the
+   times first: they are what the eye runs down, and never cut short. */
+.calendar.one-line .entry {
+  display: flex;
+  gap: 6px;
+}
+
+.calendar.one-line .entry-time {
+  flex-shrink: 0;
+  order: -1;
 }
 
 @container (height < 16px) {
@@ -660,18 +698,22 @@ dialog input {
 }
 
 .calendar-notes {
-  margin-top: 8px;
-  font-size: 13px;
+  margin-top: 4px;
+  font-size: 12.5px;
 }
 
 .calendar-notes p {
-  margin: 6px 0 0;
+  margin: 0;
+}
+
+.calendar-notes .warning span + span {
+  margin-left: 12px;
 }
 
 .calendar-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 2px 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -696,9 +738,9 @@ dialog input {
    the breakpoint (App.tsx has the same one) it goes above the calendar instead. */
 .workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 16px;
-  margin-bottom: 16px;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .workspace.panel-closed {
@@ -711,12 +753,12 @@ dialog input {
 }
 
 .panel {
-  padding: 12px;
+  padding: 10px;
 }
 
 .panel-body {
   position: sticky;
-  top: 16px;
+  top: 10px;
 }
 
 .panel-head {
@@ -740,7 +782,7 @@ dialog input {
 }
 
 .panel-task {
-  margin: 12px 0 8px;
+  margin: 6px 0 4px;
 }
 
 .panel-when,
@@ -758,8 +800,8 @@ dialog input {
 }
 
 .panel .panel-clock {
-  margin: 8px 0;
-  font-size: 40px;
+  margin: 4px 0;
+  font-size: 32px;
   font-weight: 600;
   line-height: 1.1;
   text-align: center;
@@ -772,26 +814,25 @@ dialog input {
 
 .panel .panel-clock.finished {
   color: var(--danger);
-  font-size: 28px;
+  font-size: 24px;
 }
 
 .panel-set {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .panel-set-label {
-  width: 48px;
-  font-size: 13px;
+  width: 46px;
+  font-size: 12.5px;
   color: var(--muted);
 }
 
 /* Minutes logged by hand, set apart from the timer. */
 .panel-log {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
 }
 
@@ -803,7 +844,7 @@ dialog input {
 }
 
 .panel-set input {
-  width: 64px;
+  width: 52px;
   text-align: right;
 }
 
@@ -812,8 +853,8 @@ dialog input {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .panel button:disabled {
@@ -849,6 +890,10 @@ dialog input {
 }
 
 @media (max-width: 759px) {
+  main {
+    padding: 8px;
+  }
+
   .workspace,
   .workspace.panel-closed {
     grid-template-columns: minmax(0, 1fr);

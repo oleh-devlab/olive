@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { api } from "./api";
 import {
@@ -9,6 +9,7 @@ import {
   dayOf,
   hourRange,
   minuteOf,
+  ONE_LINE_DAY_PX,
   plannedDays,
   segmentsByDay,
   shortDate,
@@ -163,7 +164,10 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, t
           </button>
         </div>
       </div>
-      <p className="schedule-facts muted">{solveFacts(schedule)}</p>
+      <div className="schedule-facts muted">
+        <span>{solveFacts(schedule)}</span>
+        {schedule.status !== "NO_DATA" && <Legend />}
+      </div>
 
       {hours ? (
         <CalendarGrid days={shown} byDay={byDay} hours={hours} present={present} />
@@ -184,7 +188,9 @@ type Range = { from: number; to: number };
 // less the bars above it, the day names' row included in the calendar's height.
 const ROOM_MARGIN_PX = 170;
 const MIN_ROOM_PX = 320;
-const HEAD_PX = 30;
+const HEAD_PX = 26;
+// The hours' column down the calendar's left (the stylesheet has the same).
+const HOURS_PX = 44;
 // A calendar up to this much taller than its room grows instead, the page
 // scrolling for it: a scrollbar of its own would only move it a few pixels.
 const GROWTH = 1.25;
@@ -202,7 +208,20 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   const scroller = useRef<HTMLDivElement>(null);
   const range = { from: fromHour * 60, to: toHour * 60 };
   const segments = days.flatMap((day) => byDay.get(day) ?? []);
-  const axis = buildAxis(segments, range);
+
+  // How wide a day is decides whether an entry says its times beside its name
+  // or below it, and so how tall the calendar is: measured before it is drawn.
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const box = scroller.current;
+    if (!box) return;
+    setWidth(box.clientWidth);
+    const observer = new ResizeObserver(() => setWidth(box.clientWidth));
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+  const oneLine = (width - HOURS_PX) / days.length >= ONE_LINE_DAY_PX;
+  const axis = buildAxis(segments, range, oneLine);
   const nowShown = present.minute >= range.from && present.minute <= range.to;
 
   const [screen, setScreen] = useState(() => window.innerHeight);
@@ -229,7 +248,7 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
 
   return (
     <div
-      className={scrolls ? "calendar scrolls" : "calendar"}
+      className={`calendar${scrolls ? " scrolls" : ""}${oneLine ? " one-line" : ""}`}
       ref={scroller}
       style={{ "--days": days.length, maxHeight: scrolls ? room : undefined } as CSSProperties}
     >
@@ -339,8 +358,8 @@ function every(seconds: number): string {
   return `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
 }
 
-function Notes({ schedule, tasks }: { schedule: SolvedSchedule; tasks: Task[] }) {
-  const legend = (
+function Legend() {
+  return (
     <ul className="calendar-legend" aria-label="Legend">
       {Object.entries(KINDS).map(([type, kind]) => (
         <li key={type}>
@@ -350,7 +369,11 @@ function Notes({ schedule, tasks }: { schedule: SolvedSchedule; tasks: Task[] })
       ))}
     </ul>
   );
+}
 
+// What did not fit, under the calendar: one line for the tasks and the
+// routines both, and nothing at all when everything did.
+function Notes({ schedule, tasks }: { schedule: SolvedSchedule; tasks: Task[] }) {
   if (schedule.status === "NO_DATA") {
     return (
       <div className="calendar-notes">
@@ -359,24 +382,18 @@ function Notes({ schedule, tasks }: { schedule: SolvedSchedule; tasks: Task[] })
     );
   }
 
+  const skippedTasks = schedule.skipped_task_ids.map((id) => {
+    const name = tasks.find((task) => task.id === id)?.name;
+    return name ? `#${id} ${name}` : `#${id}`;
+  });
+  if (!skippedTasks.length && !schedule.skipped_routines.length) return null;
+
   return (
     <div className="calendar-notes">
-      {legend}
-      {schedule.skipped_task_ids.length > 0 && (
-        <p className="warning">
-          Did not fit:{" "}
-          {schedule.skipped_task_ids
-            .map((id) => {
-              const name = tasks.find((task) => task.id === id)?.name;
-              return name ? `#${id} ${name}` : `#${id}`;
-            })
-            .join(", ")}
-          .
-        </p>
-      )}
-      {schedule.skipped_routines.length > 0 && (
-        <p className="warning">Routines missed: {schedule.skipped_routines.join("; ")}.</p>
-      )}
+      <p className="warning">
+        {skippedTasks.length > 0 && <span>Did not fit: {skippedTasks.join(", ")}.</span>}
+        {schedule.skipped_routines.length > 0 && <span>Routines missed: {schedule.skipped_routines.join("; ")}.</span>}
+      </p>
     </div>
   );
 }

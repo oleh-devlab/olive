@@ -25,7 +25,7 @@ const TABS = [
 // The timer's panel: beside the calendar on a wide screen, above it on a
 // narrow one (the stylesheet's breakpoint is the same), folded to a strip or not.
 const STACKED_BELOW_PX = 760;
-const PANEL_PX = 280;
+const PANEL_PX = 248;
 const STRIP_PX = 36;
 // The only two things the page keeps in the browser: whether the panel was
 // left folded, and how many days the calendar was last set to show.
@@ -238,23 +238,26 @@ export default function App({ loginError }: { loginError?: string }) {
               />
             </div>
 
-            <nav className="tabs" role="tablist">
-              {TABS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  data-tab={item.id}
-                  aria-selected={tab === item.id}
-                  onClick={() => setTab(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-            <p id="status" className={`status ${status.kind}`} role="status" aria-live="polite">
-              {status.text}
-            </p>
+            {/* The status shares the tabs' row rather than taking one of its own. */}
+            <div className="tabs-bar">
+              <nav className="tabs" role="tablist">
+                {TABS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    data-tab={item.id}
+                    aria-selected={tab === item.id}
+                    onClick={() => setTab(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+              <p id="status" className={`status ${status.kind}`} role="status" aria-live="polite">
+                {status.text}
+              </p>
+            </div>
 
             <div id="tab-tasks" role="tabpanel" hidden={tab !== "tasks"}>
               <p className="muted hint">
@@ -271,7 +274,7 @@ export default function App({ loginError }: { loginError?: string }) {
                 renewOnVersion
                 actions={(task) => <Button text="⏱" title="Log time spent" onClick={() => setSpending(task)} />}
               />
-              <details id="history" className="card">
+              <details id="history">
                 <summary>
                   Completed (<span id="history-count">{completed.length}</span>)
                 </summary>

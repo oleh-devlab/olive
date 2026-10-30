@@ -10,9 +10,12 @@ export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const wallClock = (iso: string | null | undefined): string => (iso ? iso.slice(0, 16) : "");
 export const timeOf = (iso: string | null | undefined): string => (iso ? iso.slice(11, 16) : "");
 
+// The year only when it is not this one: the tables are narrower without it.
 export function displayDateTime(iso: string | null | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso || "");
-  return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : "—";
+  if (!m) return "—";
+  const year = Number(m[1]) === new Date().getFullYear() ? "" : `.${m[1]}`;
+  return `${m[3]}.${m[2]}${year} ${m[4]}:${m[5]}`;
 }
 
 export function isPast(iso: string | null | undefined): boolean {

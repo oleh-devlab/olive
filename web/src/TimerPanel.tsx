@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { botClock, clock, dayOf, minuteOf, shortDate } from "./calendar";
 import {
@@ -229,8 +229,7 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
             </div>
 
             <div className="panel-log">
-              <MinutesField label="To log" value={byHand} min={0} onChange={setByHand} />
-              <div className="panel-actions">
+              <MinutesField label="To log" value={byHand} min={0} onChange={setByHand}>
                 <button
                   type="button"
                   className="primary"
@@ -238,9 +237,9 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
                   title={`Log these minutes against #${timer.taskId}, as /task spend does`}
                   onClick={() => void logByHand()}
                 >
-                  Log {byHand} min
+                  Log
                 </button>
-              </div>
+              </MinutesField>
             </div>
           </>
         )}
@@ -250,17 +249,20 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
 }
 
 // A number of minutes, set by the 5-minute buttons or typed in. What is typed
-// counts once Enter is pressed or the field is left; Escape drops it.
+// counts once Enter is pressed or the field is left; Escape drops it. Anything
+// given as children goes at the end of the same row.
 function MinutesField({
   label,
   value,
   min,
   onChange,
+  children,
 }: {
   label: string;
   value: number;
   min: number;
   onChange: (minutes: number) => void;
+  children?: ReactNode;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
@@ -282,6 +284,7 @@ function MinutesField({
           max={MAX_MIN}
           inputMode="numeric"
           aria-label={`${label}, minutes`}
+          title="Minutes"
           value={draft ?? String(value)}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
@@ -289,12 +292,12 @@ function MinutesField({
             if (event.key === "Enter") commit();
             if (event.key === "Escape") setDraft(null);
           }}
-        />{" "}
-        min
+        />
       </label>
       <button type="button" title={`${STEP_MIN} min more`} onClick={() => onChange(Math.min(MAX_MIN, value + STEP_MIN))}>
         +{STEP_MIN}
       </button>
+      {children}
     </div>
   );
 }
