@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
 
 import { api } from "./api";
 import {
@@ -55,9 +54,6 @@ interface Props {
   // the reader says otherwise, and who is told when they do.
   initialScroll?: boolean;
   onScrollChange?: (on: boolean) => void;
-  // A place in the page's header, under the user's name, where how far ahead
-  // the schedule plans goes when that leaves the toolbar fewer rows.
-  headerSlot?: HTMLElement | null;
 }
 
 export function Schedule({
@@ -70,7 +66,6 @@ export function Schedule({
   toolbarSlot,
   initialScroll = true,
   onScrollChange,
-  headerSlot = null,
 }: Props) {
   const [schedule, setSchedule] = useState<SolvedSchedule | null>(null);
   const [recalculating, setRecalculating] = useState(false);
@@ -124,40 +119,6 @@ export function Schedule({
 
   const byDay = useMemo(() => segmentsByDay(schedule?.items ?? []), [schedule]);
 
-  // When and how the schedule was solved goes in the toolbar, where it stays
-  // only while it fits there whole; else it takes a line of its own below.
-  // Hidden rather than taken out, it keeps its place, so the measure holds.
-  const facts = schedule ? solveFacts(schedule) : "";
-  const factsInBar = useRef<HTMLSpanElement>(null);
-  const [factsFit, setFactsFit] = useState(true);
-  useLayoutEffect(() => {
-    const box = factsInBar.current;
-    if (!box) return;
-    const check = () => setFactsFit(box.scrollWidth <= box.clientWidth + 1);
-    check();
-    const observer = new ResizeObserver(check);
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, [facts]);
-
-  // How far ahead it plans and how often it is solved again go beside the
-  // button that recalculates, unless putting them in the header -- a line
-  // more there -- leaves the toolbar a row fewer, or its facts room to fit
-  // in it. Worked out from what each part is as wide as, which does not
-  // depend on where they are, so the choice stays put.
-  const plan = schedule ? planFacts(schedule) : "";
-  const bar = useRef<HTMLDivElement>(null);
-  const [planInHeader, setPlanInHeader] = useState(false);
-  useLayoutEffect(() => {
-    const box = bar.current;
-    if (!box || !headerSlot) return;
-    const decide = () => setPlanInHeader(headerSavesRoom(box));
-    decide();
-    const observer = new ResizeObserver(decide);
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, [facts, plan, headerSlot]);
-
   // The folded timer's place is there from the start: a schedule that never
   // loads must not take the way to the timer with it.
   if (!schedule) {
@@ -186,12 +147,9 @@ export function Schedule({
       ? `${weekdayOf(shown[0])} ${shortDate(shown[0])}`
       : `${shortDate(shown[0])} – ${shortDate(shown[shown.length - 1])}`;
 
-  const planned = <span className="plan-facts muted">{plan}</span>;
-
   return (
     <section id="schedule" className="card schedule" aria-label="Schedule">
-      {planInHeader && headerSlot && createPortal(planned, headerSlot)}
-      <div className="schedule-bar" ref={bar}>
+      <div className="schedule-bar">
         <div className="schedule-nav">
           <span className="timer-slot" ref={toolbarSlot} />
           <button
@@ -217,15 +175,6 @@ export function Schedule({
           </button>
           <span className="schedule-range">{label}</span>
         </div>
-
-        <span
-          ref={factsInBar}
-          className="schedule-facts-bar muted"
-          style={factsFit ? undefined : { visibility: "hidden" }}
-          aria-hidden={!factsFit}
-        >
-          {facts}
-        </span>
 
         <div className="schedule-span" role="group" aria-label="Days shown">
           {SPANS.map((count) => (
@@ -258,13 +207,11 @@ export function Schedule({
         {schedule.status !== "NO_DATA" && <Legend />}
 
         <div className="schedule-solve">
-          {!planInHeader && planned}
           <button type="button" className="primary" disabled={recalculating} onClick={() => void recalculate()}>
             {recalculating ? "Calculating…" : "Recalculate"}
           </button>
         </div>
       </div>
-      {!factsFit && <p className="schedule-facts muted">{facts}</p>}
 
       {hours ? (
         <CalendarGrid days={shown} byDay={byDay} hours={hours} present={present} scrollInside={scrollInside} />
@@ -281,55 +228,6 @@ export function Schedule({
 
 type Range = { from: number; to: number };
 
-// What the choice weighs, roughly: a row of the toolbar and the gap above it,
-// the line its facts take below it when they do not fit in it, and the line
-// the header grows by. And the gaps the stylesheet puts between the parts.
-const BAR_ROW_PX = 32;
-const FACTS_LINE_PX = 21;
-const HEADER_LINE_PX = 17;
-const BAR_GAP_PX = 14;
-const SOLVE_GAP_PX = 6;
-
-// Whether the toolbar takes less room, header included, with how far ahead
-// the schedule plans in the header. It lays the toolbar's parts out the way
-// the stylesheet wraps them, both ways: the facts take what is left of the
-// first row and fit there or go below; nothing else shrinks.
-function headerSavesRoom(bar: HTMLElement): boolean {
-  const widthOf = (selector: string): number => {
-    const element = document.querySelector(selector);
-    return element ? element.getBoundingClientRect().width : 0;
-  };
-  const plan = document.querySelector(".plan-facts");
-  const facts = bar.querySelector(".schedule-facts-bar");
-  if (!plan || !facts) return false;
-  // Its box, not its scrollWidth: in the header it is inline, which has none.
-  const planWidth = plan.getBoundingClientRect().width;
-  const recalculate = widthOf(".schedule-solve button");
-  const parts = [".schedule-nav", ".schedule-span", ".schedule-bar .calendar-legend"].map(widthOf).filter(Boolean);
-
-  const cost = (solve: number, header: boolean): number => {
-    // The facts come second and take no width of their own until laid out.
-    const widths = [parts[0], 0, ...parts.slice(1), solve];
-    let rows = 1;
-    let used = 0;
-    let firstRowLeft = 0;
-    for (const [index, width] of widths.entries()) {
-      const needed = used === 0 && index === 0 ? width : used + BAR_GAP_PX + width;
-      if (index > 0 && needed > bar.clientWidth) {
-        if (rows === 1) firstRowLeft = bar.clientWidth - used;
-        rows += 1;
-        used = width;
-      } else {
-        used = needed;
-      }
-    }
-    if (rows === 1) firstRowLeft = bar.clientWidth - used;
-    const factsFit = firstRowLeft >= facts.scrollWidth;
-    return rows * BAR_ROW_PX + (factsFit ? 0 : FACTS_LINE_PX) + (header ? HEADER_LINE_PX : 0);
-  };
-
-  return cost(recalculate, true) < cost(planWidth + SOLVE_GAP_PX + recalculate, false);
-}
 
 // The room the calendar has on the screen: the window from where the
 // calendar starts down, less what goes below it -- the line of what did not
@@ -656,9 +554,10 @@ function Entry({ segment, range, y, layout }: EntryProps) {
   );
 }
 
-// What the Discord message says above the schedule, in two parts: when it was
-// calculated and how long that took, and how the solver ended --
-function solveFacts(schedule: SolvedSchedule): string {
+// What the Discord message says above the schedule, in two parts, which the
+// page's header shows (App.tsx): when it was calculated and how long that
+// took, and how the solver ended --
+export function solveFacts(schedule: SolvedSchedule): string {
   const facts: string[] = [];
   if (schedule.computed_at) {
     const took = schedule.solve_time > 0 ? ` in ${schedule.solve_time.toFixed(2)} s` : "";
@@ -668,9 +567,9 @@ function solveFacts(schedule: SolvedSchedule): string {
   return facts.join(" · ");
 }
 
-// -- and, beside the button that recalculates it, how far ahead it plans at
-// the least and how often the bot calculates it again on its own.
-function planFacts(schedule: SolvedSchedule): string {
+// -- and how far ahead it plans at the least and how often the bot
+// calculates it again on its own.
+export function planFacts(schedule: SolvedSchedule): string {
   const facts: string[] = [];
   if (schedule.planning_days > 0) facts.push(`horizon ${schedule.planning_days} ${schedule.planning_days === 1 ? "day" : "days"}`);
   if (schedule.update_seconds) facts.push(`updates every ${every(schedule.update_seconds)}`);

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "./api";
 import { SkipDialog, SpendDialog } from "./dialogs";
-import { Schedule } from "./Schedule";
+import { Schedule, planFacts, solveFacts } from "./Schedule";
 import { Button, Table } from "./Table";
 import { ROUTINES, TASKS, TIME_BLOCKS } from "./tables";
 import { TimerPanel } from "./TimerPanel";
@@ -95,6 +95,49 @@ function daysAtStart(panelOpen: boolean): number {
   return room / 3 >= MIN_DAY_PX ? 3 : 1;
 }
 
+// How the header holds what the Discord message says above the schedule:
+// all on its one line, between the title and the user's name ("line"); with
+// how far ahead it plans moved under the name ("stacked"); or, when not even
+// that fits, as on a phone, when it was solved on a line of its own below
+// ("below"). Each is tried in that order, from the widths of the parts --
+// which do not change with where the text goes, so the choice holds still.
+type HeaderLayout = "line" | "stacked" | "below";
+const HEADER_GAP_PX = 12;
+
+let measurer: CanvasRenderingContext2D | null = null;
+
+function textWidth(text: string, like: Element): number {
+  if (!text) return 0;
+  measurer ??= document.createElement("canvas").getContext("2d");
+  if (!measurer) return 0;
+  const style = getComputedStyle(like);
+  measurer.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  return measurer.measureText(text).width;
+}
+
+function layOutHeader(header: HTMLElement, solved: string, plan: string): HeaderLayout {
+  const facts = header.querySelector(".head-facts");
+  const title = header.querySelector("h1");
+  const who = header.querySelector(".who-line");
+  if (!facts || !title || !who) return "line";
+  const style = getComputedStyle(header);
+  const room = header.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const titleWidth = title.getBoundingClientRect().width;
+  const whoWidth = who.getBoundingClientRect().width;
+  const solvedWidth = textWidth(solved, facts);
+  const planWidth = textWidth(plan, facts);
+  const separator = plan && solved ? textWidth(SEPARATOR, facts) : 0;
+  // A pixel each way of what a canvas and the page may round differently.
+  const fits = (...widths: number[]) =>
+    widths.reduce((sum, width) => sum + width, 0) + HEADER_GAP_PX * (widths.length - 1) + 2 <= room;
+
+  if (fits(titleWidth, solvedWidth + separator + planWidth, whoWidth)) return "line";
+  if (fits(titleWidth, solvedWidth, Math.max(whoWidth, planWidth))) return "stacked";
+  return "below";
+}
+
+const SEPARATOR = " · ";
+
 function tabFromHash(): string {
   const hash = window.location.hash.slice(1);
   return TABS.some((tab) => tab.id === hash) ? hash : "tasks";
@@ -114,13 +157,24 @@ export default function App({ loginError }: { loginError?: string }) {
   const [routinesVersion, setRoutinesVersion] = useState(0);
   const [scheduleVersion, setScheduleVersion] = useState(0);
   const [solved, setSolved] = useState<SolvedSchedule | null>(null);
+  const solvedFacts = solved ? solveFacts(solved) : "";
+  const plan = solved ? planFacts(solved) : "";
+  const header = useRef<HTMLElement>(null);
+  const [headerLayout, setHeaderLayout] = useState<HeaderLayout>("line");
+  useLayoutEffect(() => {
+    const box = header.current;
+    if (!box) return;
+    const decide = () => setHeaderLayout(layOutHeader(box, solvedFacts, plan));
+    decide();
+    const observer = new ResizeObserver(decide);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [solvedFacts, plan, view.kind]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [panelOpen, setPanelOpen] = useState(panelOpenAtStart);
   const [daysShown] = useState(() => daysAtStart(panelOpen));
   // Where the folded timer goes: a place in the calendar's toolbar.
   const [timerSlot, setTimerSlot] = useState<HTMLElement | null>(null);
-  // And a place under the user's name for what the schedule plans.
-  const [planSlot, setPlanSlot] = useState<HTMLElement | null>(null);
 
   const notify = useCallback((text: string) => setStatus({ text, kind: "ok" }), []);
 
@@ -214,19 +268,26 @@ export default function App({ loginError }: { loginError?: string }) {
 
   return (
     <>
-      <header className="bar">
+      {/* What the Discord message says above the schedule goes here rather
+          than above the calendar, which keeps its toolbar to its controls. */}
+      <header className={`bar header-${headerLayout}`} ref={header}>
         <h1>Schedule</h1>
         {view.kind === "app" && (
-          <div id="who" className="who">
-            <div className="who-line">
-              <span id="who-name">{view.me.name}</span>
-              <button id="logout" type="button" className="link" onClick={() => void logout()}>
-                Log out
-              </button>
+          <>
+            <p className="head-facts muted">
+              {solvedFacts}
+              {headerLayout === "line" && plan && `${solvedFacts ? SEPARATOR : ""}${plan}`}
+            </p>
+            <div id="who" className="who">
+              <div className="who-line">
+                <span id="who-name">{view.me.name}</span>
+                <button id="logout" type="button" className="link" onClick={() => void logout()}>
+                  Log out
+                </button>
+              </div>
+              {headerLayout !== "line" && plan && <span className="head-plan muted">{plan}</span>}
             </div>
-            {/* Where the calendar puts how far ahead it plans, when that saves room. */}
-            <span className="who-plan" ref={setPlanSlot} />
-          </div>
+          </>
         )}
       </header>
 
@@ -265,7 +326,6 @@ export default function App({ loginError }: { loginError?: string }) {
               />
               <Schedule
                 toolbarSlot={setTimerSlot}
-                headerSlot={planSlot}
                 version={scheduleVersion}
                 fail={fail}
                 initialSpan={daysShown}

@@ -55,9 +55,10 @@ body {
 
 .bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 2px 12px;
   padding: 6px 12px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -81,20 +82,31 @@ body {
   gap: 8px;
 }
 
-/* How far ahead the schedule plans, under the user's name when the calendar
-   puts it there (Schedule.tsx, headerSavesRoom). */
-.who-plan {
+/* What the Discord message says above the schedule, between the title and
+   the user's name; App.tsx (layOutHeader) works out what fits where. The
+   header's gap is HEADER_GAP_PX there. */
+.head-facts {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* How far ahead it plans, under the user's name when not on the one line. */
+.head-plan {
   font-size: 12px;
   line-height: 1.3;
   white-space: nowrap;
 }
 
-.plan-facts {
-  white-space: nowrap;
-}
-
-.who-plan:empty {
-  display: none;
+/* Not even that fits, as on a phone: when it was solved goes on a line of
+   its own under the title and the name, and wraps there. */
+.header-below .head-facts {
+  flex-basis: 100%;
+  order: 3;
+  white-space: normal;
 }
 
 main {
@@ -470,10 +482,10 @@ dialog input {
   padding: 6px 8px;
 }
 
-/* One row when it fits: the way through the days, when and how the schedule
-   was solved, how many days are shown, the legend, and how far ahead it
-   plans beside the button that recalculates it -- which keeps to the right
-   on whichever row it ends up. */
+/* Only the calendar's controls, on one row when it fits: the way through the
+   days, how many days are shown, the legend, and the button that
+   recalculates, which keeps to the right on whichever row it ends up. What
+   the solve says is in the page's header. */
 .schedule-bar {
   display: flex;
   flex-wrap: wrap;
@@ -492,22 +504,6 @@ dialog input {
 
 .schedule-solve {
   margin-left: auto;
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-
-.schedule-solve button {
-  font-size: 14px;
-}
-
-/* Takes what the row leaves; Schedule.tsx hides it, keeping its place, and
-   says it on a line below when it does not fit there whole. */
-.schedule-facts-bar {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12.5px;
-  white-space: nowrap;
 }
 
 .schedule-bar .calendar-legend {
@@ -531,11 +527,6 @@ dialog input {
   border-color: var(--accent);
 }
 
-/* When and how it was solved, when that does not fit in the toolbar. */
-.schedule-facts {
-  margin: 0 0 4px;
-  font-size: 12.5px;
-}
 
 .schedule button:disabled {
   opacity: 0.45;
