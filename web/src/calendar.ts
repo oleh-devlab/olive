@@ -19,7 +19,7 @@ export const ENTRY_PX = 31;
 const HOUR_PX = 24;
 // What a collapsed stretch is drawn as: a thin band when it is empty, and one
 // line when a time block is in it, so that the block still shows its name.
-const GAP_PX = 10;
+const GAP_PX = 8;
 const BLOCKED_PX = LINE_PX;
 // How far below the last hour's label the next one has to be to fit.
 const LABEL_PX = 13;

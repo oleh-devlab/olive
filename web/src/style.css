@@ -672,9 +672,27 @@ dialog input {
    line; its tooltip still says it all. The heights are of what is inside the
    border and padding: two lines of text, one, and one at a smaller size. */
 @container (height < 27px) {
-  .entry-time {
+  .entry:not(.inline) .entry-time {
     display: none;
   }
+}
+
+/* A name short enough to leave room for its times on the same line has them
+   there, at the end of it (Schedule.tsx measures which do). Should the
+   browser set the name wider than measured, the name is cut, not the times. */
+.entry.inline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.entry.inline .entry-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entry.inline .entry-time {
+  flex-shrink: 0;
 }
 
 @container (height < 16px) {

@@ -235,16 +235,18 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   // A day too narrow to break a name into words, such as a week on a phone,
   // keeps it to one line, cut short.
   const narrow = dayWidth < MIN_WRAP_DAY_PX;
-  // The lines each task's or routine's name is given: the room the axis makes
-  // for it, and what the entry clamps it to, so its times always stay in sight.
-  const lines = new Map<Segment, number>();
+  // How each task or routine is laid out: the room the axis makes for it, and
+  // what the entry clamps its name to, so its times always stay in sight.
+  const layouts = new Map<Segment, Layout>();
   for (const segment of segments) {
-    if (segment.entry.type === "time_block") continue;
-    lines.set(segment, narrow ? 1 : nameLines(segment.entry, dayWidth / segment.lanes - ENTRY_INSET_PX));
+    if (segment.entry.type !== "time_block") {
+      layouts.set(segment, layOutEntry(segment.entry, dayWidth / segment.lanes - ENTRY_INSET_PX, narrow));
+    }
   }
   const axis = buildAxis(segments, range, (segment) => {
-    const given = lines.get(segment);
-    return given === undefined ? LINE_PX : ENTRY_PX + (given - 1) * NAME_LINE_PX;
+    const layout = layouts.get(segment);
+    if (!layout || layout.inline) return LINE_PX;
+    return ENTRY_PX + (layout.lines - 1) * NAME_LINE_PX;
   });
   const nowShown = present.minute >= range.from && present.minute <= range.to;
 
@@ -313,7 +315,7 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
               <div className="calendar-past" style={{ height: axis.y(Math.min(present.minute, range.to)) }} />
             )}
             {(byDay.get(day) ?? []).map((segment, index) => (
-              <Entry key={index} segment={segment} range={range} y={axis.y} lines={lines.get(segment) ?? 1} />
+              <Entry key={index} segment={segment} range={range} y={axis.y} layout={layouts.get(segment)} />
             ))}
             {day === present.day && nowShown && (
               <div className="calendar-now" style={{ top: axis.y(present.minute) }} title="Now" />
@@ -334,12 +336,24 @@ function labelParts(entry: ScheduleEntry): { id: string; session: string } {
   };
 }
 
+// An entry's own times, not the segment's: a block from 22:00 to 01:00 says so on both days.
+const timesOf = (entry: ScheduleEntry): string => `${clock(minuteOf(entry.start))}–${clock(minuteOf(entry.end))}`;
+
 // How an entry's name is set (the stylesheet has the same): its fonts -- the
-// name bold, its number and session not -- the height of a line of it, the
-// most lines it wraps to, and the width its border and padding take from the
-// day's.
+// name bold, its number and session not, its times smaller -- the height of a
+// line of it, the most lines it wraps to, the width its border and padding
+// take from the day's, and the gap before its times when they share its line.
 const NAME_FONT = "600 12px";
 const LABEL_FONT = "400 12px";
+const TIME_FONT = "400 10.5px";
+const INLINE_GAP_PX = 6;
+// What a measured line is short of what the browser sets, at most: rounding.
+const SLACK_PX = 2;
+
+// The page sets its numbers -- an entry's number, session and times -- in
+// tabular figures, each as wide as a 0, which a canvas cannot be told to
+// use: it measures them as zeros instead.
+const tabular = (text: string): string => text.replace(/[0-9]/g, "0");
 const NAME_LINE_PX = 14.4;
 const MAX_NAME_LINES = 3;
 const ENTRY_INSET_PX = 14;
@@ -349,17 +363,25 @@ const MIN_WRAP_DAY_PX = 90;
 let measurer: CanvasRenderingContext2D | null = null;
 let family = "";
 
-// How many lines an entry's name line wraps to in `width` pixels, word by
-// word as the browser does it, a word too long for a line broken anywhere.
-// Only an estimate: the entry clamps the name to it, so a browser that needs
-// a line more cuts the name short rather than pushing its times out of sight.
-function nameLines(entry: ScheduleEntry, width: number): number {
+// How a task or routine is laid out in `width` pixels: on one line with its
+// times after its name when the whole of both fit there, else its name over
+// as many lines as it wraps to and its times below.
+interface Layout {
+  inline: boolean;
+  lines: number;
+}
+
+// The name wraps word by word as the browser does it, a word too long for a
+// line broken anywhere. Only an estimate: the entry clamps the name to it, so
+// a browser that needs more room cuts the name short rather than pushing its
+// times out of sight. A day too narrow to wrap in keeps it to one line.
+function layOutEntry(entry: ScheduleEntry, width: number, narrow: boolean): Layout {
   if (!measurer) {
     measurer = document.createElement("canvas").getContext("2d");
-    if (!measurer) return 1;
+    if (!measurer) return { inline: false, lines: 1 };
     family = getComputedStyle(document.body).fontFamily;
   }
-  if (width <= 0) return 1;
+  if (width <= 0) return { inline: false, lines: 1 };
   const { id, session } = labelParts(entry);
   const words = (text: string, font: string) =>
     text
@@ -367,10 +389,11 @@ function nameLines(entry: ScheduleEntry, width: number): number {
       .filter(Boolean)
       .map((word) => ({ word, font: `${font} ${family}` }));
   const all = [
-    ...words(id, LABEL_FONT),
+    ...words(tabular(id), LABEL_FONT),
     ...words(entry.name || KINDS[entry.type], NAME_FONT),
-    ...words(session, LABEL_FONT),
+    ...words(tabular(session), LABEL_FONT),
   ];
+  width -= SLACK_PX;
 
   let lines = 1;
   let line = 0;
@@ -386,18 +409,21 @@ function nameLines(entry: ScheduleEntry, width: number): number {
     lines += Math.ceil(w / width) - 1;
     line = w - (Math.ceil(w / width) - 1) * width;
   }
-  return Math.min(Math.max(lines, 1), MAX_NAME_LINES);
+
+  measurer.font = `${TIME_FONT} ${family}`;
+  const inline = lines === 1 && line + INLINE_GAP_PX + measurer.measureText(tabular(timesOf(entry))).width <= width;
+  return { inline, lines: narrow ? 1 : Math.min(Math.max(lines, 1), MAX_NAME_LINES) };
 }
 
 interface EntryProps {
   segment: Segment;
   range: Range;
   y: (minute: number) => number;
-  // The lines its name may take, which the calendar made room for.
-  lines: number;
+  // How the calendar made room for it; none for a time block.
+  layout?: Layout;
 }
 
-function Entry({ segment, range, y, lines }: EntryProps) {
+function Entry({ segment, range, y, layout }: EntryProps) {
   // A block can reach past the hours shown; only what is inside them is drawn.
   const shown = clip(segment, range);
   if (!shown) return null;
@@ -407,18 +433,24 @@ function Entry({ segment, range, y, lines }: EntryProps) {
   const continues = segment.continues || shown.cutBelow;
   const name = entry.name || KINDS[entry.type];
   const { id, session } = labelParts(entry);
-  // An entry's own times, not the segment's: a block from 22:00 to 01:00 says so on both days.
-  const times = `${clock(minuteOf(entry.start))}–${clock(minuteOf(entry.end))}`;
+  const times = timesOf(entry);
+  const classes = [
+    "entry",
+    `entry-${entry.type}`,
+    continued && "continued",
+    continues && "continues",
+    layout?.inline && "inline",
+  ].filter(Boolean);
 
   return (
     <div
-      className={`entry entry-${entry.type}${continued ? " continued" : ""}${continues ? " continues" : ""}`}
+      className={classes.join(" ")}
       style={{
         top: y(shown.from),
         height: y(shown.to) - y(shown.from),
         left: `${(segment.lane / segment.lanes) * 100}%`,
         width: `${100 / segment.lanes}%`,
-        "--name-lines": lines,
+        "--name-lines": layout?.lines ?? 1,
       } as CSSProperties}
       title={`${KINDS[entry.type]}: ${id}${name}${session}\n${times}`}
     >
