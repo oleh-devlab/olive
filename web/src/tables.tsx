@@ -13,7 +13,9 @@ import { skippedUntil } from "./dates";
 import type { TableConfig } from "./Table";
 import type { Routine, Task, TimeBlock } from "./types";
 
-const PRIORITY_TITLE = "0 — anywhere; 1–10 — the higher, the earlier";
+const PRIORITY_TITLE = "Priority: 0 — anywhere; 1–10 — the higher, the earlier";
+// Under the tables whose priority column is headed only "P.".
+const PRIORITY_NOTE = "P. — priority: 0 places it anywhere; 1–10, the higher, the earlier.";
 
 export const TASKS: TableConfig<Task> = {
   id: "tasks",
@@ -22,16 +24,17 @@ export const TASKS: TableConfig<Task> = {
   noun: "Task",
   plural: "tasks",
   empty: "No tasks yet. Add the first one in the row above.",
+  note: PRIORITY_NOTE,
   columns: [
     nameColumn("New task"),
     numberColumn("duration", "Duration", { min: 1, title: "Minutes still left" }),
-    numberColumn("priority", "Priority", { min: 0, max: 10, title: PRIORITY_TITLE }),
+    numberColumn("priority", "P.", { min: 0, max: 10, title: PRIORITY_TITLE }),
     deadlineColumn(),
     numberColumn("max_chunk_duration", "Session", { min: 1, blank: "whole", title: "Longest session, min" }),
     numberColumn("min_chunk_duration", "Min.", { min: 0, blank: "auto", title: "Shortest session, min" }),
     numberColumn("break_duration", "Break", { min: 0, title: "Break after each session, min" }),
     idsColumn("After", "IDs of the tasks this one comes after"),
-    textColumn("description", "Description", "description_length"),
+    textColumn("description", "Description", "description_length", "Desc."),
   ],
 };
 
@@ -85,12 +88,13 @@ export const ROUTINES: TableConfig<Routine> = {
   noun: "Routine",
   plural: "routines",
   empty: "No routines yet. Add the first one in the row above.",
+  note: PRIORITY_NOTE,
   columns: [
     nameColumn("New routine"),
     routineType,
     routineTime,
     numberColumn("duration", "Duration", { min: 1, title: "Minutes" }),
-    numberColumn("priority", "Priority", { min: 0, max: 10, title: PRIORITY_TITLE }),
+    numberColumn("priority", "P.", { min: 0, max: 10, title: PRIORITY_TITLE }),
     numberColumn("break_duration", "Break", { min: 0, title: "Break after it, min" }),
     repeatColumn([
       ["daily", "Daily"],

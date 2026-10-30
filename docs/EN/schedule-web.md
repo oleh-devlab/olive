@@ -49,6 +49,7 @@ Below the calendar and the timer, across the whole width, are three tabs — Tas
 
 - Double-click a row or press ✎ to turn it into inputs. Enter saves, Esc cancels.
 - The "+" row at the bottom adds a new item, prefilled with the same defaults as the matching command.
+- The name takes whatever width the other columns leave. The priority column is headed "P.", as the note under the table says, and a task's Description narrows to "Desc." while no task has one.
 - ✕ deletes the item, and removes it from other items' dependencies.
 - Tasks: ⏱ logs minutes spent, like `/task spend`; once the time runs out, the task moves to the history.
 - Routines: ⏸ skips a routine up to and including the date you pick, like `/routine skip`. Editing the row leaves the skip as it is.

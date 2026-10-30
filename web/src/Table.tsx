@@ -11,6 +11,8 @@ export interface TableConfig<T extends Item> {
   noun: string;
   plural: string;
   empty: string;
+  // Said under the table, such as what a shortened heading stands for.
+  note?: string;
   columns: Column<T>[];
 }
 
@@ -177,7 +179,11 @@ export function Table<T extends Item>({
         {columns.map((column, index) => {
           const cell = shown(column.view(item, context));
           return (
-            <td key={index} className={classes(column.numeric && "num", column.className, cell.className)} title={cell.title || undefined}>
+            <td
+              key={index}
+              className={classes(column.numeric && "num", column.className, cell.className, narrow[index] && "narrow")}
+              title={cell.title || undefined}
+            >
               {cell.text}
             </td>
           );
@@ -220,7 +226,9 @@ export function Table<T extends Item>({
       >
         <td className="num id">{isNew ? "+" : id}</td>
         {columns.map((column, index) => (
-          <td key={index}>{column.edit(draft, set, context, focusFirst && index === 0)}</td>
+          <td key={index} className={classes(narrow[index] && "narrow")}>
+            {column.edit(draft, set, context, focusFirst && index === 0)}
+          </td>
         ))}
         <td className="actions">
           {isNew ? (
@@ -249,6 +257,8 @@ export function Table<T extends Item>({
   }
 
   const atLimit = items.length >= (limits.max_items ?? Infinity);
+  // The columns no item has anything in, which narrow to leave the name more room.
+  const narrow = columns.map((column) => Boolean(column.emptyLabel && column.isEmpty && items.every(column.isEmpty)));
 
   return (
     <>
@@ -260,8 +270,13 @@ export function Table<T extends Item>({
                 ID
               </th>
               {columns.map((column, index) => (
-                <th key={index} scope="col" className={column.numeric ? "num" : undefined} title={column.title}>
-                  {column.label}
+                <th
+                  key={index}
+                  scope="col"
+                  className={classes(column.numeric && "num", column.className, narrow[index] && "narrow")}
+                  title={column.title ?? (narrow[index] ? column.label : undefined)}
+                >
+                  {narrow[index] ? column.emptyLabel : column.label}
                 </th>
               ))}
               <th scope="col">
@@ -285,6 +300,7 @@ export function Table<T extends Item>({
       <p className="muted empty" hidden={!loaded || items.length > 0}>
         {config.empty}
       </p>
+      {config.note && <p className="muted table-note">{config.note}</p>}
     </>
   );
 }

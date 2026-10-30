@@ -24,6 +24,9 @@ export type Shown = string | number | { text: string | number; className?: strin
 export interface Column<T> {
   label: string;
   title?: string;
+  // A column no item has anything in narrows to this label and a narrow input.
+  emptyLabel?: string;
+  isEmpty?: (item: T) => boolean;
   numeric?: boolean;
   className?: string;
   view: (item: T, context: Context) => Shown;
@@ -106,9 +109,16 @@ export function numberColumn<T>(key: keyof T & string, label: string, options: N
   };
 }
 
-export function textColumn<T>(key: keyof T & string, label: string, lengthLimit: keyof Limits): Column<T> {
+export function textColumn<T>(
+  key: keyof T & string,
+  label: string,
+  lengthLimit: keyof Limits,
+  emptyLabel?: string,
+): Column<T> {
   return {
     label,
+    emptyLabel,
+    isEmpty: (item) => !item[key],
     className: key,
     view: (item) => ({ text: item[key] as string, title: item[key] as string }),
     init: (item) => ({ [key]: item ? (item[key] as string) : "" }),

@@ -279,7 +279,10 @@ tfoot tr.new td {
   color: var(--muted);
 }
 
+/* The name takes whatever width the other columns leave: they keep to their
+   content, and it wraps. */
 .name {
+  width: 100%;
   font-weight: 600;
   white-space: normal;
   min-width: 140px;
@@ -332,7 +335,7 @@ select:focus {
 }
 
 input[type="number"] {
-  width: 64px;
+  width: 52px;
   text-align: right;
 }
 
@@ -379,6 +382,17 @@ select {
 
 .in-description {
   min-width: 160px;
+}
+
+/* A column no item has anything in (Table.tsx): a short heading, a narrow input. */
+.narrow .in-description {
+  width: 90px;
+  min-width: 0;
+}
+
+.table-note {
+  margin: 4px 0 0;
+  font-size: 12.5px;
 }
 
 /* --- History and dialog --- */
