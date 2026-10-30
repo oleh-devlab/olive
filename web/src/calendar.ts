@@ -14,13 +14,19 @@ export const DAY_MINUTES = 24 * 60;
 // The stylesheet sets them: a 12 px name and 10.5 px times, 1.2 lines apart.
 export const LINE_PX = 20;
 export const ENTRY_PX = 31;
-// What an hour adds to the height on top of that, so that a long entry still
-// looks longer than a short one.
-const HOUR_PX = 24;
-// What a collapsed stretch is drawn as: a thin band when it is empty, and one
-// line when a time block is in it, so that the block still shows its name.
-const GAP_PX = 8;
-const BLOCKED_PX = LINE_PX;
+
+// How much room the axis gives what is not text: `hourPx` an hour on top of
+// an entry's text, so that a long entry still looks longer than a short one;
+// `gapPx` for a collapsed stretch with nothing in it, drawn as a thin band;
+// and `linePx` for one with only time blocks in it, so that a block still
+// shows its name. The calendar may pass less of each when it is short of room.
+export interface Spacing {
+  hourPx: number;
+  gapPx: number;
+  linePx: number;
+}
+
+export const SPACING: Spacing = { hourPx: 24, gapPx: 8, linePx: LINE_PX };
 // How far below the last hour's label the next one has to be to fit.
 const LABEL_PX = 13;
 
@@ -41,8 +47,8 @@ export function weekdayOf(day: string): string {
 }
 
 export const shortDate = (day: string): string => `${day.slice(8, 10)}.${day.slice(5, 7)}`;
-export const clock = (minute: number): string =>
-  `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+// "9:30", not "09:30": narrower, and a calendar's times read the same.
+export const clock = (minute: number): string => `${Math.floor(minute / 60)}:${String(minute % 60).padStart(2, "0")}`;
 
 // The bot's wall clock at `timestamp`, by the offset its solve was written in.
 export function botClock(timestamp: number, sample: string | null): { day: string; minute: number } {
@@ -178,7 +184,7 @@ export interface Axis {
 // How the hours shown are laid out from top to bottom. Each entry is as tall
 // as its text needs -- a task or routine its name, over as many lines as
 // `need` says it wraps to, and its times; a time block its name -- plus
-// HOUR_PX an hour, so length still shows. A stretch with nothing in it on any
+// `hourPx` an hour, so length still shows. A stretch with nothing in it on any
 // of the days shown -- a break, free time -- collapses to a thin band, and one
 // with only time blocks in it to a single line. The times are on the entries,
 // which is what lets the axis be uneven.
@@ -186,6 +192,7 @@ export function buildAxis(
   segments: Segment[],
   range: { from: number; to: number },
   need: (segment: Segment) => number = (segment) => (isPlanned(segment) ? ENTRY_PX : LINE_PX),
+  { hourPx, gapPx, linePx }: Spacing = SPACING,
 ): Axis {
   const shown = segments.flatMap((segment) => {
     const part = clip(segment, range);
@@ -208,9 +215,9 @@ export function buildAxis(
     else pieces.push({ from, to, kind, y: 0, height: 0, collapsed: false });
   }
 
-  const scaled = (piece: Piece): number => ((piece.to - piece.from) * HOUR_PX) / 60;
+  const scaled = (piece: Piece): number => ((piece.to - piece.from) * hourPx) / 60;
   for (const piece of pieces) {
-    const cap = piece.kind === "empty" ? GAP_PX : piece.kind === "blocked" ? BLOCKED_PX : Infinity;
+    const cap = piece.kind === "empty" ? gapPx : piece.kind === "blocked" ? linePx : Infinity;
     piece.height = Math.min(scaled(piece), cap);
     piece.collapsed = piece.height < scaled(piece);
   }

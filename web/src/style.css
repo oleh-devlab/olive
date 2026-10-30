@@ -502,7 +502,7 @@ dialog input {
 .calendar-head,
 .calendar-body {
   display: grid;
-  grid-template-columns: 44px repeat(var(--days), minmax(0, 1fr));
+  grid-template-columns: 36px repeat(var(--days), minmax(0, 1fr));
 }
 
 .calendar-head {
@@ -584,8 +584,9 @@ dialog input {
   background: color-mix(in srgb, var(--kind) 16%, var(--surface));
   font-size: 12px;
   /* Tight, and the times smaller than the name: the calendar's height is
-     mostly what its entries' text takes (calendar.ts, ENTRY_PX). */
-  line-height: 1.2;
+     mostly what its entries' text takes. Tighter still when the calendar is
+     short of room (Schedule.tsx, DENSITIES). */
+  line-height: var(--entry-line, 1.2);
   /* Its own height decides what it has room to say, below. */
   container-type: size;
 }
@@ -665,13 +666,13 @@ dialog input {
 }
 
 .entry-time {
-  font-size: 10.5px;
+  font-size: var(--time-size, 10.5px);
 }
 
 /* An entry too short to say everything says less, rather than showing half a
    line; its tooltip still says it all. The heights are of what is inside the
    border and padding: two lines of text, one, and one at a smaller size. */
-@container (height < 27px) {
+@container (height < 24px) {
   .entry:not(.inline) .entry-time {
     display: none;
   }
@@ -695,7 +696,7 @@ dialog input {
   flex-shrink: 0;
 }
 
-@container (height < 16px) {
+@container (height < 14px) {
   .entry-name {
     font-size: 10px;
     line-height: 1;

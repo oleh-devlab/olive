@@ -8,14 +8,13 @@ import {
   clock,
   dayOf,
   hourRange,
-  ENTRY_PX,
-  LINE_PX,
   minuteOf,
   plannedDays,
   segmentsByDay,
   shortDate,
   weekdayOf,
   type Segment,
+  type Spacing,
 } from "./calendar";
 import type { EntryType, ScheduleEntry, SolvedSchedule, Task } from "./types";
 
@@ -195,16 +194,39 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, t
 
 type Range = { from: number; to: number };
 
-// The room the calendar may take before it scrolls inside itself: the screen
-// less the bars above it, the day names' row included in the calendar's height.
-const ROOM_MARGIN_PX = 170;
+// The room the calendar has on the screen: the window from where the
+// calendar starts down, less what goes below it -- the line of what did not
+// fit and the card's edge -- the day names' row included in its height.
+const BELOW_PX = 34;
 const MIN_ROOM_PX = 320;
 const HEAD_PX = 26;
 // The hours' column down the calendar's left (the stylesheet has the same).
-const HOURS_PX = 44;
+const HOURS_PX = 36;
 // A calendar up to this much taller than its room grows instead, the page
 // scrolling for it: a scrollbar of its own would only move it a few pixels.
 const GROWTH = 1.25;
+
+// How densely the calendar is set, from the most comfortable on: each step
+// a little tighter than the last -- thinner bands, less height an hour, then
+// lines closer together and smaller times. The calendar takes the first one
+// it fits on the screen at, and the last when it fits at none. The text's
+// heights follow from the fonts (the stylesheet sets them from these): a
+// 12 px name, border and padding 4 px, and the times below it.
+interface Density extends Spacing {
+  lineHeight: number;
+  timePx: number;
+}
+
+const DENSITIES: Density[] = [
+  { hourPx: 24, gapPx: 8, lineHeight: 1.2, timePx: 10.5, linePx: 20 },
+  { hourPx: 16, gapPx: 7, lineHeight: 1.2, timePx: 10.5, linePx: 20 },
+  { hourPx: 10, gapPx: 6, lineHeight: 1.15, timePx: 10, linePx: 19 },
+  { hourPx: 6, gapPx: 5, lineHeight: 1.15, timePx: 10, linePx: 19 },
+];
+
+const nameLinePx = (density: Density): number => NAME_PX * density.lineHeight;
+const entryPx = (density: Density): number =>
+  Math.ceil(ENTRY_BOX_PX + nameLinePx(density) + density.timePx * density.lineHeight);
 
 interface GridProps {
   days: string[];
@@ -235,28 +257,51 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   // A day too narrow to break a name into words, such as a week on a phone,
   // keeps it to one line, cut short.
   const narrow = dayWidth < MIN_WRAP_DAY_PX;
-  // How each task or routine is laid out: the room the axis makes for it, and
-  // what the entry clamps its name to, so its times always stay in sight.
-  const layouts = new Map<Segment, Layout>();
-  for (const segment of segments) {
-    if (segment.entry.type !== "time_block") {
-      layouts.set(segment, layOutEntry(segment.entry, dayWidth / segment.lanes - ENTRY_INSET_PX, narrow));
-    }
-  }
-  const axis = buildAxis(segments, range, (segment) => {
-    const layout = layouts.get(segment);
-    if (!layout || layout.inline) return LINE_PX;
-    return ENTRY_PX + (layout.lines - 1) * NAME_LINE_PX;
-  });
-  const nowShown = present.minute >= range.from && present.minute <= range.to;
 
-  const [screen, setScreen] = useState(() => window.innerHeight);
-  useEffect(() => {
-    const onResize = () => setScreen(window.innerHeight);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+  // Where the calendar starts on the page, and how tall the window is: what
+  // is left between them is its room.
+  const [screen, setScreen] = useState(() => ({ height: window.innerHeight, top: 0 }));
+  useLayoutEffect(() => {
+    const measure = () => {
+      const box = scroller.current;
+      if (box) setScreen({ height: window.innerHeight, top: box.getBoundingClientRect().top + window.scrollY });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, []);
-  const room = Math.max(MIN_ROOM_PX, screen - ROOM_MARGIN_PX);
+  const room = Math.max(MIN_ROOM_PX, screen.height - screen.top - BELOW_PX);
+
+  // Each task or routine laid out at a density: the room the axis makes for
+  // it, and what the entry clamps its name to, so its times stay in sight.
+  const layOut = (density: Density) => {
+    const layouts = new Map<Segment, Layout>();
+    for (const segment of segments) {
+      if (segment.entry.type !== "time_block") {
+        const space = dayWidth / segment.lanes - ENTRY_INSET_PX;
+        layouts.set(segment, layOutEntry(segment.entry, space, narrow, density.timePx));
+      }
+    }
+    const axis = buildAxis(
+      segments,
+      range,
+      (segment) => {
+        const layout = layouts.get(segment);
+        if (!layout || layout.inline) return density.linePx;
+        return entryPx(density) + (layout.lines - 1) * nameLinePx(density);
+      },
+      density,
+    );
+    return { density, layouts, axis };
+  };
+  // The most comfortable density the calendar fits on the screen at.
+  let laid = layOut(DENSITIES[0]);
+  for (const density of DENSITIES.slice(1)) {
+    if (laid.axis.height + HEAD_PX <= room) break;
+    laid = layOut(density);
+  }
+  const { density, layouts, axis } = laid;
+  const nowShown = present.minute >= range.from && present.minute <= range.to;
   const scrolls = axis.height + HEAD_PX > room * GROWTH;
 
   // Brings the present moment into view whenever other days or hours are
@@ -276,7 +321,14 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
     <div
       className={`calendar${scrolls ? " scrolls" : ""}${narrow ? " narrow" : ""}`}
       ref={scroller}
-      style={{ "--days": days.length, maxHeight: scrolls ? room : undefined } as CSSProperties}
+      style={
+        {
+          "--days": days.length,
+          "--entry-line": density.lineHeight,
+          "--time-size": `${density.timePx}px`,
+          maxHeight: scrolls ? room : undefined,
+        } as CSSProperties
+      }
     >
       <div className="calendar-head">
         <span />
@@ -343,10 +395,12 @@ const timesOf = (entry: ScheduleEntry): string => `${clock(minuteOf(entry.start)
 // name bold, its number and session not, its times smaller -- the height of a
 // line of it, the most lines it wraps to, the width its border and padding
 // take from the day's, and the gap before its times when they share its line.
-const NAME_FONT = "600 12px";
-const LABEL_FONT = "400 12px";
-const TIME_FONT = "400 10.5px";
+const NAME_PX = 12;
+const NAME_FONT = `600 ${NAME_PX}px`;
+const LABEL_FONT = `400 ${NAME_PX}px`;
 const INLINE_GAP_PX = 6;
+// An entry's border and padding, above and below its text.
+const ENTRY_BOX_PX = 4;
 // What a measured line is short of what the browser sets, at most: rounding.
 const SLACK_PX = 2;
 
@@ -354,7 +408,6 @@ const SLACK_PX = 2;
 // tabular figures, each as wide as a 0, which a canvas cannot be told to
 // use: it measures them as zeros instead.
 const tabular = (text: string): string => text.replace(/[0-9]/g, "0");
-const NAME_LINE_PX = 14.4;
 const MAX_NAME_LINES = 3;
 const ENTRY_INSET_PX = 14;
 // How wide a day has to be for names to wrap in it at all.
@@ -375,7 +428,7 @@ interface Layout {
 // line broken anywhere. Only an estimate: the entry clamps the name to it, so
 // a browser that needs more room cuts the name short rather than pushing its
 // times out of sight. A day too narrow to wrap in keeps it to one line.
-function layOutEntry(entry: ScheduleEntry, width: number, narrow: boolean): Layout {
+function layOutEntry(entry: ScheduleEntry, width: number, narrow: boolean, timePx: number): Layout {
   if (!measurer) {
     measurer = document.createElement("canvas").getContext("2d");
     if (!measurer) return { inline: false, lines: 1 };
@@ -410,7 +463,7 @@ function layOutEntry(entry: ScheduleEntry, width: number, narrow: boolean): Layo
     line = w - (Math.ceil(w / width) - 1) * width;
   }
 
-  measurer.font = `${TIME_FONT} ${family}`;
+  measurer.font = `400 ${timePx}px ${family}`;
   const inline = lines === 1 && line + INLINE_GAP_PX + measurer.measureText(tabular(timesOf(entry))).width <= width;
   return { inline, lines: narrow ? 1 : Math.min(Math.max(lines, 1), MAX_NAME_LINES) };
 }

@@ -71,7 +71,7 @@ function daysAtStart(panelOpen: boolean): number {
   }
   const beside = window.innerWidth >= STACKED_BELOW_PX && panelOpen ? PANEL_PX + 6 : 0;
   // The page's and the calendar card's padding, and the hours down its left.
-  const room = window.innerWidth - beside - 16 - 18 - 44;
+  const room = window.innerWidth - beside - 16 - 18 - 36;
   return room / 3 >= MIN_DAY_PX ? 3 : 1;
 }
 
