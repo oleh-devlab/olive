@@ -119,6 +119,8 @@ export default function App({ loginError }: { loginError?: string }) {
   const [daysShown] = useState(() => daysAtStart(panelOpen));
   // Where the folded timer goes: a place in the calendar's toolbar.
   const [timerSlot, setTimerSlot] = useState<HTMLElement | null>(null);
+  // And a place under the user's name for what the schedule plans.
+  const [planSlot, setPlanSlot] = useState<HTMLElement | null>(null);
 
   const notify = useCallback((text: string) => setStatus({ text, kind: "ok" }), []);
 
@@ -216,10 +218,14 @@ export default function App({ loginError }: { loginError?: string }) {
         <h1>Schedule</h1>
         {view.kind === "app" && (
           <div id="who" className="who">
-            <span id="who-name">{view.me.name}</span>
-            <button id="logout" type="button" className="link" onClick={() => void logout()}>
-              Log out
-            </button>
+            <div className="who-line">
+              <span id="who-name">{view.me.name}</span>
+              <button id="logout" type="button" className="link" onClick={() => void logout()}>
+                Log out
+              </button>
+            </div>
+            {/* Where the calendar puts how far ahead it plans, when that saves room. */}
+            <span className="who-plan" ref={setPlanSlot} />
           </div>
         )}
       </header>
@@ -259,6 +265,7 @@ export default function App({ loginError }: { loginError?: string }) {
               />
               <Schedule
                 toolbarSlot={setTimerSlot}
+                headerSlot={planSlot}
                 version={scheduleVersion}
                 fail={fail}
                 initialSpan={daysShown}

@@ -70,9 +70,31 @@ body {
 
 .who {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: var(--muted);
+}
+
+.who-line {
+  display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--muted);
+}
+
+/* How far ahead the schedule plans, under the user's name when the calendar
+   puts it there (Schedule.tsx, headerSavesRoom). */
+.who-plan {
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.plan-facts {
+  white-space: nowrap;
+}
+
+.who-plan:empty {
+  display: none;
 }
 
 main {
