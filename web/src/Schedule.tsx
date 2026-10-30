@@ -8,15 +8,16 @@ import {
   clock,
   dayOf,
   hourRange,
+  ENTRY_PX,
+  LINE_PX,
   minuteOf,
-  ONE_LINE_DAY_PX,
   plannedDays,
   segmentsByDay,
   shortDate,
   weekdayOf,
   type Segment,
 } from "./calendar";
-import type { EntryType, SolvedSchedule, Task } from "./types";
+import type { EntryType, ScheduleEntry, SolvedSchedule, Task } from "./types";
 
 const SPANS = [1, 3, 7];
 
@@ -209,8 +210,8 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   const range = { from: fromHour * 60, to: toHour * 60 };
   const segments = days.flatMap((day) => byDay.get(day) ?? []);
 
-  // How wide a day is decides whether an entry says its times beside its name
-  // or below it, and so how tall the calendar is: measured before it is drawn.
+  // How wide a day is decides how many lines a name wraps to, and so how tall
+  // the calendar is: measured before it is drawn.
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
     const box = scroller.current;
@@ -220,8 +221,17 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
     observer.observe(box);
     return () => observer.disconnect();
   }, []);
-  const oneLine = (width - HOURS_PX) / days.length >= ONE_LINE_DAY_PX;
-  const axis = buildAxis(segments, range, oneLine);
+  const dayWidth = (width - HOURS_PX) / days.length;
+  // A day too narrow to break a name into words, such as a week on a phone,
+  // keeps it to one line, cut short.
+  const narrow = dayWidth < MIN_WRAP_DAY_PX;
+  const axis = buildAxis(segments, range, (segment) =>
+    segment.entry.type === "time_block"
+      ? LINE_PX
+      : narrow
+        ? ENTRY_PX
+      : ENTRY_PX + (nameLines(entryLabel(segment.entry), dayWidth / segment.lanes - ENTRY_INSET_PX) - 1) * NAME_LINE_PX,
+  );
   const nowShown = present.minute >= range.from && present.minute <= range.to;
 
   const [screen, setScreen] = useState(() => window.innerHeight);
@@ -248,7 +258,7 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
 
   return (
     <div
-      className={`calendar${scrolls ? " scrolls" : ""}${oneLine ? " one-line" : ""}`}
+      className={`calendar${scrolls ? " scrolls" : ""}${narrow ? " narrow" : ""}`}
       ref={scroller}
       style={{ "--days": days.length, maxHeight: scrolls ? room : undefined } as CSSProperties}
     >
@@ -301,6 +311,57 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   );
 }
 
+// What an entry's name line says around its name: its number, and which of
+// its sessions it is.
+function labelParts(entry: ScheduleEntry): { id: string; session: string } {
+  return {
+    id: entry.id !== null && entry.type !== "time_block" ? `#${entry.id} ` : "",
+    session: entry.sessions > 1 ? ` ${entry.session}/${entry.sessions}` : "",
+  };
+}
+
+function entryLabel(entry: ScheduleEntry): string {
+  const { id, session } = labelParts(entry);
+  return `${id}${entry.name || KINDS[entry.type]}${session}`;
+}
+
+// How an entry's name is set (the stylesheet has the same): its font, the
+// height of a line of it, the most lines it wraps to, and the width its
+// border and padding take from the day's.
+const NAME_FONT = "600 12px";
+const NAME_LINE_PX = 15.6;
+const MAX_NAME_LINES = 3;
+const ENTRY_INSET_PX = 14;
+// How wide a day has to be for names to wrap in it at all.
+const MIN_WRAP_DAY_PX = 90;
+
+let measurer: CanvasRenderingContext2D | null = null;
+
+// How many lines a name wraps to in `width` pixels, word by word as the
+// browser does it, a word too long for a line broken anywhere.
+function nameLines(text: string, width: number): number {
+  if (!measurer) {
+    measurer = document.createElement("canvas").getContext("2d");
+    if (!measurer) return 1;
+    measurer.font = `${NAME_FONT} ${getComputedStyle(document.body).fontFamily}`;
+  }
+  if (width <= 0) return 1;
+  const space = measurer.measureText(" ").width;
+  let lines = 1;
+  let line = 0;
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const w = measurer.measureText(word).width;
+    if (line > 0 && line + space + w <= width) {
+      line += space + w;
+      continue;
+    }
+    if (line > 0) lines++;
+    lines += Math.ceil(w / width) - 1;
+    line = w - (Math.ceil(w / width) - 1) * width;
+  }
+  return Math.min(Math.max(lines, 1), MAX_NAME_LINES);
+}
+
 function Entry({ segment, range, y }: { segment: Segment; range: Range; y: (minute: number) => number }) {
   // A block can reach past the hours shown; only what is inside them is drawn.
   const shown = clip(segment, range);
@@ -310,10 +371,9 @@ function Entry({ segment, range, y }: { segment: Segment; range: Range; y: (minu
   const continued = segment.continued || shown.cutAbove;
   const continues = segment.continues || shown.cutBelow;
   const name = entry.name || KINDS[entry.type];
+  const { id, session } = labelParts(entry);
   // An entry's own times, not the segment's: a block from 22:00 to 01:00 says so on both days.
   const times = `${clock(minuteOf(entry.start))}–${clock(minuteOf(entry.end))}`;
-  const session = entry.sessions > 1 ? ` ${entry.session}/${entry.sessions}` : "";
-  const id = entry.id !== null && entry.type !== "time_block" ? `#${entry.id} ` : "";
 
   return (
     <div

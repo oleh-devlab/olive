@@ -10,7 +10,7 @@
   --ok: #2e7d4f;
   --row-hover: #f0f2f6;
   --editing: #eef0ff;
-  --radius: 8px;
+  --radius: 6px;
   /* What the calendar draws each kind of entry in. */
   --task: var(--accent);
   --fixed: #b8730a;
@@ -77,14 +77,14 @@ body {
 
 main {
   /* The whole width: the calendar is what gains from it. */
-  padding: 10px 12px;
+  padding: 6px 8px;
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 10px;
 }
 
 #login-view {
@@ -430,8 +430,8 @@ dialog input {
 /* --- Schedule --- */
 
 .schedule {
-  margin-bottom: 10px;
-  padding: 8px 10px;
+  margin-bottom: 6px;
+  padding: 6px 8px;
 }
 
 .schedule-bar {
@@ -499,6 +499,8 @@ dialog input {
 }
 
 .calendar-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 3px 6px;
   font-size: 13px;
   font-weight: 600;
@@ -561,7 +563,7 @@ dialog input {
 .entry {
   position: absolute;
   overflow: hidden;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border: 1px solid var(--surface);
   border-left: 3px solid var(--kind);
   border-radius: 5px;
@@ -626,6 +628,17 @@ dialog input {
   font-weight: 600;
 }
 
+/* A task's or a routine's name wraps, up to as many lines as Schedule.tsx
+   gives it room for (MAX_NAME_LINES) -- unless the day is too narrow to
+   break it into words; the tooltip has the rest. */
+.calendar:not(.narrow) .entry:not(.entry-time_block) .entry-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .entry-id,
 .entry-session,
 .entry-time {
@@ -638,21 +651,9 @@ dialog input {
    line; its tooltip still says it all. The heights are of what is inside the
    border and padding: two lines of text, one, and one at a smaller size. */
 @container (height < 31px) {
-  .calendar:not(.one-line) .entry-time {
+  .entry-time {
     display: none;
   }
-}
-
-/* A day wide enough says an entry's times and its name on one line, the
-   times first: they are what the eye runs down, and never cut short. */
-.calendar.one-line .entry {
-  display: flex;
-  gap: 6px;
-}
-
-.calendar.one-line .entry-time {
-  flex-shrink: 0;
-  order: -1;
 }
 
 @container (height < 16px) {
@@ -739,8 +740,8 @@ dialog input {
 .workspace {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .workspace.panel-closed {
@@ -753,12 +754,12 @@ dialog input {
 }
 
 .panel {
-  padding: 10px;
+  padding: 8px;
 }
 
 .panel-body {
   position: sticky;
-  top: 10px;
+  top: 6px;
 }
 
 .panel-head {
@@ -891,7 +892,12 @@ dialog input {
 
 @media (max-width: 759px) {
   main {
-    padding: 8px;
+    padding: 4px;
+  }
+
+  .card,
+  .schedule {
+    padding: 6px;
   }
 
   .workspace,

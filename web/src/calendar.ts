@@ -9,13 +9,10 @@ import type { ScheduleEntry, SolvedSchedule } from "./types";
 
 export const DAY_MINUTES = 24 * 60;
 // What an entry's text takes, border and padding included: one line, and the
-// two -- its name, then its times -- of a task or a routine in a day too narrow
-// to hold both side by side.
-const LINE_PX = 22;
-const ENTRY_PX = 36;
-// How wide a day has to be for a task or routine to say its times and its name
-// on one line, and so take only LINE_PX.
-export const ONE_LINE_DAY_PX = 170;
+// two -- its name, then its times -- of a task or a routine whose name fits on
+// one line. A longer name may say how much more it needs (buildAxis, `need`).
+export const LINE_PX = 22;
+export const ENTRY_PX = 36;
 // What an hour adds to the height on top of that, so that a long entry still
 // looks longer than a short one.
 const HOUR_PX = 24;
@@ -178,16 +175,20 @@ export interface Axis {
 }
 
 // How the hours shown are laid out from top to bottom. Each entry is as tall
-// as its text needs -- a task or routine its name and times, on one line when
-// `oneLine`, a time block its name -- plus HOUR_PX an hour, so length still
-// shows. A stretch with nothing in it on any of the days shown -- a break,
+// as its text needs -- a task or routine its name, over as many lines as
+// `need` says it wraps to, and its times; a time block its name -- plus
+// HOUR_PX an hour, so length still shows. A stretch with nothing in it on any of the days shown -- a break,
 // free time -- collapses to a thin band, and one with only time blocks in it
 // to a single line. The times are on the entries, which is what lets the axis
 // be uneven.
-export function buildAxis(segments: Segment[], range: { from: number; to: number }, oneLine = false): Axis {
+export function buildAxis(
+  segments: Segment[],
+  range: { from: number; to: number },
+  need: (segment: Segment) => number = (segment) => (isPlanned(segment) ? ENTRY_PX : LINE_PX),
+): Axis {
   const shown = segments.flatMap((segment) => {
     const part = clip(segment, range);
-    return part ? [{ planned: isPlanned(segment), from: part.from, to: part.to }] : [];
+    return part ? [{ planned: isPlanned(segment), need: need(segment), from: part.from, to: part.to }] : [];
   });
   const edges = [...new Set([range.from, range.to, ...shown.flatMap((part) => [part.from, part.to])])].sort(
     (a, b) => a - b,
@@ -223,7 +224,7 @@ export function buildAxis(segments: Segment[], range: { from: number; to: number
     const covered = pieces.filter((piece) => piece.from < part.to && piece.to > part.from);
     const overlap = (piece: Piece): number => Math.min(piece.to, part.to) - Math.max(piece.from, part.from);
     const height = covered.reduce((sum, piece) => sum + (piece.height * overlap(piece)) / length(piece), 0);
-    const short = (part.planned && !oneLine ? ENTRY_PX : LINE_PX) - height;
+    const short = part.need - height;
     if (short <= 0) continue;
     for (const piece of covered) piece.height += (short * length(piece)) / minutes;
   }
