@@ -11,8 +11,9 @@ export const DAY_MINUTES = 24 * 60;
 // What an entry's text takes, border and padding included: one line, and the
 // two -- its name, then its times -- of a task or a routine whose name fits on
 // one line. A longer name may say how much more it needs (buildAxis, `need`).
-export const LINE_PX = 22;
-export const ENTRY_PX = 36;
+// The stylesheet sets them: a 12 px name and 10.5 px times, 1.2 lines apart.
+export const LINE_PX = 20;
+export const ENTRY_PX = 31;
 // What an hour adds to the height on top of that, so that a long entry still
 // looks longer than a short one.
 const HOUR_PX = 24;

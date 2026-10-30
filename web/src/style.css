@@ -583,7 +583,9 @@ dialog input {
   border-radius: 5px;
   background: color-mix(in srgb, var(--kind) 16%, var(--surface));
   font-size: 12px;
-  line-height: 1.3;
+  /* Tight, and the times smaller than the name: the calendar's height is
+     mostly what its entries' text takes (calendar.ts, ENTRY_PX). */
+  line-height: 1.2;
   /* Its own height decides what it has room to say, below. */
   container-type: size;
 }
@@ -662,10 +664,14 @@ dialog input {
   font-variant-numeric: tabular-nums;
 }
 
+.entry-time {
+  font-size: 10.5px;
+}
+
 /* An entry too short to say everything says less, rather than showing half a
    line; its tooltip still says it all. The heights are of what is inside the
    border and padding: two lines of text, one, and one at a smaller size. */
-@container (height < 31px) {
+@container (height < 27px) {
   .entry-time {
     display: none;
   }

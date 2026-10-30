@@ -340,7 +340,7 @@ function labelParts(entry: ScheduleEntry): { id: string; session: string } {
 // day's.
 const NAME_FONT = "600 12px";
 const LABEL_FONT = "400 12px";
-const NAME_LINE_PX = 15.6;
+const NAME_LINE_PX = 14.4;
 const MAX_NAME_LINES = 3;
 const ENTRY_INSET_PX = 14;
 // How wide a day has to be for names to wrap in it at all.
