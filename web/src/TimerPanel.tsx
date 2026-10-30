@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { botClock, clock, dayOf, minuteOf, shortDate } from "./calendar";
 import {
@@ -29,6 +30,9 @@ interface Props {
   onToggle: () => void;
   // Logs minutes against a task; true once they are logged.
   onLog: (task: { id: number; name: string }, minutes: number) => Promise<boolean>;
+  // Where it goes folded: a place in the calendar's toolbar. Rendered there
+  // through a portal, it stays this one component, and keeps what it counted.
+  foldedInto: HTMLElement | null;
 }
 
 // The task session going on now in the schedule, or the next one to come.
@@ -45,12 +49,12 @@ const duration = (minutes: number): string =>
 
 // A timer for the task being worked on, in a panel beside the calendar -- as
 // tall as the calendar, its contents staying in sight as that scrolls -- that
-// folds down to a strip. It logs what it counted against the task -- only when
-// asked, and never more than it was set to -- the way `/task spend` does; below
-// it, minutes set by hand are logged against the same task with a button of
-// their own. The two never fill each other in: what is logged is the reader's
+// folds away into a button in the calendar's toolbar. It logs what it counted
+// against the task -- only when asked, and never more than it was set to --
+// the way `/task spend` does; below it, minutes set by hand are logged against
+// the same task with a button of their own. The two never fill each other in: what is logged is the reader's
 // to decide.
-export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
+export function TimerPanel({ schedule, tasks, open, onToggle, onLog, foldedInto }: Props) {
   // In this page's memory only: a reload or a closed tab drops it.
   const [stored, setStored] = useState<TimerState | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -145,19 +149,19 @@ export function TimerPanel({ schedule, tasks, open, onToggle, onLog }: Props) {
   }
 
   if (!open) {
-    return (
-      <aside className="panel closed" aria-label="Timer">
-        <div className="panel-body">
-          <button type="button" className="panel-toggle" title="Show the timer" aria-label="Show the timer" onClick={onToggle}>
-            »
-          </button>
-          {timer && (running || finished || hasCounted(timer, now)) && (
-            <span className={`panel-strip-time${running ? " running" : ""}`} title={timer.name}>
-              {finished ? "0:00" : formatClock(left)}
-            </span>
-          )}
-        </div>
-      </aside>
+    if (!foldedInto) return null;
+    return createPortal(
+      <span className="panel-folded" role="group" aria-label="Timer">
+        <button type="button" className="panel-toggle" title="Show the timer" aria-label="Show the timer" onClick={onToggle}>
+          »
+        </button>
+        {timer && (running || finished || hasCounted(timer, now)) && (
+          <span className={`panel-folded-time${running ? " running" : ""}`} title={timer.name}>
+            {finished ? "0:00" : formatClock(left)}
+          </span>
+        )}
+      </span>,
+      foldedInto,
     );
   }
 

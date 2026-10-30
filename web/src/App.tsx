@@ -23,10 +23,10 @@ const TABS = [
 ];
 
 // The timer's panel: beside the calendar on a wide screen, above it on a
-// narrow one (the stylesheet's breakpoint is the same), folded to a strip or not.
+// narrow one (the stylesheet's breakpoint is the same), or folded away into
+// the calendar's toolbar, where it takes no width of its own.
 const STACKED_BELOW_PX = 760;
 const PANEL_PX = 248;
-const STRIP_PX = 36;
 // The only two things the page keeps in the browser: whether the panel was
 // left folded, and how many days the calendar was last set to show.
 const PANEL_KEY = "olive.panel";
@@ -69,7 +69,7 @@ function daysAtStart(panelOpen: boolean): number {
   } catch {
     // Nothing kept, then.
   }
-  const beside = window.innerWidth >= STACKED_BELOW_PX ? (panelOpen ? PANEL_PX : STRIP_PX) + 6 : 0;
+  const beside = window.innerWidth >= STACKED_BELOW_PX && panelOpen ? PANEL_PX + 6 : 0;
   // The page's and the calendar card's padding, and the hours down its left.
   const room = window.innerWidth - beside - 16 - 18 - 44;
   return room / 3 >= MIN_DAY_PX ? 3 : 1;
@@ -97,6 +97,8 @@ export default function App({ loginError }: { loginError?: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [panelOpen, setPanelOpen] = useState(panelOpenAtStart);
   const [daysShown] = useState(() => daysAtStart(panelOpen));
+  // Where the folded timer goes: a place in the calendar's toolbar.
+  const [timerSlot, setTimerSlot] = useState<HTMLElement | null>(null);
 
   const notify = useCallback((text: string) => setStatus({ text, kind: "ok" }), []);
 
@@ -227,8 +229,16 @@ export default function App({ loginError }: { loginError?: string }) {
         {view.kind === "app" && (
           <section id="app-view">
             <div className={panelOpen ? "workspace" : "workspace panel-closed"}>
-              <TimerPanel schedule={solved} tasks={tasks} open={panelOpen} onToggle={togglePanel} onLog={spend} />
+              <TimerPanel
+                schedule={solved}
+                tasks={tasks}
+                open={panelOpen}
+                onToggle={togglePanel}
+                onLog={spend}
+                foldedInto={timerSlot}
+              />
               <Schedule
+                toolbarSlot={setTimerSlot}
                 version={scheduleVersion}
                 fail={fail}
                 initialSpan={daysShown}

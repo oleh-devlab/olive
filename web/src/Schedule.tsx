@@ -40,9 +40,11 @@ interface Props {
   onSolved?: (schedule: SolvedSchedule) => void;
   // The tasks as the table last read them, to name the ones that did not fit.
   tasks?: Task[];
+  // Handed the place at the start of the toolbar where the folded timer goes.
+  toolbarSlot?: (element: HTMLElement | null) => void;
 }
 
-export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, tasks = [] }: Props) {
+export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, tasks = [], toolbarSlot }: Props) {
   const [schedule, setSchedule] = useState<SolvedSchedule | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const [span, setSpan] = useState(initialSpan);
@@ -119,6 +121,7 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, t
     <section id="schedule" className="card schedule" aria-label="Schedule">
       <div className="schedule-bar">
         <div className="schedule-nav">
+          <span className="timer-slot" ref={toolbarSlot} />
           <button
             type="button"
             title="Earlier"

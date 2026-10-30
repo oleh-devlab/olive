@@ -747,8 +747,8 @@ dialog input {
 
 /* --- Timer panel and the page around it --- */
 
-/* The panel beside the calendar, folded down to a strip or not; the tables
-   go below both, across the whole width. The panel is as tall as the calendar
+/* The panel beside the calendar, or folded away into its toolbar, which
+   leaves the calendar the whole width; the tables go below both, across it. The panel is as tall as the calendar
    and its contents stay in sight while the page scrolls past it. Narrower than
    the breakpoint (App.tsx has the same one) it goes above the calendar instead. */
 .workspace {
@@ -759,7 +759,7 @@ dialog input {
 }
 
 .workspace.panel-closed {
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .workspace .schedule {
@@ -877,29 +877,28 @@ dialog input {
   cursor: default;
 }
 
-/* Folded down: a strip holding the button that opens it, and the time left. */
-.panel.closed {
-  padding: 6px 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+/* Folded away: the button that opens it and the time left, at the start of
+   the calendar's toolbar (Schedule.tsx keeps the place for it). */
+.timer-slot:empty {
+  display: none;
 }
 
-.panel.closed .panel-body {
-  display: flex;
-  flex-direction: column;
+.panel-folded {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  margin-right: 6px;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
 }
 
-.panel-strip-time {
-  writing-mode: vertical-rl;
+.panel-folded-time {
   font-size: 13px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
-.panel-strip-time.running {
+.panel-folded-time.running {
   color: var(--accent);
   font-weight: 600;
 }
@@ -914,8 +913,7 @@ dialog input {
     padding: 6px;
   }
 
-  .workspace,
-  .workspace.panel-closed {
+  .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -923,15 +921,4 @@ dialog input {
     position: static;
   }
 
-  .panel.closed {
-    padding: 4px 8px;
-  }
-
-  .panel.closed .panel-body {
-    flex-direction: row;
-  }
-
-  .panel-strip-time {
-    writing-mode: horizontal-tb;
-  }
 }
