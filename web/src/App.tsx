@@ -27,10 +27,12 @@ const TABS = [
 // the calendar's toolbar, where it takes no width of its own.
 const STACKED_BELOW_PX = 760;
 const PANEL_PX = 248;
-// The only two things the page keeps in the browser: whether the panel was
-// left folded, and how many days the calendar was last set to show.
+// The only three things the page keeps in the browser: whether the panel was
+// left folded, how many days the calendar was last set to show, and whether
+// it was told not to scroll inside itself.
 const PANEL_KEY = "olive.panel";
 const DAYS_KEY = "olive.days";
+const SCROLL_KEY = "olive.scroll";
 const DAY_CHOICES = [1, 3, 7];
 
 function panelOpenAtStart(): boolean {
@@ -56,6 +58,24 @@ function keepDays(days: number) {
     window.localStorage.setItem(DAYS_KEY, String(days));
   } catch {
     // Not kept: the next visit works the number out again.
+  }
+}
+
+// Whether a calendar much taller than the screen scrolls inside itself, as it
+// does until it is told not to.
+function scrollAtStart(): boolean {
+  try {
+    return window.localStorage.getItem(SCROLL_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function keepScroll(on: boolean) {
+  try {
+    window.localStorage.setItem(SCROLL_KEY, on ? "on" : "off");
+  } catch {
+    // Not kept: the next visit scrolls inside again.
   }
 }
 
@@ -243,6 +263,8 @@ export default function App({ loginError }: { loginError?: string }) {
                 fail={fail}
                 initialSpan={daysShown}
                 onSpanChange={keepDays}
+                initialScroll={scrollAtStart()}
+                onScrollChange={keepScroll}
                 onSolved={setSolved}
                 tasks={tasks}
               />

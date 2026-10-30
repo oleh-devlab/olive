@@ -448,12 +448,15 @@ dialog input {
   padding: 6px 8px;
 }
 
+/* One row when it fits: the way through the days, when and how the schedule
+   was solved, how many days are shown, the legend, and how far ahead it
+   plans beside the button that recalculates it -- which keeps to the right
+   on whichever row it ends up. */
 .schedule-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px 16px;
+  gap: 6px 14px;
   margin-bottom: 4px;
 }
 
@@ -463,6 +466,36 @@ dialog input {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.schedule-solve {
+  margin-left: auto;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.schedule-solve button {
+  font-size: 14px;
+}
+
+/* Takes what the row leaves; Schedule.tsx hides it, keeping its place, and
+   says it on a line below when it does not fit there whole. */
+.schedule-facts-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.schedule-bar .calendar-legend {
+  flex-wrap: nowrap;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.schedule-scroll {
+  margin-left: 4px;
 }
 
 .schedule-range {
@@ -476,13 +509,8 @@ dialog input {
   border-color: var(--accent);
 }
 
-/* What the Discord message says above the schedule, and the legend after it. */
+/* When and how it was solved, when that does not fit in the toolbar. */
 .schedule-facts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px 16px;
   margin: 0 0 4px;
   font-size: 12.5px;
 }

@@ -27,6 +27,15 @@ const KINDS: Record<EntryType, string> = {
   time_block: "Time block",
 };
 
+// The legend says less, to fit in the toolbar: beside its colours, "Fixed" and
+// "Flexible" can only be routines. Its tooltips say the whole name.
+const LEGEND: Record<EntryType, string> = {
+  task: "Task",
+  fixed_routine: "Fixed",
+  flexible_routine: "Flexible",
+  time_block: "Time block",
+};
+
 interface Props {
   // Bumped by the page whenever it has changed the data: the schedule is read again.
   version: number;
@@ -41,13 +50,28 @@ interface Props {
   tasks?: Task[];
   // Handed the place at the start of the toolbar where the folded timer goes.
   toolbarSlot?: (element: HTMLElement | null) => void;
+  // Whether a calendar much taller than the screen scrolls inside itself until
+  // the reader says otherwise, and who is told when they do.
+  initialScroll?: boolean;
+  onScrollChange?: (on: boolean) => void;
 }
 
-export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, tasks = [], toolbarSlot }: Props) {
+export function Schedule({
+  version,
+  fail,
+  initialSpan,
+  onSpanChange,
+  onSolved,
+  tasks = [],
+  toolbarSlot,
+  initialScroll = true,
+  onScrollChange,
+}: Props) {
   const [schedule, setSchedule] = useState<SolvedSchedule | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const [span, setSpan] = useState(initialSpan);
   const [first, setFirst] = useState(0);
+  const [scrollInside, setScrollInside] = useState(initialScroll);
   const [now, setNow] = useState(() => Date.now());
   // Counts the reader's returns to this tab, each of which reads the schedule again.
   const [returns, setReturns] = useState(0);
@@ -94,6 +118,22 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, t
   }
 
   const byDay = useMemo(() => segmentsByDay(schedule?.items ?? []), [schedule]);
+
+  // When and how the schedule was solved goes in the toolbar, where it stays
+  // only while it fits there whole; else it takes a line of its own below.
+  // Hidden rather than taken out, it keeps its place, so the measure holds.
+  const facts = schedule ? solveFacts(schedule) : "";
+  const factsInBar = useRef<HTMLSpanElement>(null);
+  const [factsFit, setFactsFit] = useState(true);
+  useLayoutEffect(() => {
+    const box = factsInBar.current;
+    if (!box) return;
+    const check = () => setFactsFit(box.scrollWidth <= box.clientWidth + 1);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [facts]);
 
   // The folded timer's place is there from the start: a schedule that never
   // loads must not take the way to the timer with it.
@@ -152,6 +192,15 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, t
           <span className="schedule-range">{label}</span>
         </div>
 
+        <span
+          ref={factsInBar}
+          className="schedule-facts-bar muted"
+          style={factsFit ? undefined : { visibility: "hidden" }}
+          aria-hidden={!factsFit}
+        >
+          {facts}
+        </span>
+
         <div className="schedule-span" role="group" aria-label="Days shown">
           {SPANS.map((count) => (
             <button
@@ -166,21 +215,33 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, t
               {count === 1 ? "Day" : `${count} days`}
             </button>
           ))}
+          <button
+            type="button"
+            className="schedule-scroll"
+            aria-pressed={scrollInside}
+            title="Let a calendar much taller than the screen scroll inside itself, its day names in sight; off, the page scrolls instead"
+            onClick={() => {
+              setScrollInside(!scrollInside);
+              onScrollChange?.(!scrollInside);
+            }}
+          >
+            Scroll
+          </button>
         </div>
 
+        {schedule.status !== "NO_DATA" && <Legend />}
+
         <div className="schedule-solve">
+          <span className="muted">{planFacts(schedule)}</span>
           <button type="button" className="primary" disabled={recalculating} onClick={() => void recalculate()}>
             {recalculating ? "Calculating…" : "Recalculate"}
           </button>
         </div>
       </div>
-      <div className="schedule-facts muted">
-        <span>{solveFacts(schedule)}</span>
-        {schedule.status !== "NO_DATA" && <Legend />}
-      </div>
+      {!factsFit && <p className="schedule-facts muted">{facts}</p>}
 
       {hours ? (
-        <CalendarGrid days={shown} byDay={byDay} hours={hours} present={present} />
+        <CalendarGrid days={shown} byDay={byDay} hours={hours} present={present} scrollInside={scrollInside} />
       ) : (
         <p className="calendar-empty muted">
           Nothing is planned on {shown.length === 1 ? "this day" : "these days"}.
@@ -233,11 +294,13 @@ interface GridProps {
   byDay: Map<string, Segment[]>;
   hours: [number, number];
   present: { day: string; minute: number };
+  // Whether it may scroll inside itself when much taller than its room.
+  scrollInside: boolean;
 }
 
 // The days side by side over the hours shown. It scrolls on its own, under the
 // days' names, when it is taller than the screen has room for.
-function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridProps) {
+function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present, scrollInside }: GridProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const range = { from: fromHour * 60, to: toHour * 60 };
   const segments = days.flatMap((day) => byDay.get(day) ?? []);
@@ -302,7 +365,7 @@ function CalendarGrid({ days, byDay, hours: [fromHour, toHour], present }: GridP
   }
   const { density, layouts, axis } = laid;
   const nowShown = present.minute >= range.from && present.minute <= range.to;
-  const scrolls = axis.height + HEAD_PX > room * GROWTH;
+  const scrolls = scrollInside && axis.height + HEAD_PX > room * GROWTH;
 
   // Brings the present moment into view whenever other days or hours are
   // shown -- not each minute as the line moves, nor on every new solve. Only
@@ -517,9 +580,8 @@ function Entry({ segment, range, y, layout }: EntryProps) {
   );
 }
 
-// What the Discord message says above the schedule: when it was calculated and
-// how long that took, how the solver ended, how far ahead it plans at the
-// least, and how often the bot calculates it again on its own.
+// What the Discord message says above the schedule, in two parts: when it was
+// calculated and how long that took, and how the solver ended --
 function solveFacts(schedule: SolvedSchedule): string {
   const facts: string[] = [];
   if (schedule.computed_at) {
@@ -527,6 +589,13 @@ function solveFacts(schedule: SolvedSchedule): string {
     facts.push(`Calculated ${shortDate(dayOf(schedule.computed_at))} ${schedule.computed_at.slice(11, 16)}${took}`);
   }
   if (schedule.status) facts.push(schedule.status);
+  return facts.join(" · ");
+}
+
+// -- and, beside the button that recalculates it, how far ahead it plans at
+// the least and how often the bot calculates it again on its own.
+function planFacts(schedule: SolvedSchedule): string {
+  const facts: string[] = [];
   if (schedule.planning_days > 0) facts.push(`horizon ${schedule.planning_days} ${schedule.planning_days === 1 ? "day" : "days"}`);
   if (schedule.update_seconds) facts.push(`updates every ${every(schedule.update_seconds)}`);
   return facts.join(" · ");
@@ -542,10 +611,10 @@ function every(seconds: number): string {
 function Legend() {
   return (
     <ul className="calendar-legend" aria-label="Legend">
-      {Object.entries(KINDS).map(([type, kind]) => (
-        <li key={type}>
+      {(Object.keys(KINDS) as EntryType[]).map((type) => (
+        <li key={type} title={KINDS[type]}>
           <span className={`swatch entry-${type}`} />
-          {kind}
+          {LEGEND[type]}
         </li>
       ))}
     </ul>
