@@ -96,10 +96,17 @@ export function Schedule({ version, fail, initialSpan, onSpanChange, onSolved, t
 
   const byDay = useMemo(() => segmentsByDay(schedule?.items ?? []), [schedule]);
 
+  // The folded timer's place is there from the start: a schedule that never
+  // loads must not take the way to the timer with it.
   if (!schedule) {
     return (
       <section id="schedule" className="card schedule">
-        <p className="muted">Loading the schedule…</p>
+        <div className="schedule-bar">
+          <div className="schedule-nav">
+            <span className="timer-slot" ref={toolbarSlot} />
+            <span className="muted">Loading the schedule…</span>
+          </div>
+        </div>
       </section>
     );
   }

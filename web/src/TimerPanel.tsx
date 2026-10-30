@@ -52,8 +52,8 @@ const duration = (minutes: number): string =>
 // folds away into a button in the calendar's toolbar. It logs what it counted
 // against the task -- only when asked, and never more than it was set to --
 // the way `/task spend` does; below it, minutes set by hand are logged against
-// the same task with a button of their own. The two never fill each other in: what is logged is the reader's
-// to decide.
+// the same task with a button of their own. The two never fill each other in:
+// what is logged is the reader's to decide.
 export function TimerPanel({ schedule, tasks, open, onToggle, onLog, foldedInto }: Props) {
   // In this page's memory only: a reload or a closed tab drops it.
   const [stored, setStored] = useState<TimerState | null>(null);

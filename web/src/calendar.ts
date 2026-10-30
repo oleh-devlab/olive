@@ -177,10 +177,10 @@ export interface Axis {
 // How the hours shown are laid out from top to bottom. Each entry is as tall
 // as its text needs -- a task or routine its name, over as many lines as
 // `need` says it wraps to, and its times; a time block its name -- plus
-// HOUR_PX an hour, so length still shows. A stretch with nothing in it on any of the days shown -- a break,
-// free time -- collapses to a thin band, and one with only time blocks in it
-// to a single line. The times are on the entries, which is what lets the axis
-// be uneven.
+// HOUR_PX an hour, so length still shows. A stretch with nothing in it on any
+// of the days shown -- a break, free time -- collapses to a thin band, and one
+// with only time blocks in it to a single line. The times are on the entries,
+// which is what lets the axis be uneven.
 export function buildAxis(
   segments: Segment[],
   range: { from: number; to: number },

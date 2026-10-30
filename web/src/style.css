@@ -107,10 +107,7 @@ main {
 
 .status {
   margin: 0;
-  overflow: hidden;
   font-size: 13px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .status.ok {
@@ -179,10 +176,13 @@ button.link:hover {
 /* --- Tabs --- */
 
 /* The tabs on the left of the row, and the status after them. */
+/* A message too long for what the tabs leave goes onto a line of its own
+   under them, whole: an error has to be read to be acted on. */
 .tabs-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 2px 16px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
